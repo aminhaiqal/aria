@@ -9,10 +9,11 @@ from django.test import TestCase
 from aria.artifacts.models import RawArtifact
 from aria.authorities.models import Authority
 from aria.collections.models import PublicationCollection
+from aria.comparisons.anchors import extract_anchor_specs, project_active_version_anchors
 from aria.comparisons.audit import audit_active_versions, audit_document_version
 from aria.comparisons.contracts import ProvenanceStatus, RepresentationKind
 from aria.comparisons.lineage import project_active_version_lineage, project_version_lineage
-from aria.comparisons.models import VersionLineageAssessment
+from aria.comparisons.models import StructuralAnchor, VersionLineageAssessment
 from aria.documents.models import (
     DocumentIdentity,
     DocumentVersion,
@@ -233,3 +234,71 @@ class VersionLineageProjectionTestCase(Phase3CFixture):
         )
         self.assertIsNone(assessment.source_artifact_id)
         self.assertIsNone(assessment.extraction_run_id)
+
+
+class StructuralAnchorTestCase(Phase3CFixture):
+    def test_extracts_english_and_malay_legal_anchors(self) -> None:
+        version = self.create_version(
+            "PART I\nPreliminary\nSection 1 Short title\nText.\n"
+            "BAHAGIAN II\nSEKSYEN 2 Pemakaian\nTeks.\nJADUAL PERTAMA\nButiran."
+        )
+        section = version.sections.get()
+
+        specs = extract_anchor_specs(section)
+
+        self.assertEqual(
+            [(spec.anchor_type, spec.canonical_key) for spec in specs],
+            [
+                ("part", "part:i"),
+                ("section", "section:1"),
+                ("part", "part:ii"),
+                ("section", "section:2"),
+                ("schedule", "schedule:pertama"),
+            ],
+        )
+
+    def test_projection_preserves_evidence_and_is_idempotent(self) -> None:
+        version = self.create_version(
+            "Regulation 1 Citation\nThis regulation may be cited as the Test Regulation.\n"
+            "2 Application\nThis regulation applies to data controllers."
+        )
+
+        first = project_active_version_anchors()
+        replay = project_active_version_anchors()
+
+        self.assertEqual(first.eligible_version_count, 1)
+        self.assertEqual(first.created_count, 2)
+        self.assertEqual(replay.created_count, 0)
+        self.assertEqual(replay.skipped_count, 2)
+        anchors = list(version.structural_anchors.order_by("ordinal"))
+        self.assertEqual([anchor.canonical_key for anchor in anchors], ["regulation:1", "clause:2"])
+        for anchor in anchors:
+            self.assertEqual(
+                anchor.source_artifact_id, anchor.normalized_section.source_artifact_id
+            )
+            self.assertEqual(anchor.extraction_run_id, anchor.normalized_section.extraction_run_id)
+            self.assertIn("anchor_relative_start", anchor.source_locator)
+
+    def test_section_without_recognized_structure_gets_traceable_fallback(self) -> None:
+        version = self.create_version("General explanatory publication text.")
+
+        project_active_version_anchors()
+
+        anchor = StructuralAnchor.objects.get(document_version=version)
+        self.assertEqual(anchor.anchor_type, "section")
+        self.assertEqual(anchor.canonical_key, "section:1")
+        self.assertEqual(anchor.text, "General explanatory publication text.")
+
+    def test_repeated_clause_keys_receive_deterministic_occurrence_suffixes(self) -> None:
+        version = self.create_version("1 First item\nText.\n1 Second item\nMore text.")
+
+        project_active_version_anchors()
+
+        self.assertEqual(
+            list(
+                version.structural_anchors.order_by("ordinal").values_list(
+                    "canonical_key", flat=True
+                )
+            ),
+            ["clause:1:occurrence:1", "clause:1:occurrence:2"],
+        )
