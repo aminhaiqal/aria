@@ -17,6 +17,7 @@ publications before any AI interpretation is introduced.
 - Append-only provenance observations and durable fetch-attempt history
 - Self-hosted filesystem artifact storage plus an optional S3-compatible Cloudflare R2 adapter
 - Deterministic offline HTML and PDF extraction from archived bytes, with page and DOM locators
+- BetterDocs detail-page routing to archived primary publications with stable landing-page identity
 - Stable document identities, immutable content versions, and append-only evidence links
 - A structural evidence graph from authority to raw artifact in PostgreSQL
 - PostgreSQL full-text search plus pgvector retrieval with a deterministic local baseline
@@ -38,9 +39,9 @@ candidates but do not alter source evidence or claim that review has occurred.
 - Phase 1 registry and pipeline foundation: complete
 - Phase 2 JPDP retrieval pilot: complete
 - Phase 3A deterministic extraction and evidence graph: implemented
-- Phase 3B extraction-quality baseline: implemented
+- Phase 3B extraction quality and JPDP linked-file remediation: implemented
 - Phase 2 source breadth: RSS and browser fallback remain open
-- Next implementation slice: resolve JPDP review findings, then add bounded OCR execution
+- Next implementation slice: bounded self-hosted OCR for five JPDP image-only PDFs
 
 ## Local setup
 
@@ -72,6 +73,7 @@ make test            # run the Django test suite in Compose
 make makemigrations  # generate model migrations
 make migrate         # apply migrations
 make extract         # replay every archived artifact through extraction locally
+make route-linked    # route and queue official files linked by archived JPDP pages
 make quality         # assess the current JPDP extraction corpus without network access
 make verify-storage  # write/read/delete one temporary R2 probe
 make superuser       # create an admin user

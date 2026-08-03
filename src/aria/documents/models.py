@@ -25,6 +25,14 @@ class DocumentIdentity(TimeStampedModel):
     canonical_url = models.URLField(max_length=2048)
     identity_basis = models.JSONField(default=dict)
     is_manual_override = models.BooleanField(default=False)
+    superseded_by = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        related_name="superseded_identities",
+        null=True,
+        blank=True,
+    )
+    supersession_basis = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ("collection__authority__name", "canonical_title", "canonical_url")

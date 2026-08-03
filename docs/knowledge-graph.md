@@ -26,6 +26,8 @@ DocumentIdentity -> DocumentVersion -> NormalizedSection
 - Extractors read the stored artifact backend recorded in the database. They never fetch a URL.
 - HTML extraction removes layout/script elements, prefers known content containers, and stores a
   DOM path for every block.
+- BetterDocs extraction prefers `.betterdocs-entry-content`, records primary official file links
+  and their DOM paths, and excludes category/sidebar shells.
 - PDF extraction uses pypdf layout-mode text extraction and stores one traceable block per page.
 - A PDF averaging fewer than the configured non-whitespace characters per page is marked
   `ocr_required`. Phase 3A routes it to review; it does not pretend that OCR has occurred.
@@ -49,6 +51,11 @@ different observations contain the same artifact bytes, while every observation 
 `VersionEvidence` record linking its identity/version to the raw artifact and extractor run.
 Normalized sections retain artifact SHA-256, observed URL, page or DOM locator, and character
 offsets.
+
+For linked publications, the detail-page URL remains the canonical document identity. The fetched
+file URL is retained as the artifact observation and version-evidence URL. A deterministic
+`superseded_by` pointer excludes earlier file-URL aliases from operational search and quality while
+preserving their historical versions and graph evidence.
 
 Phase 3A graph predicates are intentionally limited to:
 

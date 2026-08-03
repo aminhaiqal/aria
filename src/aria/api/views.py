@@ -122,7 +122,7 @@ class ExtractedDocumentViewSet(ReadOnlyModelViewSet):
 
 class DocumentIdentityViewSet(ReadOnlyModelViewSet):
     queryset = DocumentIdentity.objects.select_related(
-        "collection", "collection__authority"
+        "collection", "collection__authority", "superseded_by"
     ).prefetch_related("versions")
     serializer_class = DocumentIdentitySerializer
 
@@ -206,7 +206,9 @@ class KnowledgeSearchViewSet(GenericViewSet):
             )
 
         candidate_limit = max(limit * 4, 50)
-        base = NormalizedSection.objects.select_related(
+        base = NormalizedSection.objects.filter(
+            document_version__identity__superseded_by__isnull=True
+        ).select_related(
             "document_version",
             "document_version__identity",
             "document_version__identity__collection",

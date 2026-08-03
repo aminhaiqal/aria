@@ -16,6 +16,7 @@ from aria.discovery.models import DiscoveredCandidate, SourceRun
 from aria.discovery.services import create_source_run, observe_candidate
 from aria.documents.models import DocumentIdentity, DocumentVersion, NormalizedSection
 from aria.extraction.extractors import HTMLExtractor, PDFExtractor
+from aria.extraction.linked_documents import route_linked_publications
 from aria.extraction.models import ExtractedDocument, ExtractionRun
 from aria.extraction.services import extract_artifact
 from aria.fetching.client import FetchResponse
@@ -54,6 +55,38 @@ class ExtractorTestCase(SimpleTestCase):
             ],
         )
         self.assertTrue(document.blocks[-1].source_locator["html_path"])
+
+    def test_betterdocs_entry_content_excludes_sidebar_and_records_primary_document(self) -> None:
+        document = HTMLExtractor().extract(
+            b"""
+            <html><head><title>Official Rule | JPDP</title></head><body>
+              <div class="betterdocs-content-wrapper">
+                <aside><h3>Navigation shell</h3><p>Unrelated category content</p></aside>
+                <main><div class="betterdocs-entry-content">
+                  <p>Official publication introduction and regulatory context.</p>
+                  <div class="wp-block-file">
+                    <a href="/uploads/official-rule.pdf">Official Rule PDF</a>
+                    <a href="/uploads/official-rule.pdf">Download</a>
+                  </div>
+                </div></main>
+              </div>
+            </body></html>
+            """,
+            source_url="https://example.com/publications/official-rule/",
+        )
+
+        self.assertEqual(document.metadata["content_selector"], ".betterdocs-entry-content")
+        self.assertNotIn("Navigation shell", document.plain_text)
+        self.assertEqual(
+            document.metadata["primary_document_links"],
+            [
+                {
+                    "url": "https://example.com/uploads/official-rule.pdf",
+                    "title": "Official Rule PDF",
+                    "html_path": ("div:nth-of-type(1) > div:nth-of-type(1) > a:nth-of-type(1)"),
+                }
+            ],
+        )
 
     @override_settings(PDF_OCR_MIN_CHARACTERS_PER_PAGE=40)
     def test_textless_pdf_is_routed_to_ocr_review(self) -> None:
@@ -240,3 +273,112 @@ class ExtractionPipelineTestCase(TestCase):
                 "https://example.com/acts/separate-notice/",
             },
         )
+
+    def test_linked_artifact_uses_landing_page_identity_and_actual_observed_url(self) -> None:
+        with override_settings(OBJECT_STORAGE_ROOT=self.storage_root):
+            extract_artifact(self.artifact)
+            source_run = self.artifact.observations.get().source_run
+            identity_url = "https://example.com/acts/act-709/"
+            document_url = "https://example.com/files/act-709-publication/"
+            stale_identity = DocumentIdentity.objects.create(
+                collection=self.collection,
+                stable_key="9" * 64,
+                canonical_title="Stale file identity",
+                canonical_url=document_url,
+                identity_basis={"strategy": "pre_link_routing"},
+            )
+            candidate, _ = observe_candidate(
+                source_run,
+                CandidateData(
+                    discovered_url=document_url,
+                    canonical_url=document_url,
+                    fingerprint="d" * 64,
+                    metadata_hints={"document_identity_url": identity_url},
+                ),
+            )
+            content = b"""
+                <html><body><main>
+                  <h1>Personal Data Protection Act 2010</h1>
+                  <p>This is a distinct archived representation of the official publication.</p>
+                </main></body></html>
+            """
+            attempt = begin_fetch_attempt(candidate, source_run, request_headers={})
+            observation = complete_fetch(
+                attempt,
+                FetchResponse(
+                    requested_url=document_url,
+                    final_url=document_url,
+                    status_code=200,
+                    headers={"content-type": "text/html"},
+                    redirect_chain=[],
+                    resolved_addresses=["93.184.216.34"],
+                    content=content,
+                ),
+                store=FilesystemArtifactStore(self.storage_root),
+            )
+            extract_artifact(observation.raw_artifact)
+
+        identity = DocumentIdentity.objects.get(canonical_url=identity_url)
+        stale_identity.refresh_from_db()
+        self.assertEqual(identity.canonical_url, identity_url)
+        self.assertEqual(identity.versions.count(), 2)
+        self.assertEqual(stale_identity.superseded_by, identity)
+        self.assertEqual(
+            stale_identity.supersession_basis["strategy"],
+            "linked_document_identity_v1",
+        )
+        linked_evidence = identity.versions.get(
+            normalized_content_sha256=hashlib.sha256(
+                b"Personal Data Protection Act 2010\n\nThis is a distinct archived representation "
+                b"of the official publication."
+            ).hexdigest()
+        ).evidence_records.get()
+        self.assertEqual(linked_evidence.observed_url, document_url)
+
+    def test_archived_primary_link_routing_is_idempotent(self) -> None:
+        source_run = self.artifact.observations.get().source_run
+        landing_url = "https://example.com/acts/linked-rule/"
+        candidate, _ = observe_candidate(
+            source_run,
+            CandidateData(
+                discovered_url=landing_url,
+                canonical_url=landing_url,
+                fingerprint="e" * 64,
+            ),
+        )
+        content = b"""
+            <html><body><div class="betterdocs-entry-content">
+              <p>Official linked publication landing page.</p>
+              <div class="wp-block-file">
+                <a href="https://example.com/files/linked-rule.pdf">Linked Rule PDF</a>
+                <a href="https://example.com/files/linked-rule.pdf">Download</a>
+              </div>
+            </div></body></html>
+        """
+        attempt = begin_fetch_attempt(candidate, source_run, request_headers={})
+        observation = complete_fetch(
+            attempt,
+            FetchResponse(
+                requested_url=landing_url,
+                final_url=landing_url,
+                status_code=200,
+                headers={"content-type": "text/html"},
+                redirect_chain=[],
+                resolved_addresses=["93.184.216.34"],
+                content=content,
+            ),
+            store=FilesystemArtifactStore(self.storage_root),
+        )
+        with override_settings(OBJECT_STORAGE_ROOT=self.storage_root):
+            extract_artifact(observation.raw_artifact)
+
+        first = route_linked_publications(self.collection)
+        replay = route_linked_publications(self.collection)
+
+        self.assertTrue(first.created)
+        self.assertFalse(replay.created)
+        self.assertEqual(first.source_run.id, replay.source_run.id)
+        self.assertEqual(len(first.candidates), 1)
+        routed = first.candidates[0]
+        self.assertEqual(routed.canonical_url, "https://example.com/files/linked-rule.pdf")
+        self.assertEqual(routed.metadata_hints["document_identity_url"], landing_url)

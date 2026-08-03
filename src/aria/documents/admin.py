@@ -21,8 +21,19 @@ class ReadOnlyAdmin(admin.ModelAdmin):
 
 @admin.register(DocumentIdentity)
 class DocumentIdentityAdmin(ReadOnlyAdmin):
-    list_display = ("canonical_title", "collection", "canonical_url", "created_at")
-    list_filter = ("collection__authority", "collection", "is_manual_override")
+    list_display = (
+        "canonical_title",
+        "collection",
+        "canonical_url",
+        "superseded_by",
+        "created_at",
+    )
+    list_filter = (
+        "collection__authority",
+        "collection",
+        "is_manual_override",
+        "superseded_by",
+    )
     search_fields = ("canonical_title", "canonical_url", "stable_key")
 
 

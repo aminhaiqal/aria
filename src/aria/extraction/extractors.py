@@ -3,14 +3,16 @@ import json
 import re
 from dataclasses import dataclass, field
 from io import BytesIO
+from pathlib import PurePosixPath
 from typing import Protocol
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 from bs4 import BeautifulSoup, Tag
 from django.conf import settings
 from pypdf import PdfReader
 
 HTML_CONTENT_SELECTORS = (
+    ".betterdocs-entry-content",
     ".betterdocs-content-wrapper",
     "article .entry-content",
     ".entry-content",
@@ -21,6 +23,7 @@ HTML_CONTENT_SELECTORS = (
     "[role='main']",
     "body",
 )
+PRIMARY_DOCUMENT_EXTENSIONS = {".pdf", ".doc", ".docx"}
 HTML_BLOCK_TAGS = {
     "h1",
     "h2",
@@ -137,14 +140,36 @@ def table_text(element: Tag) -> str:
     return "\n".join(rows)
 
 
+def primary_document_links(root: Tag, source_url: str) -> list[dict[str, str]]:
+    links_by_url: dict[str, dict[str, str]] = {}
+    for link in root.select("a[href]"):
+        href = link.get("href")
+        if not isinstance(href, str) or not href.strip():
+            continue
+        absolute = urljoin(source_url, href.strip())
+        suffix = PurePosixPath(urlsplit(absolute).path).suffix.lower()
+        if suffix not in PRIMARY_DOCUMENT_EXTENSIONS:
+            continue
+        links_by_url.setdefault(
+            absolute,
+            {
+                "url": absolute,
+                "title": normalize_inline_text(link.get_text(" ", strip=True)),
+                "html_path": html_path(link, root),
+            },
+        )
+    return list(links_by_url.values())
+
+
 class HTMLExtractor:
     name = "html"
-    version = "1"
+    version = "2"
 
     @property
     def configuration(self) -> dict:
         return {
             "content_selectors": list(HTML_CONTENT_SELECTORS),
+            "primary_document_extensions": sorted(PRIMARY_DOCUMENT_EXTENSIONS),
             "removed_tags": [
                 "script",
                 "style",
@@ -170,7 +195,10 @@ class HTMLExtractor:
                 candidate
                 for candidate in soup.select(selector)
                 if isinstance(candidate, Tag)
-                and len(normalize_inline_text(candidate.get_text(" ", strip=True))) >= 40
+                and (
+                    len(normalize_inline_text(candidate.get_text(" ", strip=True))) >= 40
+                    or bool(primary_document_links(candidate, source_url))
+                )
             ]
             if candidates:
                 root = max(
@@ -255,6 +283,8 @@ class HTMLExtractor:
                 }
             )
 
+        primary_links = primary_document_links(root, source_url)
+
         html = soup.html
         language_hint = normalize_inline_text(str(html.get("lang", ""))).lower() if html else ""
         return ExtractedDocumentData(
@@ -264,6 +294,7 @@ class HTMLExtractor:
             metadata={
                 "content_selector": selected_with,
                 "links": links,
+                "primary_document_links": primary_links,
                 "extractor": f"{self.name}:{self.version}",
             },
         )

@@ -69,6 +69,9 @@ changing task code.
    parsing. It never downloads the live source URL.
 10. Document identity uses collection plus canonical URL. Within that identity, equal normalized
     content reuses one immutable version while each extraction retains its evidence link.
+    When an official detail page points to a primary file, the page URL remains the identity and
+    the actual file URL remains in artifact/version provenance. Earlier file-URL identities are
+    retained with deterministic `superseded_by` pointers rather than deleted.
 11. Graph edges are deterministic structural projections and always record their source object.
     Phase 3A does not infer legal meaning or cross-document legal relationships.
 12. The 384-dimensional local hash projection is deterministic and private, but lexical rather
@@ -88,9 +91,9 @@ volume.
 
 ## Next slice
 
-1. Resolve the 12 JPDP versions marked `review_required`, starting with duplicate HTML page-shell
-   extraction and source-specific selector refinement.
-2. Re-run quality assessment and require a new corpus fingerprint with improved outcomes.
-3. Add a self-hosted OCR worker for artifacts explicitly marked `pdf_requires_ocr`.
+1. Add a self-hosted OCR worker for the five JPDP PDFs explicitly marked `ocr_required`.
+2. Preserve original and OCR-derived artifacts, with page-level provenance and deterministic
+   configuration hashes.
+3. Re-run quality assessment and require a new corpus fingerprint with improved outcomes.
 4. Add RSS/Atom discovery and a browser retrieval fallback for explicitly approved sources.
 5. Diff versions and publish evidence-backed change events through the outbox.

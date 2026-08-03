@@ -1,4 +1,4 @@
-.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser extract quality verify-storage
+.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser extract route-linked quality verify-storage
 
 bootstrap:
 	@test -f .env || cp .env.example .env
@@ -36,6 +36,9 @@ superuser:
 
 extract:
 	docker compose exec api python manage.py extract_artifacts --sync
+
+route-linked:
+	docker compose exec api python manage.py route_linked_publications --queue
 
 quality:
 	docker compose exec api python manage.py assess_extraction_quality

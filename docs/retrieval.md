@@ -12,6 +12,11 @@ collection, endpoint, and connector configuration and then queue a manual source
 idempotent. The connector archives at most 20 qualifying links per run during the pilot, with
 direct publication files prioritized over publication pages.
 
+Connector configuration v2 follows each allowlisted BetterDocs detail page to its primary official
+file. The fetch candidate uses the file URL, while `document_identity_url` retains the official
+landing-page URL for stable version projection. Detail expansion still uses the HTTPS/domain/IP
+safety boundary and is capped by explicit candidate limits.
+
 ## Retrieval boundary
 
 Every request must satisfy all of these rules:
@@ -96,6 +101,15 @@ Watch discovery and artifact retrieval:
 docker compose logs --follow worker
 ```
 
+To backfill primary links already present in archived HTML without refetching detail pages:
+
+```bash
+docker compose exec api python manage.py route_linked_publications --queue
+```
+
+The route run is fingerprinted from the current immutable HTML versions. Repeating it against an
+unchanged operational corpus reuses the same source run and does not queue completed candidates.
+
 A completed `SourceRun` confirms that discovery persisted its candidates and queued their fetch
 tasks. The run is fully archived when its candidates have terminal `FetchAttempt` records and the
 successful candidates are in `raw_stored` state.
@@ -113,3 +127,7 @@ Extraction consumes only archived artifacts, never a live URL. Phase 3A now adds
 HTML/PDF extraction, OCR routing, stable document identity, immutable versions, and evidence graph
 projection while preserving raw artifact and observation links through every derived record. See
 [Phase 3A extraction and evidence graph](knowledge-graph.md).
+
+On 2026-08-04, linked-file remediation routed exactly 18 JPDP detail pages. All 18 official PDFs
+were archived as content-addressed Cloudflare R2 artifacts. Thirteen produced native text; five
+image-only PDFs were retained and marked `ocr_required` without executing OCR.

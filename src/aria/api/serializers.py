@@ -263,6 +263,8 @@ class DocumentIdentitySerializer(serializers.ModelSerializer):
             "canonical_url",
             "identity_basis",
             "is_manual_override",
+            "superseded_by",
+            "supersession_basis",
             "version_count",
             "created_at",
             "updated_at",

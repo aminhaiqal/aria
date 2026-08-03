@@ -1,6 +1,6 @@
 import hashlib
 from datetime import timedelta
-from urllib.parse import urldefrag
+from urllib.parse import urldefrag, urlsplit
 
 from django.db import transaction
 from django.utils import timezone
@@ -22,6 +22,7 @@ from aria.extraction.extractors import (
     normalize_multiline_text,
 )
 from aria.extraction.models import ExtractedBlock, ExtractedDocument, ExtractionRun
+from aria.fetching.client import hostname_is_allowed
 from aria.knowledge.services import project_document_version
 
 
@@ -37,9 +38,49 @@ def _canonical_url(observation: ArtifactObservation | None) -> str:
     return urldefrag(url).url
 
 
+def _document_identity_url(observation: ArtifactObservation) -> str:
+    configured = observation.candidate.metadata_hints.get("document_identity_url", "")
+    if not configured:
+        return _canonical_url(observation)
+    identity_url = urldefrag(configured).url
+    parsed = urlsplit(identity_url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or not hostname_is_allowed(parsed.hostname, observation.candidate.endpoint.allowed_domains)
+    ):
+        raise ExtractionError("The configured document identity URL is not allowlisted HTTPS.")
+    return identity_url
+
+
 def _identity_key(collection_id, canonical_url: str) -> str:
     basis = f"{collection_id}\n{canonical_url}".encode()
     return hashlib.sha256(basis).hexdigest()
+
+
+def _supersede_observed_url_identity(
+    *,
+    collection,
+    observed_url: str,
+    canonical_identity: DocumentIdentity,
+    observation: ArtifactObservation,
+) -> None:
+    if observed_url == canonical_identity.canonical_url:
+        return
+    DocumentIdentity.objects.filter(
+        collection=collection,
+        canonical_url=observed_url,
+        superseded_by__isnull=True,
+    ).exclude(pk=canonical_identity.pk).update(
+        superseded_by=canonical_identity,
+        supersession_basis={
+            "strategy": "linked_document_identity_v1",
+            "document_identity_url": canonical_identity.canonical_url,
+            "observed_url": observed_url,
+            "candidate_id": str(observation.candidate_id),
+        },
+        updated_at=timezone.now(),
+    )
 
 
 def _artifact_observations(raw_artifact: RawArtifact):
@@ -99,21 +140,29 @@ def _create_version(
     observation: ArtifactObservation,
 ) -> tuple[DocumentVersion, bool]:
     collection = observation.candidate.endpoint.collection
-    canonical_url = _canonical_url(observation)
-    stable_key = _identity_key(collection.id, canonical_url)
+    observed_url = _canonical_url(observation)
+    identity_url = _document_identity_url(observation)
+    stable_key = _identity_key(collection.id, identity_url)
     identity, _ = DocumentIdentity.objects.get_or_create(
         stable_key=stable_key,
         defaults={
             "collection": collection,
             "canonical_title": extracted_document.title,
-            "canonical_url": canonical_url,
+            "canonical_url": identity_url,
             "identity_basis": {
                 "strategy": "collection_and_canonical_url_v1",
                 "collection_id": str(collection.id),
-                "canonical_url": canonical_url,
+                "canonical_url": identity_url,
+                "observed_url": observed_url,
                 "external_identifier": observation.candidate.external_identifier,
             },
         },
+    )
+    _supersede_observed_url_identity(
+        collection=collection,
+        observed_url=observed_url,
+        canonical_identity=identity,
+        observation=observation,
     )
     normalized_content = normalize_multiline_text(extracted_document.plain_text)
     content_sha256 = hashlib.sha256(normalized_content.encode("utf-8")).hexdigest()
@@ -122,7 +171,7 @@ def _create_version(
         normalized_content_sha256=content_sha256,
         defaults={
             "title": extracted_document.title,
-            "canonical_url": canonical_url,
+            "canonical_url": identity_url,
             "language_hint": extracted_document.language_hint,
             "plain_content": normalized_content,
             "normalized_metadata": {
@@ -139,7 +188,7 @@ def _create_version(
             "document_version": version,
             "raw_artifact": raw_artifact,
             "extraction_run": run,
-            "observed_url": canonical_url,
+            "observed_url": observed_url,
         },
     )
     if version_created:
@@ -160,7 +209,8 @@ def _create_version(
                 source_locator={
                     **block.source_locator,
                     "artifact_sha256": raw_artifact.sha256,
-                    "observed_url": canonical_url,
+                    "observed_url": observed_url,
+                    "document_identity_url": identity_url,
                 },
             )
             for block in extracted_document.blocks.all()
@@ -231,6 +281,12 @@ def _claim_run(run: ExtractionRun) -> tuple[ExtractionRun, bool]:
     with transaction.atomic():
         locked_run = ExtractionRun.objects.select_for_update().get(pk=run.pk)
         if locked_run.status == ExtractionRun.Status.OCR_REQUIRED:
+            DiscoveredCandidate.objects.filter(
+                artifact_observations__raw_artifact=locked_run.raw_artifact
+            ).update(
+                pipeline_state=DiscoveredCandidate.PipelineState.MANUAL_REVIEW,
+                updated_at=now,
+            )
             return locked_run, False
         if locked_run.status == ExtractionRun.Status.SUCCEEDED:
             try:

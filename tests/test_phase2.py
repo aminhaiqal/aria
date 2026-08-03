@@ -181,6 +181,57 @@ class PhaseTwoTestCase(TestCase):
         self.assertEqual(candidates[0].metadata_hints["title"], "Rule Two PDF")
         self.assertEqual(len(candidates[0].fingerprint), 64)
 
+    def test_html_listing_connector_routes_detail_page_primary_document(self) -> None:
+        ConnectorConfiguration.objects.create(
+            endpoint=self.endpoint,
+            version=1,
+            configuration={
+                "include_path_prefixes": ["/publications/", "/files/"],
+                "upload_path_prefixes": ["/files/"],
+                "document_extensions": [".pdf"],
+                "max_candidates": 2,
+                "follow_detail_pages": True,
+                "detail_content_selector": ".betterdocs-entry-content",
+            },
+        )
+        listing = b'<a href="/publications/rule-one/">Rule One</a>'
+        detail = b"""
+            <div class="betterdocs-entry-content">
+              <div class="wp-block-file">
+                <a href="/files/rule-one.pdf">Rule One PDF</a>
+                <a href="/files/rule-one.pdf">Download</a>
+              </div>
+            </div>
+        """
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            content = detail if request.url.path.endswith("/rule-one/") else listing
+            return httpx.Response(
+                200,
+                headers={"Content-Type": "text/html; charset=UTF-8"},
+                content=content,
+            )
+
+        client = SafeHttpClient(
+            resolver=lambda _hostname, _port: [PUBLIC_IP],
+            rate_limiter=RateLimiter(),
+            transport=httpx.MockTransport(handler),
+        )
+        connector = ConfiguredHTMLListingConnector(client_factory=lambda: client)
+
+        candidates = connector.discover(self.endpoint, cursor=None)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0].canonical_url, "https://example.com/files/rule-one.pdf")
+        self.assertEqual(
+            candidates[0].metadata_hints["document_identity_url"],
+            "https://example.com/publications/rule-one/",
+        )
+        self.assertEqual(
+            candidates[0].metadata_hints["source_detail_page"],
+            "https://example.com/publications/rule-one/",
+        )
+
     def test_identical_bytes_are_stored_once_but_observed_per_run(self) -> None:
         first_run, _ = create_source_run(self.endpoint, trigger=SourceRun.Trigger.MANUAL)
         candidate = self.make_candidate(first_run)
@@ -271,7 +322,12 @@ class JpdpSeedTestCase(TestCase):
         self.assertEqual(endpoint.collection.authority.country_code, "MY")
         self.assertEqual(endpoint.allowed_domains, ["pdp.gov.my"])
         self.assertEqual(endpoint.connector_type, SourceEndpoint.ConnectorType.HTML_LISTING)
-        self.assertEqual(endpoint.connector_configurations.count(), 1)
+        self.assertEqual(endpoint.connector_configuration_version, 2)
+        self.assertEqual(endpoint.connector_configurations.count(), 2)
+        self.assertFalse(endpoint.connector_configurations.get(version=1).is_active)
+        self.assertTrue(
+            endpoint.connector_configurations.get(version=2).configuration["follow_detail_pages"]
+        )
         self.assertIn("/ppdpv1/en/akta/", endpoint.discovery_url)
         self.assertEqual(endpoint.health_state, SourceEndpoint.HealthState.HEALTHY)
         self.assertEqual(endpoint.next_poll_at, original_next_poll_at)

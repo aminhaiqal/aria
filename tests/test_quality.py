@@ -130,6 +130,52 @@ class QualityAssessmentTestCase(TestCase):
         self.assertEqual(QualityAssessmentRun.objects.count(), 1)
         self.assertEqual(DocumentQualityAssessment.objects.count(), 3)
 
+    def test_operational_quality_run_assesses_latest_version_per_identity(self) -> None:
+        identity_url = "https://example.com/library/unique/"
+        identity = self.collection.document_identities.get(canonical_url=identity_url)
+        existing_version = identity.versions.get()
+        source_run = (
+            existing_version.evidence_records.get().raw_artifact.observations.get().source_run
+        )
+        linked_url = "https://example.com/files/unique-current/"
+        candidate, _ = observe_candidate(
+            source_run,
+            CandidateData(
+                discovered_url=linked_url,
+                canonical_url=linked_url,
+                fingerprint="f" * 64,
+                metadata_hints={"document_identity_url": identity_url},
+            ),
+        )
+        current_content = self._html(
+            "Current Security Safeguards Standard",
+            "Current security safeguards require tested technical controls. ",
+        )
+        attempt = begin_fetch_attempt(candidate, source_run, request_headers={})
+        observation = complete_fetch(
+            attempt,
+            FetchResponse(
+                requested_url=linked_url,
+                final_url=linked_url,
+                status_code=200,
+                headers={"content-type": "text/html"},
+                redirect_chain=[],
+                resolved_addresses=["93.184.216.34"],
+                content=current_content,
+            ),
+            store=FilesystemArtifactStore(self.storage_root),
+        )
+        with override_settings(OBJECT_STORAGE_ROOT=self.storage_root):
+            extract_artifact(observation.raw_artifact)
+
+        run = assess_collection_quality(self.collection)
+
+        identity.refresh_from_db()
+        self.assertEqual(identity.versions.count(), 2)
+        self.assertEqual(run.document_count, 3)
+        assessment = run.document_assessments.get(document_version__identity=identity)
+        self.assertEqual(assessment.document_version.title, "Current Security Safeguards Standard")
+
     def test_quality_api_exposes_metrics_and_findings_read_only(self) -> None:
         run = assess_collection_quality(self.collection)
         user = get_user_model().objects.create_superuser(

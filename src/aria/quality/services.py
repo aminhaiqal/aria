@@ -17,8 +17,10 @@ from aria.quality.models import (
     QualityFinding,
 )
 
-RULESET = "aria-extraction-quality-v1"
+RULESET = "aria-extraction-quality-v2"
 DEFAULT_CONFIGURATION = {
+    "version_selection": "latest_per_identity",
+    "title_strategy": "version_then_identity",
     "minimum_non_whitespace_characters_review": 100,
     "minimum_non_whitespace_characters_warning": 400,
     "minimum_section_count_warning": 2,
@@ -61,9 +63,14 @@ def _sha256_json(value: Any) -> str:
     return hashlib.sha256(_canonical_json(value).encode()).hexdigest()
 
 
-def _versions_for_collection(collection: PublicationCollection):
-    return (
-        DocumentVersion.objects.filter(identity__collection=collection)
+def _versions_for_collection(
+    collection: PublicationCollection, version_selection: str
+) -> list[DocumentVersion]:
+    queryset = (
+        DocumentVersion.objects.filter(
+            identity__collection=collection,
+            identity__superseded_by__isnull=True,
+        )
         .select_related("identity", "identity__collection")
         .prefetch_related(
             "evidence_records__raw_artifact",
@@ -71,8 +78,14 @@ def _versions_for_collection(collection: PublicationCollection):
             "sections__source_artifact",
             "sections__extraction_run__extracted_document",
         )
-        .order_by("id")
     )
+    if version_selection == "latest_per_identity":
+        queryset = queryset.order_by("identity_id", "-created_at", "-id").distinct("identity_id")
+    elif version_selection == "all_versions":
+        queryset = queryset.order_by("id")
+    else:
+        raise ValueError(f"Unsupported quality version selection '{version_selection}'.")
+    return sorted(queryset, key=lambda version: str(version.id))
 
 
 def corpus_fingerprint(versions: list[DocumentVersion]) -> str:
@@ -150,7 +163,12 @@ def _assess_version(
     heading_count = sum(section.section_type == "heading" for section in sections)
     missing_locator_count = sum(not _has_precise_locator(section) for section in sections)
 
-    title_tokens = _tokenize(version.title)
+    effective_title = version.title
+    title_source = "document_version"
+    if not effective_title.strip() and configuration["title_strategy"] == "version_then_identity":
+        effective_title = version.identity.canonical_title
+        title_source = "document_identity" if effective_title.strip() else "missing"
+    title_tokens = _tokenize(effective_title)
     content_tokens = _tokenize(version.plain_content)
     title_token_coverage = (
         len(title_tokens & content_tokens) / len(title_tokens) if title_tokens else None
@@ -213,7 +231,7 @@ def _assess_version(
                 threshold=configuration["minimum_section_count_warning"],
             )
         )
-    if not version.title.strip():
+    if not effective_title.strip():
         findings.append(
             _finding(
                 "missing_title",
@@ -255,6 +273,18 @@ def _assess_version(
                 normalized_content_sha256=version.normalized_content_sha256,
                 duplicate_group_size=len(duplicate_group),
                 document_version_ids=duplicate_group,
+            )
+        )
+
+    primary_document_links = version.normalized_metadata.get("primary_document_links", [])
+    if artifact.detected_content_type == "text/html" and primary_document_links:
+        findings.append(
+            _finding(
+                "linked_document_pending",
+                QualityFinding.Severity.REVIEW_REQUIRED,
+                "The landing page identifies a primary document that has not become the "
+                "current evidence version.",
+                primary_document_links=primary_document_links,
             )
         )
 
@@ -344,10 +374,12 @@ def _assess_version(
         "title_token_coverage": (
             round(title_token_coverage, 6) if title_token_coverage is not None else None
         ),
+        "title_source": title_source,
         "repeated_characters": repeated_characters,
         "repeated_content_ratio": round(repeated_content_ratio, 6),
         "duplicate_group_size": len(duplicate_group),
         "duplicate_document_version_ids": duplicate_group,
+        "primary_document_links": primary_document_links,
         "page_count": page_count,
         "extracted_pages": extracted_pages if is_pdf else None,
         "page_coverage": round(page_coverage, 6) if page_coverage is not None else None,
@@ -431,7 +463,7 @@ def assess_collection_quality(
     configuration: dict[str, Any] | None = None,
 ) -> QualityAssessmentRun:
     effective_configuration = {**DEFAULT_CONFIGURATION, **(configuration or {})}
-    versions = list(_versions_for_collection(collection))
+    versions = _versions_for_collection(collection, effective_configuration["version_selection"])
     configuration_hash = _sha256_json(
         {"ruleset": RULESET, "configuration": effective_configuration}
     )

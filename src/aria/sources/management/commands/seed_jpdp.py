@@ -60,7 +60,7 @@ class Command(BaseCommand):
                 "pagination_strategy": SourceEndpoint.PaginationStrategy.NONE,
                 "expected_content_types": ["text/html", "application/pdf"],
                 "requires_javascript": False,
-                "connector_configuration_version": 1,
+                "connector_configuration_version": 2,
                 "is_enabled": True,
             },
         )
@@ -82,7 +82,39 @@ class Command(BaseCommand):
                     "document_extensions": [".pdf", ".doc", ".docx", ".csv", ".json", ".xml"],
                     "max_candidates": 20,
                 },
-                "notes": "First official ARIA source approved for the Phase 2 pilot.",
+                "notes": "Historical Phase 2 listing-only configuration.",
+                "is_active": False,
+            },
+        )
+        ConnectorConfiguration.objects.update_or_create(
+            endpoint=endpoint,
+            version=2,
+            defaults={
+                "configuration": {
+                    "link_selector": "a[href]",
+                    "include_path_prefixes": [
+                        "/ppdpv1/en/akta/",
+                        "/ppdpv1/wp-content/uploads/",
+                    ],
+                    "upload_path_prefixes": ["/ppdpv1/wp-content/uploads/"],
+                    "exclude_path_suffixes": ["/feed/"],
+                    "document_extensions": [
+                        ".pdf",
+                        ".doc",
+                        ".docx",
+                        ".csv",
+                        ".json",
+                        ".xml",
+                    ],
+                    "max_candidates": 20,
+                    "follow_detail_pages": True,
+                    "detail_content_selector": ".betterdocs-entry-content",
+                    "max_detail_pages": 20,
+                },
+                "notes": (
+                    "JPDP Phase 3B configuration: follow official document links from "
+                    "BetterDocs detail pages while retaining the page URL as document identity."
+                ),
                 "is_active": True,
             },
         )
