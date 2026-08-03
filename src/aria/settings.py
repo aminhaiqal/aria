@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "aria.ocr",
     "aria.documents",
     "aria.knowledge",
+    "aria.comparisons",
     "aria.quality",
     "aria.events",
     "aria.health",
