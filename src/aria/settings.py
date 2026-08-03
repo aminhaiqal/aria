@@ -187,6 +187,7 @@ CELERY_TASK_ROUTES = {
     "aria.extraction.tasks.*": {"queue": "extraction", "routing_key": "extraction"},
     "aria.ocr.tasks.*": {"queue": "ocr", "routing_key": "ocr"},
     "aria.knowledge.tasks.*": {"queue": "normalization", "routing_key": "normalization"},
+    "aria.comparisons.tasks.*": {"queue": "diff", "routing_key": "diff"},
     "aria.events.tasks.*": {"queue": "event_publish", "routing_key": "event_publish"},
 }
 CELERY_BEAT_SCHEDULE = {

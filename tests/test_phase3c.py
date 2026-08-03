@@ -12,8 +12,24 @@ from aria.collections.models import PublicationCollection
 from aria.comparisons.anchors import extract_anchor_specs, project_active_version_anchors
 from aria.comparisons.audit import audit_active_versions, audit_document_version
 from aria.comparisons.contracts import ProvenanceStatus, RepresentationKind
-from aria.comparisons.lineage import project_active_version_lineage, project_version_lineage
-from aria.comparisons.models import StructuralAnchor, VersionLineageAssessment
+from aria.comparisons.lineage import (
+    LINEAGE_CONFIGURATION,
+    lineage_configuration_hash,
+    project_active_version_lineage,
+    project_version_lineage,
+)
+from aria.comparisons.models import (
+    ComparisonItem,
+    DocumentComparison,
+    StructuralAnchor,
+    VersionLineageAssessment,
+)
+from aria.comparisons.services import (
+    ComparisonEligibilityError,
+    compare_all_eligible_versions,
+    compare_document_versions,
+    eligible_comparison_pairs,
+)
 from aria.documents.models import (
     DocumentIdentity,
     DocumentVersion,
@@ -302,3 +318,114 @@ class StructuralAnchorTestCase(Phase3CFixture):
             ),
             ["clause:1:occurrence:1", "clause:1:occurrence:2"],
         )
+
+
+class DocumentComparisonTestCase(Phase3CFixture):
+    def test_deterministic_comparison_classifies_changes_and_replays(self) -> None:
+        before = self.create_version(
+            "Section 1 Purpose\nOrganizations protect personal data.\n"
+            "Section 2 Notice\nGive notice."
+        )
+        after = self.create_version(
+            "Section 1 Purpose\nOrganizations must protect personal data.\n"
+            "Section 3 Security\nUse safeguards.\nSection 2 Notice\nGive notice."
+        )
+
+        comparison, created = compare_document_versions(before, after)
+        replay, replay_created = compare_document_versions(before, after)
+
+        self.assertTrue(created)
+        self.assertFalse(replay_created)
+        self.assertEqual(comparison.id, replay.id)
+        self.assertEqual(DocumentComparison.objects.count(), 1)
+        self.assertEqual(comparison.modified_count, 1)
+        self.assertEqual(comparison.added_count, 1)
+        self.assertEqual(comparison.unchanged_count, 1)
+        self.assertEqual(comparison.items.count(), 3)
+        modified = comparison.items.get(change_type=ComparisonItem.ChangeType.MODIFIED)
+        self.assertEqual(modified.match_strategy, "canonical_key")
+        self.assertEqual(
+            modified.evidence["before"]["artifact_sha256"],
+            modified.before_anchor.source_artifact.sha256,
+        )
+        self.assertEqual(
+            modified.evidence["after"]["artifact_sha256"],
+            modified.after_anchor.source_artifact.sha256,
+        )
+
+    def test_formatting_only_and_moved_anchors_are_not_content_modifications(self) -> None:
+        before = self.create_version("Section 1 First\nA  B\nSection 2 Second\nSame text.")
+        after = self.create_version("Section 2 Second\nSame text.\nSection 1 First\nA B")
+
+        comparison, _ = compare_document_versions(before, after)
+
+        self.assertEqual(comparison.format_only_count, 1)
+        self.assertEqual(comparison.moved_count, 1)
+        self.assertEqual(comparison.modified_count, 0)
+
+    def test_cross_representation_and_same_artifact_pairs_are_blocked(self) -> None:
+        html = self.create_version("HTML publication")
+        pdf = self.create_version("PDF publication", extractor_name="pdf")
+
+        with self.assertRaisesMessage(
+            ComparisonEligibilityError,
+            "Cross-representation comparisons",
+        ):
+            compare_document_versions(html, pdf)
+
+        duplicate_extraction = self.create_version("Duplicate extraction", with_evidence=False)
+        html_assessment, _ = project_version_lineage(html)
+        VersionLineageAssessment.objects.create(
+            document_version=duplicate_extraction,
+            representation_kind=VersionLineageAssessment.RepresentationKind.LANDING_HTML,
+            comparison_track_key=html_assessment.comparison_track_key,
+            provenance_status=VersionLineageAssessment.ProvenanceStatus.RECONSTRUCTABLE,
+            source_artifact=html_assessment.source_artifact,
+            extraction_run=html_assessment.extraction_run,
+            ruleset=html_assessment.ruleset,
+            configuration=LINEAGE_CONFIGURATION,
+            configuration_hash=lineage_configuration_hash(),
+            basis={"test": "same_artifact_reextraction"},
+        )
+
+        with self.assertRaisesMessage(
+            ComparisonEligibilityError,
+            "same artifact",
+        ):
+            compare_document_versions(html, duplicate_extraction)
+
+    def test_eligible_pair_projection_uses_distinct_artifacts_in_one_track(self) -> None:
+        before = self.create_version("Section 1 Earlier\nEarlier text.")
+        after = self.create_version("Section 1 Later\nLater text.")
+        project_active_version_lineage()
+
+        pairs = eligible_comparison_pairs(self.identity)
+        summary = compare_all_eligible_versions()
+
+        self.assertEqual([(pair[0].id, pair[1].id) for pair in pairs], [(before.id, after.id)])
+        self.assertEqual(summary.eligible_pair_count, 1)
+        self.assertEqual(summary.completed_count, 1)
+        self.assertEqual(summary.reused_count, 0)
+
+    def test_removed_and_ambiguous_candidates_remain_explicit(self) -> None:
+        removed_before = self.create_version(
+            "Section 1 Stable\nStable text.\nSection 2 Removed\nRemoved text."
+        )
+        removed_after = self.create_version("Section 1 Stable\nStable text.")
+
+        removed_comparison, _ = compare_document_versions(removed_before, removed_after)
+
+        self.assertEqual(removed_comparison.removed_count, 1)
+        self.assertEqual(removed_comparison.modified_count, 0)
+
+        ambiguous_before = self.create_version("Section 9 Requirement\nShared requirements.")
+        ambiguous_after = self.create_version(
+            "Section 10 Candidate A\nShared requirements.\n"
+            "Section 11 Candidate B\nShared requirements."
+        )
+
+        ambiguous_comparison, _ = compare_document_versions(ambiguous_before, ambiguous_after)
+
+        self.assertEqual(ambiguous_comparison.ambiguous_count, 1)
+        ambiguous = ambiguous_comparison.items.get(change_type=ComparisonItem.ChangeType.AMBIGUOUS)
+        self.assertEqual(len(ambiguous.text_delta["candidate_after_anchor_ids"]), 2)
