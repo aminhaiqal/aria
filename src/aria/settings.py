@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     "aria.fetching",
     "aria.artifacts",
     "aria.extraction",
+    "aria.ocr",
     "aria.documents",
     "aria.knowledge",
     "aria.quality",
@@ -139,6 +140,16 @@ EMBEDDING_PROVIDER = os.getenv("ARIA_EMBEDDING_PROVIDER", "local_hash")
 EMBEDDING_MODEL = os.getenv("ARIA_EMBEDDING_MODEL", "aria-token-hash-v1")
 EMBEDDING_DIMENSIONS = int(os.getenv("ARIA_EMBEDDING_DIMENSIONS", "384"))
 PDF_OCR_MIN_CHARACTERS_PER_PAGE = int(os.getenv("ARIA_PDF_OCR_MIN_CHARACTERS_PER_PAGE", "40"))
+OCR_PROFILE_NAME = os.getenv("ARIA_OCR_PROFILE_NAME", "jpdp-msa-eng")
+OCR_PROFILE_VERSION = os.getenv("ARIA_OCR_PROFILE_VERSION", "1")
+OCR_LANGUAGES = os.getenv("ARIA_OCR_LANGUAGES", "msa+eng")
+OCR_BINARY = os.getenv("ARIA_OCR_BINARY", "ocrmypdf")
+OCR_TESSERACT_BINARY = os.getenv("ARIA_OCR_TESSERACT_BINARY", "tesseract")
+OCR_DECLARED_TOOLCHAIN = os.getenv("ARIA_OCR_DECLARED_TOOLCHAIN", "aria-ocr-bookworm-v1")
+OCR_PROCESS_TIMEOUT_SECONDS = int(os.getenv("ARIA_OCR_PROCESS_TIMEOUT_SECONDS", "1800"))
+OCR_TESSERACT_TIMEOUT_SECONDS = int(os.getenv("ARIA_OCR_TESSERACT_TIMEOUT_SECONDS", "300"))
+OCR_MAX_INPUT_BYTES = int(os.getenv("ARIA_OCR_MAX_INPUT_BYTES", str(50 * 1024 * 1024)))
+OCR_STALE_AFTER_MINUTES = int(os.getenv("ARIA_OCR_STALE_AFTER_MINUTES", "45"))
 
 CELERY_BROKER_URL = os.getenv("ARIA_CELERY_BROKER_URL", "redis://localhost:6379/1")
 CELERY_TASK_IGNORE_RESULT = True
@@ -164,6 +175,7 @@ CELERY_TASK_ROUTES = {
     "aria.discovery.tasks.*": {"queue": "discovery", "routing_key": "discovery"},
     "aria.fetching.tasks.*": {"queue": "http_fetch", "routing_key": "http_fetch"},
     "aria.extraction.tasks.*": {"queue": "extraction", "routing_key": "extraction"},
+    "aria.ocr.tasks.*": {"queue": "ocr", "routing_key": "ocr"},
     "aria.events.tasks.*": {"queue": "event_publish", "routing_key": "event_publish"},
 }
 CELERY_BEAT_SCHEDULE = {

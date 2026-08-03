@@ -3,6 +3,7 @@ name: aria
 x-app: &app
   build:
     context: .
+    target: app
   env_file:
     - .env
   environment:
@@ -90,7 +91,25 @@ services:
       - worker
       - --loglevel=${ARIA_LOG_LEVEL:-INFO}
       - --concurrency=${ARIA_WORKER_CONCURRENCY:-2}
-      - --queues=discovery,http_fetch,browser_fetch,extraction,ocr,normalization,diff,event_publish
+      - --queues=discovery,http_fetch,browser_fetch,extraction,normalization,diff,event_publish
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  ocr-worker:
+    <<: *app
+    build:
+      context: .
+      target: ocr
+    command:
+      - celery
+      - --app=aria
+      - worker
+      - --loglevel=${ARIA_LOG_LEVEL:-INFO}
+      - --concurrency=1
+      - --queues=ocr
+      - --hostname=ocr@%h
+    stop_grace_period: 2m
     depends_on:
       migrate:
         condition: service_completed_successfully

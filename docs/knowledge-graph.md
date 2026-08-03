@@ -28,7 +28,8 @@ DocumentIdentity -> DocumentVersion -> NormalizedSection
   DOM path for every block.
 - BetterDocs extraction prefers `.betterdocs-entry-content`, records primary official file links
   and their DOM paths, and excludes category/sidebar shells.
-- PDF extraction uses pypdf layout-mode text extraction and stores one traceable block per page.
+- PDF extraction uses pypdf layout mode and deterministically falls back to plain text extraction
+  when OCR text lacks layout coordinates. It stores one traceable block per page.
 - A PDF averaging fewer than the configured non-whitespace characters per page is marked
   `ocr_required`. Phase 3A routes it to review; it does not pretend that OCR has occurred.
 - Extracted output is keyed by artifact, extractor version, and configuration hash. Replaying the
@@ -50,7 +51,9 @@ content for the same identity reuses an immutable `DocumentVersion`. Extraction 
 different observations contain the same artifact bytes, while every observation still gets a
 `VersionEvidence` record linking its identity/version to the raw artifact and extractor run.
 Normalized sections retain artifact SHA-256, observed URL, page or DOM locator, and character
-offsets.
+offsets. OCR-derived sections use the official PDF as `source_artifact` while their extraction run
+points to the searchable derivative; locators also contain the derivative hash, OCR run, profile,
+and configuration hash.
 
 For linked publications, the detail-page URL remains the canonical document identity. The fetched
 file URL is retained as the artifact observation and version-evidence URL. A deterministic
@@ -91,6 +94,8 @@ Other read-only endpoints are:
 | --- | --- |
 | Extraction runs | `/api/v1/extraction-runs/` |
 | Extracted documents | `/api/v1/extracted-documents/` |
+| OCR runs | `/api/v1/ocr-runs/` |
+| Artifact derivatives | `/api/v1/artifact-derivatives/` |
 | Document identities | `/api/v1/documents/` |
 | Document versions | `/api/v1/document-versions/` |
 | Normalized sections | `/api/v1/sections/` |
@@ -99,7 +104,8 @@ Other read-only endpoints are:
 | Graph edges | `/api/v1/graph-edges/` |
 
 Extraction quality is assessed over immutable document versions after projection. See
-[Phase 3B extraction quality](quality.md) for its report command and read-only endpoints.
+[Phase 3B extraction quality](quality.md) for its report command and read-only endpoints. See
+[Phase F self-hosted OCR](ocr.md) for derivative lineage and operations.
 
 ## Configuration
 

@@ -22,6 +22,8 @@ publications before any AI interpretation is introduced.
 - A structural evidence graph from authority to raw artifact in PostgreSQL
 - PostgreSQL full-text search plus pgvector retrieval with a deterministic local baseline
 - Deterministic, corpus-aware extraction quality runs with provenance-backed findings
+- Immutable OCR derivatives with source/output hashes, toolchain records, and page metrics
+- A dedicated self-hosted OCRmyPDF/Tesseract worker with Malay and English language data
 - Explicit pipeline states from discovery through publication and failure handling
 - Transactional pipeline events and an outbox ready for a future delivery transport
 - Append-only audit records
@@ -30,9 +32,9 @@ publications before any AI interpretation is introduced.
 - Liveness and database/Redis readiness probes
 - A self-hosted Docker Compose stack using pgvector-enabled PostgreSQL and Redis
 
-RSS discovery, browser retrieval, OCR execution, legal-relationship extraction, version diffing,
-and change publication remain for later phases. Quality findings identify OCR and extraction review
-candidates but do not alter source evidence or claim that review has occurred.
+RSS discovery, browser retrieval, legal-relationship extraction, version diffing, and change
+publication remain for later phases. OCR output is an explicit derivative and never replaces or
+mutates the official source artifact.
 
 ## Current milestone
 
@@ -40,8 +42,9 @@ candidates but do not alter source evidence or claim that review has occurred.
 - Phase 2 JPDP retrieval pilot: complete
 - Phase 3A deterministic extraction and evidence graph: implemented
 - Phase 3B extraction quality and JPDP linked-file remediation: implemented
+- Phase 3F bounded self-hosted OCR completion: implemented
 - Phase 2 source breadth: RSS and browser fallback remain open
-- Next implementation slice: bounded self-hosted OCR for five JPDP image-only PDFs
+- Next implementation slice: evidence-backed structural comparison of immutable document versions
 
 ## Local setup
 
@@ -74,6 +77,8 @@ make makemigrations  # generate model migrations
 make migrate         # apply migrations
 make extract         # replay every archived artifact through extraction locally
 make route-linked    # route and queue official files linked by archived JPDP pages
+make plan-ocr        # list the deterministic OCR input set and current statuses
+make ocr             # process OCR synchronously inside the isolated OCR container
 make quality         # assess the current JPDP extraction corpus without network access
 make verify-storage  # write/read/delete one temporary R2 probe
 make superuser       # create an admin user
@@ -101,4 +106,5 @@ remain in the self-hosted PostgreSQL service.
 
 See [Foundation architecture](docs/foundation.md), [Phase 2 retrieval](docs/retrieval.md),
 [Phase 3A extraction and evidence graph](docs/knowledge-graph.md), and
-[Phase 3B extraction quality](docs/quality.md) for design decisions and operating instructions.
+[Phase 3B extraction quality](docs/quality.md), and [Phase F self-hosted OCR](docs/ocr.md) for
+design decisions and operating instructions.

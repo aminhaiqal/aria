@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from aria.artifacts.models import ArtifactObservation, RawArtifact
+from aria.artifacts.models import ArtifactDerivative, ArtifactObservation, RawArtifact
 from aria.authorities.models import Authority
 from aria.collections.models import PublicationCollection
 from aria.discovery.models import DiscoveredCandidate, SourceRun
@@ -8,6 +8,7 @@ from aria.documents.models import DocumentIdentity, DocumentVersion, NormalizedS
 from aria.extraction.models import ExtractedDocument, ExtractionRun
 from aria.fetching.models import FetchAttempt
 from aria.knowledge.models import GraphEdge, GraphNode, SectionEmbedding
+from aria.ocr.models import OCRRun
 from aria.quality.models import (
     DocumentQualityAssessment,
     QualityAssessmentRun,
@@ -202,6 +203,26 @@ class ArtifactObservationSerializer(serializers.ModelSerializer):
         )
 
 
+class ArtifactDerivativeSerializer(serializers.ModelSerializer):
+    source_sha256 = serializers.CharField(source="source_artifact.sha256", read_only=True)
+    derived_sha256 = serializers.CharField(source="derived_artifact.sha256", read_only=True)
+
+    class Meta:
+        model = ArtifactDerivative
+        fields = (
+            "id",
+            "source_artifact",
+            "source_sha256",
+            "derived_artifact",
+            "derived_sha256",
+            "transformation_type",
+            "profile",
+            "configuration_hash",
+            "metadata",
+            "created_at",
+        )
+
+
 class ExtractionRunSerializer(serializers.ModelSerializer):
     artifact_sha256 = serializers.CharField(source="raw_artifact.sha256", read_only=True)
 
@@ -243,6 +264,34 @@ class ExtractedDocumentSerializer(serializers.ModelSerializer):
             "requires_ocr",
             "block_count",
             "created_at",
+        )
+
+
+class OCRRunSerializer(serializers.ModelSerializer):
+    source_sha256 = serializers.CharField(source="source_artifact.sha256", read_only=True)
+
+    class Meta:
+        model = OCRRun
+        fields = (
+            "id",
+            "source_artifact",
+            "source_sha256",
+            "profile_name",
+            "profile_version",
+            "configuration",
+            "configuration_hash",
+            "status",
+            "searchable_pdf_derivative",
+            "text_sidecar_derivative",
+            "toolchain",
+            "page_count",
+            "non_whitespace_characters",
+            "started_at",
+            "finished_at",
+            "error_code",
+            "error_message",
+            "created_at",
+            "updated_at",
         )
 
 

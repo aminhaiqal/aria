@@ -130,4 +130,9 @@ projection while preserving raw artifact and observation links through every der
 
 On 2026-08-04, linked-file remediation routed exactly 18 JPDP detail pages. All 18 official PDFs
 were archived as content-addressed Cloudflare R2 artifacts. Thirteen produced native text; five
-image-only PDFs were retained and marked `ocr_required` without executing OCR.
+image-only PDFs were retained and marked `ocr_required` before Phase F processing.
+
+Phase F then created five searchable-PDF and five text-sidecar derivatives under the R2
+`derived/ocr/sha256/` namespace. The five original source hashes and bytes remain unchanged. Each
+derivative has an append-only source relationship, processing profile, configuration hash,
+toolchain record, and page metrics. See [Phase F self-hosted OCR](ocr.md).

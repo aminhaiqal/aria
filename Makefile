@@ -1,4 +1,4 @@
-.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser extract route-linked quality verify-storage
+.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser extract route-linked plan-ocr ocr quality verify-storage
 
 bootstrap:
 	@test -f .env || cp .env.example .env
@@ -14,7 +14,7 @@ down:
 	docker compose down
 
 logs:
-	docker compose logs -f api worker beat
+	docker compose logs -f api worker ocr-worker beat
 
 migrate:
 	docker compose run --rm migrate
@@ -39,6 +39,12 @@ extract:
 
 route-linked:
 	docker compose exec api python manage.py route_linked_publications --queue
+
+plan-ocr:
+	docker compose exec api python manage.py plan_ocr
+
+ocr:
+	docker compose exec ocr-worker python manage.py queue_ocr --sync
 
 quality:
 	docker compose exec api python manage.py assess_extraction_quality

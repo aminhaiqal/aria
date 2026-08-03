@@ -1,4 +1,4 @@
-FROM python:3.13-slim-bookworm
+FROM python:3.13-slim-bookworm AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -22,3 +22,17 @@ USER aria
 EXPOSE 8000
 
 CMD ["gunicorn", "aria.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--threads", "4", "--access-logfile", "-", "--error-logfile", "-"]
+
+FROM base AS app
+
+FROM base AS ocr
+
+USER root
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        ghostscript \
+        ocrmypdf \
+        tesseract-ocr-eng \
+        tesseract-ocr-msa \
+    && rm -rf /var/lib/apt/lists/*
+USER aria

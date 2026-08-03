@@ -21,13 +21,28 @@ class ArtifactStorageIntegrityError(ArtifactStorageError):
 class ArtifactStore(Protocol):
     backend_name: str
 
-    def put_if_absent(self, sha256: str, content: bytes, content_type: str) -> str: ...
+    def put_if_absent(
+        self,
+        sha256: str,
+        content: bytes,
+        content_type: str,
+        *,
+        namespace: str = "",
+    ) -> str: ...
 
     def read(self, key: str) -> bytes: ...
 
 
-def build_artifact_key(sha256: str) -> str:
-    return f"sha256/{sha256[:2]}/{sha256[2:4]}/{sha256}"
+def build_artifact_key(sha256: str, *, namespace: str = "") -> str:
+    normalized_namespace = namespace.strip("/")
+    if normalized_namespace and (
+        normalized_namespace.startswith(".")
+        or ".." in normalized_namespace.split("/")
+        or "//" in normalized_namespace
+    ):
+        raise ArtifactStorageError("Artifact namespace is not safe.")
+    prefix = f"{normalized_namespace}/" if normalized_namespace else ""
+    return f"{prefix}sha256/{sha256[:2]}/{sha256[2:4]}/{sha256}"
 
 
 class FilesystemArtifactStore:
@@ -36,10 +51,17 @@ class FilesystemArtifactStore:
     def __init__(self, root: Path | str):
         self.root = Path(root)
 
-    def put_if_absent(self, sha256: str, content: bytes, content_type: str) -> str:
+    def put_if_absent(
+        self,
+        sha256: str,
+        content: bytes,
+        content_type: str,
+        *,
+        namespace: str = "",
+    ) -> str:
         if hashlib.sha256(content).hexdigest() != sha256:
             raise ArtifactStorageIntegrityError("Content does not match its SHA-256 digest.")
-        key = build_artifact_key(sha256)
+        key = build_artifact_key(sha256, namespace=namespace)
         path = self.root / key
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -94,10 +116,17 @@ class S3ArtifactStore:
             ),
         )
 
-    def put_if_absent(self, sha256: str, content: bytes, content_type: str) -> str:
+    def put_if_absent(
+        self,
+        sha256: str,
+        content: bytes,
+        content_type: str,
+        *,
+        namespace: str = "",
+    ) -> str:
         if hashlib.sha256(content).hexdigest() != sha256:
             raise ArtifactStorageIntegrityError("Content does not match its SHA-256 digest.")
-        key = build_artifact_key(sha256)
+        key = build_artifact_key(sha256, namespace=namespace)
         try:
             existing = self.client.head_object(Bucket=self.bucket, Key=key)
         except ClientError as error:
@@ -145,3 +174,45 @@ def get_artifact_store(backend: str | None = None) -> ArtifactStore:
             region=settings.OBJECT_STORAGE_REGION,
         )
     raise ImproperlyConfigured(f"Unsupported artifact storage backend: {selected_backend}")
+
+
+def persist_artifact(
+    content: bytes,
+    content_type: str,
+    *,
+    backend: str | None = None,
+    store: ArtifactStore | None = None,
+    namespace: str = "",
+):
+    from aria.artifacts.models import RawArtifact
+
+    digest = hashlib.sha256(content).hexdigest()
+    existing = RawArtifact.objects.filter(sha256=digest).first()
+    if existing is not None:
+        if existing.byte_size != len(content):
+            raise ArtifactStorageIntegrityError(
+                "Existing artifact byte size does not match the derived content."
+            )
+        return existing
+
+    artifact_store = store or get_artifact_store(backend)
+    storage_key = artifact_store.put_if_absent(
+        digest,
+        content,
+        content_type,
+        namespace=namespace,
+    )
+    artifact, created = RawArtifact.objects.get_or_create(
+        sha256=digest,
+        defaults={
+            "byte_size": len(content),
+            "detected_content_type": content_type,
+            "storage_backend": artifact_store.backend_name,
+            "storage_key": storage_key,
+        },
+    )
+    if not created and artifact.byte_size != len(content):
+        raise ArtifactStorageIntegrityError(
+            "Concurrent artifact record does not match the derived content."
+        )
+    return artifact

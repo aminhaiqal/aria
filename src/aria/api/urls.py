@@ -1,6 +1,7 @@
 from rest_framework.routers import DefaultRouter
 
 from aria.api.views import (
+    ArtifactDerivativeViewSet,
     ArtifactObservationViewSet,
     AuthorityViewSet,
     DiscoveredCandidateViewSet,
@@ -14,6 +15,7 @@ from aria.api.views import (
     GraphNodeViewSet,
     KnowledgeSearchViewSet,
     NormalizedSectionViewSet,
+    OCRRunViewSet,
     PublicationCollectionViewSet,
     QualityAssessmentRunViewSet,
     QualityFindingViewSet,
@@ -31,8 +33,10 @@ router.register("candidates", DiscoveredCandidateViewSet)
 router.register("fetch-attempts", FetchAttemptViewSet)
 router.register("artifacts", RawArtifactViewSet)
 router.register("artifact-observations", ArtifactObservationViewSet)
+router.register("artifact-derivatives", ArtifactDerivativeViewSet)
 router.register("extraction-runs", ExtractionRunViewSet)
 router.register("extracted-documents", ExtractedDocumentViewSet)
+router.register("ocr-runs", OCRRunViewSet)
 router.register("documents", DocumentIdentityViewSet)
 router.register("document-versions", DocumentVersionViewSet)
 router.register("sections", NormalizedSectionViewSet)

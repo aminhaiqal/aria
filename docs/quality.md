@@ -2,10 +2,10 @@
 
 ## Scope
 
-Phase 3B measures whether deterministic extraction produced usable,
-source-traceable text before ARIA adds OCR, version diffs, or legal interpretation. It is entirely
-offline and self-hosted: the evaluator reads PostgreSQL records derived from immutable artifacts
-and stores its report in PostgreSQL.
+Phase 3B measures whether deterministic extraction produced usable, source-traceable text before
+ARIA adds version diffs or legal interpretation. It is entirely offline and self-hosted: the
+evaluator reads PostgreSQL records derived from immutable artifacts and stores its report in
+PostgreSQL. Phase F now feeds explicitly traced OCR derivatives through the same quality boundary.
 
 Quality reports do not rewrite artifacts, extracted text, or immutable versions. Deterministic
 linked-file remediation may supersede an earlier identity alias, but it does not delete its audit
@@ -98,8 +98,20 @@ The v2 operational quality run covers 20 active identities and reports **10 pass
 immediate replay returned the same run ID, `f203f41b-385c-4006-96be-7de9dc9bb1ad`, and the same
 corpus fingerprint, `d9b13f9aeacb48cf40f820bcbc14a10b9d052622c3598b875125d2b3c1db019c`.
 
-## Next boundary
+## Phase F OCR result
 
-Add self-hosted OCR for only the five image-only PDFs now identified by artifact SHA-256 and page
-count. Preserve the original PDFs, store OCR output separately, and project page-level provenance
-before rerunning quality. Version diffing and legal interpretation remain outside that slice.
+The bounded OCR run processed exactly the five identified image-only PDFs with the versioned
+`jpdp-msa-eng:1` profile. Input/output page counts matched at 19, 17, 5, 8, and 7 pages. All five
+searchable PDFs and five text sidecars are stored in R2 with verified SHA-256 hashes, while the
+official source artifacts remain unchanged.
+
+The new operational corpus contains 19 current PDF versions and one substantive HTML version. The
+v2 quality run `463c4c58-4b90-4ad3-8e71-642345ab196a` reports **12 passed, 8 warnings, and 0 review
+required**, with 10 findings and no `linked_document_pending` findings. Its corpus fingerprint is
+`8a0a074c9597f38be44becd70005f2b5b59536973376390631c3d5781bde49a1`. Immediate replay returned
+the same run and counts.
+
+The remaining warnings are inspectable quality signals: five low title-token coverage findings,
+three incomplete native-PDF page-coverage findings, one repeated-content finding in an OCR
+document, and one missing-title finding. None is silently treated as reviewed. Structural version
+comparison and legal interpretation remain outside this milestone.

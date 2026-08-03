@@ -67,3 +67,57 @@ class ArtifactObservation(AppendOnlyModel):
 
     def __str__(self) -> str:
         return f"{self.candidate_id} observed {self.raw_artifact.sha256[:12]}…"
+
+
+class ArtifactDerivative(AppendOnlyModel):
+    class TransformationType(models.TextChoices):
+        OCR_SEARCHABLE_PDF = "ocr_searchable_pdf", "OCR searchable PDF"
+        OCR_TEXT_SIDECAR = "ocr_text_sidecar", "OCR text sidecar"
+
+    source_artifact = models.ForeignKey(
+        RawArtifact,
+        on_delete=models.PROTECT,
+        related_name="derived_outputs",
+    )
+    derived_artifact = models.ForeignKey(
+        RawArtifact,
+        on_delete=models.PROTECT,
+        related_name="derivations_as_output",
+    )
+    transformation_type = models.CharField(
+        max_length=32,
+        choices=TransformationType.choices,
+        db_index=True,
+    )
+    profile = models.CharField(max_length=128)
+    configuration_hash = models.CharField(
+        max_length=64,
+        validators=[RegexValidator(r"^[0-9a-f]{64}$")],
+    )
+    metadata = models.JSONField(default=dict)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=(
+                    "source_artifact",
+                    "derived_artifact",
+                    "transformation_type",
+                    "configuration_hash",
+                ),
+                name="unique_artifact_derivative_lineage",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(source_artifact=models.F("derived_artifact")),
+                name="artifact_derivative_differs_from_source",
+            ),
+        ]
+        indexes = [models.Index(fields=("source_artifact", "transformation_type", "created_at"))]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.source_artifact.sha256[:12]}… -> "
+            f"{self.derived_artifact.sha256[:12]}… ({self.transformation_type})"
+        )

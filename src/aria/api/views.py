@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet, ReadOnlyModelViewSet
 
 from aria.api.serializers import (
+    ArtifactDerivativeSerializer,
     ArtifactObservationSerializer,
     AuthoritySerializer,
     DiscoveredCandidateSerializer,
@@ -21,6 +22,7 @@ from aria.api.serializers import (
     GraphEdgeSerializer,
     GraphNodeSerializer,
     NormalizedSectionSerializer,
+    OCRRunSerializer,
     PublicationCollectionSerializer,
     QualityAssessmentRunSerializer,
     QualityFindingSerializer,
@@ -28,7 +30,7 @@ from aria.api.serializers import (
     SourceEndpointSerializer,
     SourceRunSerializer,
 )
-from aria.artifacts.models import ArtifactObservation, RawArtifact
+from aria.artifacts.models import ArtifactDerivative, ArtifactObservation, RawArtifact
 from aria.artifacts.storage import get_artifact_store
 from aria.authorities.models import Authority
 from aria.collections.models import PublicationCollection
@@ -38,6 +40,7 @@ from aria.extraction.models import ExtractedDocument, ExtractionRun
 from aria.fetching.models import FetchAttempt
 from aria.knowledge.embeddings import embed_text, embedding_configuration
 from aria.knowledge.models import GraphEdge, GraphNode
+from aria.ocr.models import OCRRun
 from aria.quality.models import (
     DocumentQualityAssessment,
     QualityAssessmentRun,
@@ -108,6 +111,11 @@ class ArtifactObservationViewSet(ReadOnlyModelViewSet):
     serializer_class = ArtifactObservationSerializer
 
 
+class ArtifactDerivativeViewSet(ReadOnlyModelViewSet):
+    queryset = ArtifactDerivative.objects.select_related("source_artifact", "derived_artifact")
+    serializer_class = ArtifactDerivativeSerializer
+
+
 class ExtractionRunViewSet(ReadOnlyModelViewSet):
     queryset = ExtractionRun.objects.select_related("raw_artifact")
     serializer_class = ExtractionRunSerializer
@@ -118,6 +126,17 @@ class ExtractedDocumentViewSet(ReadOnlyModelViewSet):
         "extraction_run", "raw_artifact"
     ).prefetch_related("blocks")
     serializer_class = ExtractedDocumentSerializer
+
+
+class OCRRunViewSet(ReadOnlyModelViewSet):
+    queryset = OCRRun.objects.select_related(
+        "source_artifact",
+        "searchable_pdf_derivative",
+        "searchable_pdf_derivative__derived_artifact",
+        "text_sidecar_derivative",
+        "text_sidecar_derivative__derived_artifact",
+    )
+    serializer_class = OCRRunSerializer
 
 
 class DocumentIdentityViewSet(ReadOnlyModelViewSet):

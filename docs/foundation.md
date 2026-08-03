@@ -3,9 +3,9 @@
 ## Scope
 
 This foundation implements Phase 1, the Phase 2 JPDP retrieval slice, Phase 3A deterministic
-extraction and evidence projection, and the first Phase 3B quality slice. It provides durable
-registry, workflow, retrieval, immutable evidence, document versioning, graph, search, and
-extraction-quality boundaries.
+extraction and evidence projection, Phase 3B quality and linked-file remediation, and Phase F
+self-hosted OCR completion. It provides durable registry, workflow, retrieval, immutable evidence,
+document versioning, OCR lineage, graph, search, and extraction-quality boundaries.
 
 ## Runtime layout
 
@@ -25,12 +25,13 @@ Browser / operator
        +---- extraction queue ---- versions + evidence graph + search indexes
        |                                  |
        |                                  +---- offline quality assessment
-       +---- OCR, normalization, diff queues (reserved)
+       +---- dedicated OCR worker ---- immutable searchable PDF + text sidecar
+       +---- normalization, diff queues (reserved)
 ```
 
-Compose runs one worker consuming every queue for an inexpensive development footprint. The queue
-names are already stable, so a deployment can split them into isolated worker services without
-changing task code.
+Compose runs a general worker for discovery, fetch, extraction, and reserved workloads. OCR has a
+separate concurrency-one worker image containing OCRmyPDF, Tesseract, and the `msa` and `eng`
+language packs. This bounds resource use and keeps OCR system packages out of the API image.
 
 ## Domain boundaries
 
@@ -39,8 +40,9 @@ changing task code.
 - `sources`: technical endpoints and versioned connector configuration
 - `discovery`: source runs, candidates, observations, connector registry, and scheduling
 - `fetching`: safe HTTP retrieval, retries, conditional requests, and fetch-attempt history
-- `artifacts`: content-addressed raw bytes and append-only provenance observations
+- `artifacts`: content-addressed bytes, observations, and immutable derivative lineage
 - `extraction`: deterministic extractor runs, extracted documents, and traceable blocks
+- `ocr`: versioned OCR plans, execution state, toolchain evidence, and derivative orchestration
 - `documents`: stable identities, immutable versions, evidence records, and normalized sections
 - `knowledge`: structural graph nodes/edges and local vector projections
 - `quality`: versioned corpus assessments and append-only, provenance-backed findings
@@ -80,6 +82,12 @@ changing task code.
     corpus. An unchanged replay reuses the completed run; changed evidence creates a new run.
 14. Quality assessment is diagnostic. It never mutates source artifacts, extracted text,
     document versions, graph projections, or review state.
+15. OCR is a transformation, not a fetch. The official PDF remains the evidence artifact; its
+    searchable PDF and text sidecar are separately hashed under `derived/ocr/sha256/` and linked by
+    append-only `ArtifactDerivative` records.
+16. OCR idempotency uses the source artifact, profile name/version, and complete configuration
+    hash. Completed runs are reused, and downstream extraction retains both source and derivative
+    hashes in every OCR-derived section locator.
 
 ## Self-hosting and Cloudflare
 
@@ -91,9 +99,8 @@ volume.
 
 ## Next slice
 
-1. Add a self-hosted OCR worker for the five JPDP PDFs explicitly marked `ocr_required`.
-2. Preserve original and OCR-derived artifacts, with page-level provenance and deterministic
-   configuration hashes.
-3. Re-run quality assessment and require a new corpus fingerprint with improved outcomes.
+1. Define reviewed structural anchors for acts, regulations, circulars, and guidelines.
+2. Compare explicit immutable versions without claiming legal meaning from formatting noise.
+3. Persist evidence-backed change candidates with section and artifact provenance.
 4. Add RSS/Atom discovery and a browser retrieval fallback for explicitly approved sources.
-5. Diff versions and publish evidence-backed change events through the outbox.
+5. Publish reviewed change events through the outbox.

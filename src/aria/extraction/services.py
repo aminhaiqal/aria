@@ -5,7 +5,7 @@ from urllib.parse import urldefrag, urlsplit
 from django.db import transaction
 from django.utils import timezone
 
-from aria.artifacts.models import ArtifactObservation, RawArtifact
+from aria.artifacts.models import ArtifactDerivative, ArtifactObservation, RawArtifact
 from aria.artifacts.storage import ArtifactStorageError, get_artifact_store
 from aria.discovery.models import DiscoveredCandidate
 from aria.documents.models import (
@@ -83,8 +83,26 @@ def _supersede_observed_url_identity(
     )
 
 
+def _artifact_lineage(
+    raw_artifact: RawArtifact,
+) -> tuple[RawArtifact, ArtifactDerivative | None]:
+    derivative = (
+        ArtifactDerivative.objects.filter(
+            derived_artifact=raw_artifact,
+            transformation_type=ArtifactDerivative.TransformationType.OCR_SEARCHABLE_PDF,
+        )
+        .select_related("source_artifact")
+        .order_by("-created_at", "-id")
+        .first()
+    )
+    if derivative is None:
+        return raw_artifact, None
+    return derivative.source_artifact, derivative
+
+
 def _artifact_observations(raw_artifact: RawArtifact):
-    return raw_artifact.observations.select_related(
+    evidence_artifact, _ = _artifact_lineage(raw_artifact)
+    return evidence_artifact.observations.select_related(
         "candidate",
         "candidate__endpoint",
         "candidate__endpoint__collection",
@@ -136,6 +154,8 @@ def _create_version(
     *,
     run: ExtractionRun,
     raw_artifact: RawArtifact,
+    evidence_artifact: RawArtifact,
+    derivative: ArtifactDerivative | None,
     extracted_document: ExtractedDocument,
     observation: ArtifactObservation,
 ) -> tuple[DocumentVersion, bool]:
@@ -166,6 +186,22 @@ def _create_version(
     )
     normalized_content = normalize_multiline_text(extracted_document.plain_text)
     content_sha256 = hashlib.sha256(normalized_content.encode("utf-8")).hexdigest()
+    lineage_metadata = {
+        "source_artifact_id": str(evidence_artifact.id),
+        "source_artifact_sha256": evidence_artifact.sha256,
+        "extraction_artifact_id": str(raw_artifact.id),
+        "extraction_artifact_sha256": raw_artifact.sha256,
+    }
+    if derivative is not None:
+        lineage_metadata.update(
+            {
+                "derivative_id": str(derivative.id),
+                "transformation_type": derivative.transformation_type,
+                "profile": derivative.profile,
+                "configuration_hash": derivative.configuration_hash,
+                "transformation_metadata": derivative.metadata,
+            }
+        )
     version, version_created = DocumentVersion.objects.get_or_create(
         identity=identity,
         normalized_content_sha256=content_sha256,
@@ -177,6 +213,7 @@ def _create_version(
             "normalized_metadata": {
                 **extracted_document.metadata,
                 "identity_strategy": "collection_and_canonical_url_v1",
+                "artifact_lineage": lineage_metadata,
             },
             "extractor_name": run.extractor_name,
             "extractor_version": run.extractor_version,
@@ -186,7 +223,7 @@ def _create_version(
         artifact_observation=observation,
         defaults={
             "document_version": version,
-            "raw_artifact": raw_artifact,
+            "raw_artifact": evidence_artifact,
             "extraction_run": run,
             "observed_url": observed_url,
         },
@@ -195,7 +232,7 @@ def _create_version(
         sections = [
             NormalizedSection(
                 document_version=version,
-                source_artifact=raw_artifact,
+                source_artifact=evidence_artifact,
                 extraction_run=run,
                 source_block=block,
                 ordinal=block.ordinal,
@@ -208,9 +245,22 @@ def _create_version(
                 char_end=block.char_end,
                 source_locator={
                     **block.source_locator,
-                    "artifact_sha256": raw_artifact.sha256,
+                    "artifact_sha256": evidence_artifact.sha256,
+                    "extraction_artifact_sha256": raw_artifact.sha256,
                     "observed_url": observed_url,
                     "document_identity_url": identity_url,
+                    **(
+                        {
+                            "derivative_artifact_id": str(raw_artifact.id),
+                            "derivative_artifact_sha256": raw_artifact.sha256,
+                            "transformation_type": derivative.transformation_type,
+                            "ocr_profile": derivative.profile,
+                            "ocr_configuration_hash": derivative.configuration_hash,
+                            "ocr_run_id": derivative.metadata.get("ocr_run_id", ""),
+                        }
+                        if derivative is not None
+                        else {}
+                    ),
                 },
             )
             for block in extracted_document.blocks.all()
@@ -227,6 +277,7 @@ def _project_observations(
 ) -> int:
     projected = 0
     now = timezone.now()
+    evidence_artifact, derivative = _artifact_lineage(raw_artifact)
     observations = list(_artifact_observations(raw_artifact))
     if not observations:
         raise ExtractionError(
@@ -236,6 +287,8 @@ def _project_observations(
         version, evidence_created = _create_version(
             run=run,
             raw_artifact=raw_artifact,
+            evidence_artifact=evidence_artifact,
+            derivative=derivative,
             extracted_document=extracted_document,
             observation=observation,
         )
@@ -250,14 +303,15 @@ def _project_observations(
                     "identity_id": str(version.identity_id),
                     "extraction_run_id": str(run.id),
                     "artifact_observation_id": str(observation.id),
-                    "artifact_sha256": raw_artifact.sha256,
+                    "artifact_sha256": evidence_artifact.sha256,
+                    "extraction_artifact_sha256": raw_artifact.sha256,
+                    "artifact_derivative_id": str(derivative.id) if derivative else "",
                     "section_count": version.sections.count(),
                 },
             )
-    DiscoveredCandidate.objects.filter(artifact_observations__raw_artifact=raw_artifact).update(
-        pipeline_state=DiscoveredCandidate.PipelineState.VERSIONED,
-        updated_at=now,
-    )
+    DiscoveredCandidate.objects.filter(
+        artifact_observations__raw_artifact=evidence_artifact
+    ).update(pipeline_state=DiscoveredCandidate.PipelineState.VERSIONED, updated_at=now)
     return projected
 
 

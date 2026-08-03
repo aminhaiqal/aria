@@ -302,12 +302,12 @@ class HTMLExtractor:
 
 class PDFExtractor:
     name = "pdf"
-    version = "pypdf-6-v1"
+    version = "pypdf-6-v2"
 
     @property
     def configuration(self) -> dict:
         return {
-            "extraction_mode": "layout",
+            "extraction_mode": "layout_then_plain",
             "ocr_min_characters_per_page": settings.PDF_OCR_MIN_CHARACTERS_PER_PAGE,
         }
 
@@ -326,16 +326,21 @@ class PDFExtractor:
 
         blocks: list[ExtractedBlockData] = []
         total_characters = 0
+        plain_fallback_pages: list[int] = []
         for page_number, page in enumerate(reader.pages, start=1):
             try:
-                text = (
+                layout_text = (
                     page.extract_text(extraction_mode="layout") or ""
                     if page.get("/Contents") is not None
                     else ""
                 )
+                text = normalize_multiline_text(layout_text)
+                if not text and page.get("/Contents") is not None:
+                    text = normalize_multiline_text(page.extract_text() or "")
+                    if text:
+                        plain_fallback_pages.append(page_number)
             except Exception as error:
                 raise ExtractionError(f"PDF page {page_number} could not be extracted.") from error
-            text = normalize_multiline_text(text)
             total_characters += len(re.sub(r"\s+", "", text))
             if text:
                 blocks.append(
@@ -364,6 +369,7 @@ class PDFExtractor:
                 "source_url": source_url,
                 "extractor": f"{self.name}:{self.version}",
                 "non_whitespace_characters": total_characters,
+                "plain_fallback_pages": plain_fallback_pages,
             },
             page_count=page_count,
             requires_ocr=requires_ocr,
