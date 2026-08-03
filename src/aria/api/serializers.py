@@ -6,6 +6,7 @@ from aria.collections.models import PublicationCollection
 from aria.comparisons.models import (
     ComparisonItem,
     ComparisonReview,
+    ComparisonSummary,
     DocumentComparison,
     StructuralAnchor,
     VersionLineageAssessment,
@@ -618,6 +619,31 @@ class DocumentComparisonSerializer(serializers.ModelSerializer):
             "format_only_count",
             "ambiguous_count",
             "item_count",
+            "started_at",
+            "finished_at",
+            "error_code",
+            "error_message",
+            "created_at",
+            "updated_at",
+        )
+
+
+class ComparisonSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ComparisonSummary
+        fields = (
+            "id",
+            "comparison",
+            "provider",
+            "model",
+            "prompt_version",
+            "input_hash",
+            "input_snapshot",
+            "status",
+            "output",
+            "response_id",
+            "input_tokens",
+            "output_tokens",
             "started_at",
             "finished_at",
             "error_code",

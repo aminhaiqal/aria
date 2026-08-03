@@ -1,11 +1,13 @@
 import hashlib
 import json
 from io import StringIO
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from aria.artifacts.models import RawArtifact
@@ -23,6 +25,7 @@ from aria.comparisons.lineage import (
 from aria.comparisons.models import (
     ComparisonItem,
     ComparisonReview,
+    ComparisonSummary,
     DocumentComparison,
     StructuralAnchor,
     VersionLineageAssessment,
@@ -33,6 +36,13 @@ from aria.comparisons.services import (
     compare_all_eligible_versions,
     compare_document_versions,
     eligible_comparison_pairs,
+)
+from aria.comparisons.summaries import (
+    StructuredComparisonSummary,
+    SummaryChange,
+    SummaryEligibilityError,
+    SummaryError,
+    generate_comparison_summary,
 )
 from aria.documents.models import (
     DocumentIdentity,
@@ -525,3 +535,123 @@ class ComparisonReviewTestCase(Phase3CFixture):
             self.client.post(reverse("comparisonreview-list"), {}).status_code,
             405,
         )
+
+
+@override_settings(
+    OPENAI_SUMMARY_MODEL="gpt-5.6-sol",
+    OPENAI_SUMMARY_REASONING_EFFORT="low",
+    OPENAI_SUMMARY_MAX_OUTPUT_TOKENS=2000,
+    OPENAI_SUMMARY_MAX_ITEMS=50,
+    OPENAI_SUMMARY_MAX_CHARS_PER_ANCHOR=12000,
+)
+class GPTComparisonSummaryTestCase(Phase3CFixture):
+    def setUp(self) -> None:
+        super().setUp()
+        before = self.create_version(
+            "Section 1 Security\nA controller shall implement safeguards.\n"
+            "Section 2 Stable\nStable text."
+        )
+        after = self.create_version(
+            "Section 1 Security\nA controller shall implement appropriate safeguards.\n"
+            "Section 2 Stable\nStable text."
+        )
+        self.comparison, _ = compare_document_versions(before, after)
+        self.item = self.comparison.items.get(change_type=ComparisonItem.ChangeType.MODIFIED)
+        self.reviewer = get_user_model().objects.create_superuser(
+            username="summary-reviewer",
+            password="test-password",
+        )
+
+    def _confirmed_item(self) -> None:
+        record_comparison_review(
+            self.item,
+            decision=ComparisonReview.Decision.CONFIRMED,
+            reviewer=self.reviewer,
+            rationale="Confirmed against both official text anchors.",
+        )
+
+    def _response(self, *, item_id: str | None = None):
+        output = StructuredComparisonSummary(
+            title="Security safeguard wording changed",
+            overview="The confirmed text adds the word appropriate to the safeguard clause.",
+            changes=[
+                SummaryChange(
+                    comparison_item_id=item_id or str(self.item.id),
+                    change_type="modified",
+                    explanation="The safeguard description now includes appropriate.",
+                )
+            ],
+            caveats=["This is a textual summary and does not assess legal effect."],
+            legal_effect_not_assessed=True,
+        )
+        return SimpleNamespace(
+            id="resp_phase3c_test",
+            output_parsed=output,
+            usage=SimpleNamespace(input_tokens=55, output_tokens=21),
+        )
+
+    def test_structured_summary_is_bounded_audited_and_idempotent(self) -> None:
+        self._confirmed_item()
+        client = MagicMock()
+        client.responses.parse.return_value = self._response()
+
+        summary, created = generate_comparison_summary(self.comparison, client=client)
+        replay, replay_created = generate_comparison_summary(self.comparison, client=client)
+
+        self.assertTrue(created)
+        self.assertFalse(replay_created)
+        self.assertEqual(summary.id, replay.id)
+        self.assertEqual(summary.status, ComparisonSummary.Status.COMPLETED)
+        self.assertEqual(summary.model, "gpt-5.6-sol")
+        self.assertEqual(summary.input_tokens, 55)
+        self.assertEqual(summary.output_tokens, 21)
+        self.assertTrue(summary.output["legal_effect_not_assessed"])
+        self.assertEqual(
+            summary.input_snapshot["items"][0]["confirmation_review_id"],
+            str(self.item.reviews.first().id),
+        )
+        client.responses.parse.assert_called_once()
+        request = client.responses.parse.call_args.kwargs
+        self.assertEqual(request["model"], "gpt-5.6-sol")
+        self.assertEqual(request["reasoning"], {"effort": "low"})
+        self.assertFalse(request["store"])
+        self.assertIs(request["text_format"], StructuredComparisonSummary)
+        sent_payload = request["input"][1]["content"]
+        self.assertNotIn("artifact_sha256", sent_payload)
+        self.assertNotIn("source_locator", sent_payload)
+        self.assertEqual(
+            AuditEvent.objects.filter(action="comparison.summary_generated").count(),
+            1,
+        )
+
+        self.client.force_login(self.reviewer)
+        response = self.client.get(reverse("comparisonsummary-detail", args=[summary.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["output"]["changes"][0]["comparison_item_id"], str(self.item.id)
+        )
+        self.assertEqual(
+            self.client.post(reverse("comparisonsummary-list"), {}).status_code,
+            405,
+        )
+
+    def test_summary_requires_a_currently_confirmed_change(self) -> None:
+        client = MagicMock()
+
+        with self.assertRaisesMessage(SummaryEligibilityError, "confirmed change"):
+            generate_comparison_summary(self.comparison, client=client)
+
+        client.responses.parse.assert_not_called()
+        self.assertEqual(ComparisonSummary.objects.count(), 0)
+
+    def test_summary_rejects_untraceable_structured_output(self) -> None:
+        self._confirmed_item()
+        client = MagicMock()
+        client.responses.parse.return_value = self._response(item_id="not-a-real-item")
+
+        with self.assertRaisesMessage(SummaryError, "cite every confirmed"):
+            generate_comparison_summary(self.comparison, client=client)
+
+        summary = ComparisonSummary.objects.get()
+        self.assertEqual(summary.status, ComparisonSummary.Status.FAILED)
+        self.assertEqual(summary.error_code, "SummaryError")

@@ -335,3 +335,55 @@ class ComparisonReview(AppendOnlyModel):
             and self.previous_review.comparison_item_id != self.comparison_item_id
         ):
             raise ValidationError("Previous review must belong to the same comparison item.")
+
+
+class ComparisonSummary(TimeStampedModel):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        RUNNING = "running", "Running"
+        COMPLETED = "completed", "Completed"
+        FAILED = "failed", "Failed"
+
+    comparison = models.ForeignKey(
+        DocumentComparison,
+        on_delete=models.PROTECT,
+        related_name="summaries",
+    )
+    provider = models.CharField(max_length=64, default="openai")
+    model = models.CharField(max_length=128)
+    prompt_version = models.CharField(max_length=128)
+    input_hash = models.CharField(
+        max_length=64,
+        validators=[RegexValidator(r"^[0-9a-f]{64}$")],
+    )
+    input_snapshot = models.JSONField(default=dict)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+    output = models.JSONField(default=dict)
+    response_id = models.CharField(max_length=255, blank=True)
+    input_tokens = models.PositiveIntegerField(default=0)
+    output_tokens = models.PositiveIntegerField(default=0)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    error_code = models.CharField(max_length=128, blank=True)
+    error_message = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("comparison", "provider", "model", "prompt_version", "input_hash"),
+                name="unique_comparison_summary_input",
+            )
+        ]
+        indexes = [
+            models.Index(fields=("comparison", "status", "created_at")),
+            models.Index(fields=("provider", "model", "created_at")),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.comparison_id} {self.model} [{self.status}]"

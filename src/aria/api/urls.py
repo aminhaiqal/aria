@@ -6,6 +6,7 @@ from aria.api.views import (
     AuthorityViewSet,
     ComparisonItemViewSet,
     ComparisonReviewViewSet,
+    ComparisonSummaryViewSet,
     DiscoveredCandidateViewSet,
     DocumentComparisonViewSet,
     DocumentIdentityViewSet,
@@ -56,5 +57,6 @@ router.register("structural-anchors", StructuralAnchorViewSet)
 router.register("document-comparisons", DocumentComparisonViewSet)
 router.register("comparison-items", ComparisonItemViewSet)
 router.register("comparison-reviews", ComparisonReviewViewSet)
+router.register("comparison-summaries", ComparisonSummaryViewSet)
 
 urlpatterns = router.urls

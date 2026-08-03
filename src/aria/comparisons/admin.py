@@ -3,6 +3,7 @@ from django.contrib import admin
 from aria.comparisons.models import (
     ComparisonItem,
     ComparisonReview,
+    ComparisonSummary,
     DocumentComparison,
     StructuralAnchor,
     VersionLineageAssessment,
@@ -102,3 +103,18 @@ class ComparisonReviewAdmin(admin.ModelAdmin):
                 else None,
             },
         )
+
+
+@admin.register(ComparisonSummary)
+class ComparisonSummaryAdmin(ReadOnlyAdmin):
+    list_display = (
+        "comparison",
+        "provider",
+        "model",
+        "status",
+        "input_tokens",
+        "output_tokens",
+        "created_at",
+    )
+    list_filter = ("status", "provider", "model", "prompt_version")
+    search_fields = ("comparison__identity__canonical_title", "input_hash", "response_id")

@@ -15,6 +15,7 @@ from aria.api.serializers import (
     AuthoritySerializer,
     ComparisonItemSerializer,
     ComparisonReviewSerializer,
+    ComparisonSummarySerializer,
     DiscoveredCandidateSerializer,
     DocumentComparisonSerializer,
     DocumentIdentitySerializer,
@@ -43,6 +44,7 @@ from aria.collections.models import PublicationCollection
 from aria.comparisons.models import (
     ComparisonItem,
     ComparisonReview,
+    ComparisonSummary,
     DocumentComparison,
     StructuralAnchor,
     VersionLineageAssessment,
@@ -254,6 +256,11 @@ class ComparisonReviewViewSet(ReadOnlyModelViewSet):
         "comparison_item", "reviewer", "previous_review"
     )
     serializer_class = ComparisonReviewSerializer
+
+
+class ComparisonSummaryViewSet(ReadOnlyModelViewSet):
+    queryset = ComparisonSummary.objects.select_related("comparison", "comparison__identity")
+    serializer_class = ComparisonSummarySerializer
 
 
 class KnowledgeSearchViewSet(GenericViewSet):
