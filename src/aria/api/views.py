@@ -13,6 +13,7 @@ from aria.api.serializers import (
     AuthoritySerializer,
     DiscoveredCandidateSerializer,
     DocumentIdentitySerializer,
+    DocumentQualityAssessmentSerializer,
     DocumentVersionSerializer,
     ExtractedDocumentSerializer,
     ExtractionRunSerializer,
@@ -21,6 +22,8 @@ from aria.api.serializers import (
     GraphNodeSerializer,
     NormalizedSectionSerializer,
     PublicationCollectionSerializer,
+    QualityAssessmentRunSerializer,
+    QualityFindingSerializer,
     RawArtifactSerializer,
     SourceEndpointSerializer,
     SourceRunSerializer,
@@ -35,6 +38,11 @@ from aria.extraction.models import ExtractedDocument, ExtractionRun
 from aria.fetching.models import FetchAttempt
 from aria.knowledge.embeddings import embed_text, embedding_configuration
 from aria.knowledge.models import GraphEdge, GraphNode
+from aria.quality.models import (
+    DocumentQualityAssessment,
+    QualityAssessmentRun,
+    QualityFinding,
+)
 from aria.sources.models import SourceEndpoint
 
 
@@ -154,6 +162,25 @@ class GraphNodeViewSet(ReadOnlyModelViewSet):
 class GraphEdgeViewSet(ReadOnlyModelViewSet):
     queryset = GraphEdge.objects.select_related("subject", "object")
     serializer_class = GraphEdgeSerializer
+
+
+class QualityAssessmentRunViewSet(ReadOnlyModelViewSet):
+    queryset = QualityAssessmentRun.objects.select_related("collection", "collection__authority")
+    serializer_class = QualityAssessmentRunSerializer
+
+
+class DocumentQualityAssessmentViewSet(ReadOnlyModelViewSet):
+    queryset = DocumentQualityAssessment.objects.select_related(
+        "quality_run", "document_version", "source_artifact"
+    ).prefetch_related("findings")
+    serializer_class = DocumentQualityAssessmentSerializer
+
+
+class QualityFindingViewSet(ReadOnlyModelViewSet):
+    queryset = QualityFinding.objects.select_related(
+        "assessment", "document_version", "source_artifact"
+    )
+    serializer_class = QualityFindingSerializer
 
 
 class KnowledgeSearchViewSet(GenericViewSet):

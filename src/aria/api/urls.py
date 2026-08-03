@@ -5,6 +5,7 @@ from aria.api.views import (
     AuthorityViewSet,
     DiscoveredCandidateViewSet,
     DocumentIdentityViewSet,
+    DocumentQualityAssessmentViewSet,
     DocumentVersionViewSet,
     ExtractedDocumentViewSet,
     ExtractionRunViewSet,
@@ -14,6 +15,8 @@ from aria.api.views import (
     KnowledgeSearchViewSet,
     NormalizedSectionViewSet,
     PublicationCollectionViewSet,
+    QualityAssessmentRunViewSet,
+    QualityFindingViewSet,
     RawArtifactViewSet,
     SourceEndpointViewSet,
     SourceRunViewSet,
@@ -36,5 +39,8 @@ router.register("sections", NormalizedSectionViewSet)
 router.register("graph-nodes", GraphNodeViewSet)
 router.register("graph-edges", GraphEdgeViewSet)
 router.register("knowledge-search", KnowledgeSearchViewSet, basename="knowledge-search")
+router.register("quality-runs", QualityAssessmentRunViewSet)
+router.register("quality-assessments", DocumentQualityAssessmentViewSet)
+router.register("quality-findings", QualityFindingViewSet)
 
 urlpatterns = router.urls

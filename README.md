@@ -20,6 +20,7 @@ publications before any AI interpretation is introduced.
 - Stable document identities, immutable content versions, and append-only evidence links
 - A structural evidence graph from authority to raw artifact in PostgreSQL
 - PostgreSQL full-text search plus pgvector retrieval with a deterministic local baseline
+- Deterministic, corpus-aware extraction quality runs with provenance-backed findings
 - Explicit pipeline states from discovery through publication and failure handling
 - Transactional pipeline events and an outbox ready for a future delivery transport
 - Append-only audit records
@@ -29,15 +30,17 @@ publications before any AI interpretation is introduced.
 - A self-hosted Docker Compose stack using pgvector-enabled PostgreSQL and Redis
 
 RSS discovery, browser retrieval, OCR execution, legal-relationship extraction, version diffing,
-and change publication remain for later phases.
+and change publication remain for later phases. Quality findings identify OCR and extraction review
+candidates but do not alter source evidence or claim that review has occurred.
 
 ## Current milestone
 
 - Phase 1 registry and pipeline foundation: complete
 - Phase 2 JPDP retrieval pilot: complete
 - Phase 3A deterministic extraction and evidence graph: implemented
+- Phase 3B extraction-quality baseline: implemented
 - Phase 2 source breadth: RSS and browser fallback remain open
-- Next implementation slice: inspect extraction quality, add OCR execution, and build version diffs
+- Next implementation slice: resolve JPDP review findings, then add bounded OCR execution
 
 ## Local setup
 
@@ -69,6 +72,7 @@ make test            # run the Django test suite in Compose
 make makemigrations  # generate model migrations
 make migrate         # apply migrations
 make extract         # replay every archived artifact through extraction locally
+make quality         # assess the current JPDP extraction corpus without network access
 make verify-storage  # write/read/delete one temporary R2 probe
 make superuser       # create an admin user
 make down             # stop services without deleting data
@@ -93,7 +97,6 @@ endpoint, bucket, access key, and secret in `.env`. Raw artifact bytes are archi
 extraction and are never mutated. Normalized records, graph edges, full-text indexes, and vectors
 remain in the self-hosted PostgreSQL service.
 
-See [Foundation architecture](docs/foundation.md) and
-[Phase 2 retrieval](docs/retrieval.md), and
-[Phase 3A extraction and evidence graph](docs/knowledge-graph.md) for design decisions and
-operating instructions.
+See [Foundation architecture](docs/foundation.md), [Phase 2 retrieval](docs/retrieval.md),
+[Phase 3A extraction and evidence graph](docs/knowledge-graph.md), and
+[Phase 3B extraction quality](docs/quality.md) for design decisions and operating instructions.

@@ -8,6 +8,11 @@ from aria.documents.models import DocumentIdentity, DocumentVersion, NormalizedS
 from aria.extraction.models import ExtractedDocument, ExtractionRun
 from aria.fetching.models import FetchAttempt
 from aria.knowledge.models import GraphEdge, GraphNode, SectionEmbedding
+from aria.quality.models import (
+    DocumentQualityAssessment,
+    QualityAssessmentRun,
+    QualityFinding,
+)
 from aria.sources.models import ConnectorConfiguration, SourceEndpoint
 
 
@@ -363,5 +368,78 @@ class SectionEmbeddingSerializer(serializers.ModelSerializer):
             "model",
             "dimensions",
             "source_text_sha256",
+            "created_at",
+        )
+
+
+class QualityAssessmentRunSerializer(serializers.ModelSerializer):
+    authority_name = serializers.CharField(source="collection.authority.name", read_only=True)
+    collection_name = serializers.CharField(source="collection.name", read_only=True)
+
+    class Meta:
+        model = QualityAssessmentRun
+        fields = (
+            "id",
+            "collection",
+            "authority_name",
+            "collection_name",
+            "ruleset",
+            "configuration",
+            "configuration_hash",
+            "corpus_fingerprint",
+            "status",
+            "started_at",
+            "finished_at",
+            "document_count",
+            "passed_count",
+            "warning_count",
+            "review_required_count",
+            "finding_count",
+            "error_code",
+            "error_message",
+            "created_at",
+            "updated_at",
+        )
+
+
+class DocumentQualityAssessmentSerializer(serializers.ModelSerializer):
+    document_title = serializers.CharField(source="document_version.title", read_only=True)
+    artifact_sha256 = serializers.CharField(source="source_artifact.sha256", read_only=True)
+    finding_count = serializers.IntegerField(source="findings.count", read_only=True)
+
+    class Meta:
+        model = DocumentQualityAssessment
+        fields = (
+            "id",
+            "quality_run",
+            "document_version",
+            "document_title",
+            "source_artifact",
+            "artifact_sha256",
+            "outcome",
+            "score",
+            "metrics",
+            "finding_count",
+            "created_at",
+        )
+
+
+class QualityFindingSerializer(serializers.ModelSerializer):
+    document_title = serializers.CharField(source="document_version.title", read_only=True)
+    artifact_sha256 = serializers.CharField(source="source_artifact.sha256", read_only=True)
+
+    class Meta:
+        model = QualityFinding
+        fields = (
+            "id",
+            "assessment",
+            "document_version",
+            "document_title",
+            "source_artifact",
+            "artifact_sha256",
+            "code",
+            "severity",
+            "message",
+            "evidence",
             "created_at",
         )

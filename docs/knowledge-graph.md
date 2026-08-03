@@ -91,6 +91,9 @@ Other read-only endpoints are:
 | Graph neighborhood | `/api/v1/graph-nodes/{id}/neighbors/` |
 | Graph edges | `/api/v1/graph-edges/` |
 
+Extraction quality is assessed over immutable document versions after projection. See
+[Phase 3B extraction quality](quality.md) for its report command and read-only endpoints.
+
 ## Configuration
 
 ```dotenv

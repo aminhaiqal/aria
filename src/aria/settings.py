@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "aria.extraction",
     "aria.documents",
     "aria.knowledge",
+    "aria.quality",
     "aria.events",
     "aria.health",
     "aria.api",

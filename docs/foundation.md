@@ -2,9 +2,10 @@
 
 ## Scope
 
-This foundation implements Phase 1, the Phase 2 JPDP retrieval slice, and Phase 3A deterministic
-extraction and evidence projection. It provides durable registry, workflow, retrieval, immutable
-evidence, document versioning, graph, and search boundaries.
+This foundation implements Phase 1, the Phase 2 JPDP retrieval slice, Phase 3A deterministic
+extraction and evidence projection, and the first Phase 3B quality slice. It provides durable
+registry, workflow, retrieval, immutable evidence, document versioning, graph, search, and
+extraction-quality boundaries.
 
 ## Runtime layout
 
@@ -22,6 +23,8 @@ Browser / operator
        +---- HTTP fetch queue ---- immutable artifact storage
        +---- browser queue (reserved)
        +---- extraction queue ---- versions + evidence graph + search indexes
+       |                                  |
+       |                                  +---- offline quality assessment
        +---- OCR, normalization, diff queues (reserved)
 ```
 
@@ -40,6 +43,7 @@ changing task code.
 - `extraction`: deterministic extractor runs, extracted documents, and traceable blocks
 - `documents`: stable identities, immutable versions, evidence records, and normalized sections
 - `knowledge`: structural graph nodes/edges and local vector projections
+- `quality`: versioned corpus assessments and append-only, provenance-backed findings
 - `events`: transactional pipeline history, delivery outbox, and append-only audit history
 - `api`: administrator-only read API
 - `health`: unauthenticated liveness and dependency readiness probes
@@ -69,6 +73,10 @@ changing task code.
     Phase 3A does not infer legal meaning or cross-document legal relationships.
 12. The 384-dimensional local hash projection is deterministic and private, but lexical rather
     than semantic. Its provider boundary can later target a self-hosted embedding model.
+13. Quality runs hash both their ruleset configuration and the complete immutable collection
+    corpus. An unchanged replay reuses the completed run; changed evidence creates a new run.
+14. Quality assessment is diagnostic. It never mutates source artifacts, extracted text,
+    document versions, graph projections, or review state.
 
 ## Self-hosting and Cloudflare
 
@@ -80,8 +88,9 @@ volume.
 
 ## Next slice
 
-1. Review the JPDP extraction report and refine source-specific selectors where archived page
-   shells do not contain the intended publication body.
-2. Add a self-hosted OCR worker for the artifacts already marked `ocr_required`.
-3. Add RSS/Atom discovery and a browser retrieval fallback for explicitly approved sources.
-4. Diff versions and publish evidence-backed change events through the outbox.
+1. Resolve the 12 JPDP versions marked `review_required`, starting with duplicate HTML page-shell
+   extraction and source-specific selector refinement.
+2. Re-run quality assessment and require a new corpus fingerprint with improved outcomes.
+3. Add a self-hosted OCR worker for artifacts explicitly marked `pdf_requires_ocr`.
+4. Add RSS/Atom discovery and a browser retrieval fallback for explicitly approved sources.
+5. Diff versions and publish evidence-backed change events through the outbox.
