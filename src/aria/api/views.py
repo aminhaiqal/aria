@@ -13,7 +13,10 @@ from aria.api.serializers import (
     ArtifactDerivativeSerializer,
     ArtifactObservationSerializer,
     AuthoritySerializer,
+    ComparisonItemSerializer,
+    ComparisonReviewSerializer,
     DiscoveredCandidateSerializer,
+    DocumentComparisonSerializer,
     DocumentIdentitySerializer,
     DocumentQualityAssessmentSerializer,
     DocumentVersionSerializer,
@@ -30,11 +33,20 @@ from aria.api.serializers import (
     RawArtifactSerializer,
     SourceEndpointSerializer,
     SourceRunSerializer,
+    StructuralAnchorSerializer,
+    VersionLineageAssessmentSerializer,
 )
 from aria.artifacts.models import ArtifactDerivative, ArtifactObservation, RawArtifact
 from aria.artifacts.storage import get_artifact_store
 from aria.authorities.models import Authority
 from aria.collections.models import PublicationCollection
+from aria.comparisons.models import (
+    ComparisonItem,
+    ComparisonReview,
+    DocumentComparison,
+    StructuralAnchor,
+    VersionLineageAssessment,
+)
 from aria.discovery.models import DiscoveredCandidate, SourceRun
 from aria.documents.models import DocumentIdentity, DocumentVersion, NormalizedSection
 from aria.extraction.models import ExtractedDocument, ExtractionRun
@@ -207,6 +219,41 @@ class QualityFindingViewSet(ReadOnlyModelViewSet):
         "assessment", "document_version", "source_artifact"
     )
     serializer_class = QualityFindingSerializer
+
+
+class VersionLineageAssessmentViewSet(ReadOnlyModelViewSet):
+    queryset = VersionLineageAssessment.objects.select_related(
+        "document_version", "source_artifact", "extraction_run"
+    )
+    serializer_class = VersionLineageAssessmentSerializer
+
+
+class StructuralAnchorViewSet(ReadOnlyModelViewSet):
+    queryset = StructuralAnchor.objects.select_related(
+        "document_version", "normalized_section", "source_artifact", "extraction_run"
+    )
+    serializer_class = StructuralAnchorSerializer
+
+
+class DocumentComparisonViewSet(ReadOnlyModelViewSet):
+    queryset = DocumentComparison.objects.select_related(
+        "identity", "before_version", "after_version"
+    ).prefetch_related("items")
+    serializer_class = DocumentComparisonSerializer
+
+
+class ComparisonItemViewSet(ReadOnlyModelViewSet):
+    queryset = ComparisonItem.objects.select_related(
+        "comparison", "before_anchor", "after_anchor"
+    ).prefetch_related("reviews", "reviews__reviewer")
+    serializer_class = ComparisonItemSerializer
+
+
+class ComparisonReviewViewSet(ReadOnlyModelViewSet):
+    queryset = ComparisonReview.objects.select_related(
+        "comparison_item", "reviewer", "previous_review"
+    )
+    serializer_class = ComparisonReviewSerializer
 
 
 class KnowledgeSearchViewSet(GenericViewSet):

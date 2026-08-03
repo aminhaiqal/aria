@@ -1,3 +1,5 @@
+from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
 from django.utils import timezone
@@ -283,3 +285,53 @@ class ComparisonItem(AppendOnlyModel):
 
     def __str__(self) -> str:
         return f"{self.comparison_id} {self.change_type}"
+
+
+class ComparisonReview(AppendOnlyModel):
+    class Decision(models.TextChoices):
+        CONFIRMED = "confirmed", "Confirmed"
+        REJECTED = "rejected", "Rejected"
+        NEEDS_CONTEXT = "needs_context", "Needs context"
+
+    comparison_item = models.ForeignKey(
+        ComparisonItem,
+        on_delete=models.PROTECT,
+        related_name="reviews",
+    )
+    decision = models.CharField(max_length=16, choices=Decision.choices, db_index=True)
+    rationale = models.TextField(blank=True)
+    reviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="comparison_reviews",
+    )
+    previous_review = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        related_name="superseding_reviews",
+        null=True,
+        blank=True,
+    )
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(fields=("comparison_item", "created_at")),
+            models.Index(fields=("decision", "created_at")),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.comparison_item_id} [{self.decision}]"
+
+    def clean(self) -> None:
+        if (
+            self.comparison_item_id
+            and self.comparison_item.change_type == ComparisonItem.ChangeType.UNCHANGED
+        ):
+            raise ValidationError("Unchanged alignments do not require review.")
+        if (
+            self.previous_review_id
+            and self.previous_review.comparison_item_id != self.comparison_item_id
+        ):
+            raise ValidationError("Previous review must belong to the same comparison item.")

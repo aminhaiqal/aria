@@ -2,9 +2,11 @@ import hashlib
 import json
 from io import StringIO
 
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.test import TestCase
+from django.urls import reverse
 
 from aria.artifacts.models import RawArtifact
 from aria.authorities.models import Authority
@@ -20,10 +22,12 @@ from aria.comparisons.lineage import (
 )
 from aria.comparisons.models import (
     ComparisonItem,
+    ComparisonReview,
     DocumentComparison,
     StructuralAnchor,
     VersionLineageAssessment,
 )
+from aria.comparisons.reviews import record_comparison_review
 from aria.comparisons.services import (
     ComparisonEligibilityError,
     compare_all_eligible_versions,
@@ -36,6 +40,7 @@ from aria.documents.models import (
     NormalizedSection,
     VersionEvidence,
 )
+from aria.events.models import AuditEvent
 from aria.extraction.models import ExtractedBlock, ExtractedDocument, ExtractionRun
 
 
@@ -429,3 +434,94 @@ class DocumentComparisonTestCase(Phase3CFixture):
         self.assertEqual(ambiguous_comparison.ambiguous_count, 1)
         ambiguous = ambiguous_comparison.items.get(change_type=ComparisonItem.ChangeType.AMBIGUOUS)
         self.assertEqual(len(ambiguous.text_delta["candidate_after_anchor_ids"]), 2)
+
+
+class ComparisonReviewTestCase(Phase3CFixture):
+    def setUp(self) -> None:
+        super().setUp()
+        self.before = self.create_version(
+            "Section 1 Purpose\nOrganizations protect personal data.\n"
+            "Section 2 Stable\nStable text."
+        )
+        self.after = self.create_version(
+            "Section 1 Purpose\nOrganizations must protect personal data.\n"
+            "Section 2 Stable\nStable text."
+        )
+        self.comparison, _ = compare_document_versions(self.before, self.after)
+        self.reviewer = get_user_model().objects.create_superuser(
+            username="comparison-reviewer",
+            password="test-password",
+        )
+
+    def test_review_history_is_append_only_chained_and_audited(self) -> None:
+        item = self.comparison.items.get(change_type=ComparisonItem.ChangeType.MODIFIED)
+
+        first = record_comparison_review(
+            item,
+            decision=ComparisonReview.Decision.NEEDS_CONTEXT,
+            reviewer=self.reviewer,
+            rationale="Confirm the official commencement context.",
+        )
+        second = record_comparison_review(
+            item,
+            decision=ComparisonReview.Decision.CONFIRMED,
+            reviewer=self.reviewer,
+            rationale="Confirmed against the cited official pages.",
+        )
+
+        self.assertEqual(second.previous_review, first)
+        self.assertEqual(item.reviews.count(), 2)
+        self.assertEqual(item.reviews.first(), second)
+        self.assertEqual(
+            AuditEvent.objects.filter(
+                action="comparison.review_recorded",
+                target_id=item.id,
+            ).count(),
+            2,
+        )
+        second.rationale = "Tampered"
+        with self.assertRaises(ValidationError):
+            second.save()
+
+    def test_unchanged_alignment_cannot_be_reviewed(self) -> None:
+        unchanged = self.comparison.items.get(change_type=ComparisonItem.ChangeType.UNCHANGED)
+
+        with self.assertRaisesMessage(ValidationError, "do not require review"):
+            record_comparison_review(
+                unchanged,
+                decision=ComparisonReview.Decision.CONFIRMED,
+                reviewer=self.reviewer,
+            )
+        invalid = ComparisonReview(
+            comparison_item=unchanged,
+            decision=ComparisonReview.Decision.CONFIRMED,
+            reviewer=self.reviewer,
+        )
+        with self.assertRaisesMessage(ValidationError, "do not require review"):
+            invalid.full_clean()
+
+    def test_admin_api_exposes_evidence_and_review_state_read_only(self) -> None:
+        item = self.comparison.items.get(change_type=ComparisonItem.ChangeType.MODIFIED)
+        review = record_comparison_review(
+            item,
+            decision=ComparisonReview.Decision.CONFIRMED,
+            reviewer=self.reviewer,
+        )
+        self.client.force_login(self.reviewer)
+
+        comparison_response = self.client.get(
+            reverse("documentcomparison-detail", args=[self.comparison.id])
+        )
+        item_response = self.client.get(reverse("comparisonitem-detail", args=[item.id]))
+        review_response = self.client.get(reverse("comparisonreview-detail", args=[review.id]))
+
+        self.assertEqual(comparison_response.status_code, 200)
+        self.assertEqual(comparison_response.json()["modified_count"], 1)
+        self.assertEqual(item_response.status_code, 200)
+        self.assertEqual(item_response.json()["current_review"]["decision"], "confirmed")
+        self.assertIn("artifact_sha256", item_response.json()["evidence"]["before"])
+        self.assertEqual(review_response.status_code, 200)
+        self.assertEqual(
+            self.client.post(reverse("comparisonreview-list"), {}).status_code,
+            405,
+        )

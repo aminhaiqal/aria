@@ -3,6 +3,13 @@ from rest_framework import serializers
 from aria.artifacts.models import ArtifactDerivative, ArtifactObservation, RawArtifact
 from aria.authorities.models import Authority
 from aria.collections.models import PublicationCollection
+from aria.comparisons.models import (
+    ComparisonItem,
+    ComparisonReview,
+    DocumentComparison,
+    StructuralAnchor,
+    VersionLineageAssessment,
+)
 from aria.discovery.models import DiscoveredCandidate, SourceRun
 from aria.documents.models import DocumentIdentity, DocumentVersion, NormalizedSection
 from aria.extraction.models import ExtractedDocument, ExtractionRun
@@ -493,4 +500,128 @@ class QualityFindingSerializer(serializers.ModelSerializer):
             "message",
             "evidence",
             "created_at",
+        )
+
+
+class VersionLineageAssessmentSerializer(serializers.ModelSerializer):
+    source_artifact_sha256 = serializers.CharField(source="source_artifact.sha256", read_only=True)
+
+    class Meta:
+        model = VersionLineageAssessment
+        fields = (
+            "id",
+            "document_version",
+            "representation_kind",
+            "comparison_track_key",
+            "provenance_status",
+            "source_artifact",
+            "source_artifact_sha256",
+            "extraction_run",
+            "ruleset",
+            "configuration_hash",
+            "basis",
+            "created_at",
+        )
+
+
+class StructuralAnchorSerializer(serializers.ModelSerializer):
+    source_artifact_sha256 = serializers.CharField(source="source_artifact.sha256", read_only=True)
+
+    class Meta:
+        model = StructuralAnchor
+        fields = (
+            "id",
+            "document_version",
+            "normalized_section",
+            "source_artifact",
+            "source_artifact_sha256",
+            "extraction_run",
+            "ruleset",
+            "configuration_hash",
+            "anchor_type",
+            "canonical_key",
+            "ordinal",
+            "label",
+            "text",
+            "text_sha256",
+            "char_start",
+            "char_end",
+            "source_locator",
+            "created_at",
+        )
+
+
+class ComparisonReviewSerializer(serializers.ModelSerializer):
+    reviewer_username = serializers.CharField(source="reviewer.username", read_only=True)
+
+    class Meta:
+        model = ComparisonReview
+        fields = (
+            "id",
+            "comparison_item",
+            "decision",
+            "rationale",
+            "reviewer",
+            "reviewer_username",
+            "previous_review",
+            "created_at",
+        )
+
+
+class ComparisonItemSerializer(serializers.ModelSerializer):
+    current_review = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ComparisonItem
+        fields = (
+            "id",
+            "comparison",
+            "before_anchor",
+            "after_anchor",
+            "change_type",
+            "match_strategy",
+            "similarity_score",
+            "text_delta",
+            "evidence",
+            "fingerprint",
+            "current_review",
+            "created_at",
+        )
+
+    def get_current_review(self, obj):
+        review = obj.reviews.order_by("-created_at", "-id").first()
+        return ComparisonReviewSerializer(review).data if review else None
+
+
+class DocumentComparisonSerializer(serializers.ModelSerializer):
+    identity_title = serializers.CharField(source="identity.canonical_title", read_only=True)
+    item_count = serializers.IntegerField(source="items.count", read_only=True)
+
+    class Meta:
+        model = DocumentComparison
+        fields = (
+            "id",
+            "identity",
+            "identity_title",
+            "before_version",
+            "after_version",
+            "comparison_track_key",
+            "ruleset",
+            "configuration_hash",
+            "input_fingerprint",
+            "status",
+            "unchanged_count",
+            "added_count",
+            "removed_count",
+            "modified_count",
+            "moved_count",
+            "format_only_count",
+            "ambiguous_count",
+            "item_count",
+            "started_at",
+            "finished_at",
+            "error_code",
+            "error_message",
+            "created_at",
+            "updated_at",
         )

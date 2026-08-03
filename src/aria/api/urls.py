@@ -4,7 +4,10 @@ from aria.api.views import (
     ArtifactDerivativeViewSet,
     ArtifactObservationViewSet,
     AuthorityViewSet,
+    ComparisonItemViewSet,
+    ComparisonReviewViewSet,
     DiscoveredCandidateViewSet,
+    DocumentComparisonViewSet,
     DocumentIdentityViewSet,
     DocumentQualityAssessmentViewSet,
     DocumentVersionViewSet,
@@ -22,6 +25,8 @@ from aria.api.views import (
     RawArtifactViewSet,
     SourceEndpointViewSet,
     SourceRunViewSet,
+    StructuralAnchorViewSet,
+    VersionLineageAssessmentViewSet,
 )
 
 router = DefaultRouter()
@@ -46,5 +51,10 @@ router.register("knowledge-search", KnowledgeSearchViewSet, basename="knowledge-
 router.register("quality-runs", QualityAssessmentRunViewSet)
 router.register("quality-assessments", DocumentQualityAssessmentViewSet)
 router.register("quality-findings", QualityFindingViewSet)
+router.register("version-lineage", VersionLineageAssessmentViewSet)
+router.register("structural-anchors", StructuralAnchorViewSet)
+router.register("document-comparisons", DocumentComparisonViewSet)
+router.register("comparison-items", ComparisonItemViewSet)
+router.register("comparison-reviews", ComparisonReviewViewSet)
 
 urlpatterns = router.urls
