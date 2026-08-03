@@ -1,4 +1,4 @@
-.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser
+.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser extract verify-storage
 
 bootstrap:
 	@test -f .env || cp .env.example .env
@@ -33,3 +33,9 @@ shell:
 
 superuser:
 	docker compose exec api python manage.py createsuperuser
+
+extract:
+	docker compose exec api python manage.py extract_artifacts --sync
+
+verify-storage:
+	docker compose exec api python manage.py verify_object_storage

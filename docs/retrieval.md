@@ -107,8 +107,9 @@ HTML publication pages. All 8,428,140 stored bytes were read back and matched th
 SHA-256 digests. A replay created 20 new provenance observations while retaining 20 unique raw
 artifacts; the JPDP PDF answered with `304 Not Modified` and reused its original artifact.
 
-## Next boundary
+## Downstream boundary
 
-Extraction must consume only archived artifacts, never a live URL. The next slice should add
-deterministic HTML/PDF extraction, OCR routing, and stable document identity while preserving the
-raw artifact and observation links through every derived record.
+Extraction consumes only archived artifacts, never a live URL. Phase 3A now adds deterministic
+HTML/PDF extraction, OCR routing, stable document identity, immutable versions, and evidence graph
+projection while preserving raw artifact and observation links through every derived record. See
+[Phase 3A extraction and evidence graph](knowledge-graph.md).

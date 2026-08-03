@@ -2,8 +2,9 @@
 
 ## Scope
 
-This foundation implements Phase 1 of the ARIA MVP plan and the first Phase 2 retrieval slice. It
-provides durable registry, workflow, discovery, retrieval, and raw-evidence storage boundaries.
+This foundation implements Phase 1, the Phase 2 JPDP retrieval slice, and Phase 3A deterministic
+extraction and evidence projection. It provides durable registry, workflow, retrieval, immutable
+evidence, document versioning, graph, and search boundaries.
 
 ## Runtime layout
 
@@ -11,7 +12,7 @@ provides durable registry, workflow, discovery, retrieval, and raw-evidence stor
 Browser / operator
        |
        v
- Django API + Admin ---- PostgreSQL (workflow source of truth)
+ Django API + Admin ---- PostgreSQL + pgvector
        |                       |
        |                       +---- pipeline events + outbox + audit
        v
@@ -20,7 +21,8 @@ Browser / operator
        +---- discovery worker queue
        +---- HTTP fetch queue ---- immutable artifact storage
        +---- browser queue (reserved)
-       +---- extraction, OCR, normalization, diff queues (reserved)
+       +---- extraction queue ---- versions + evidence graph + search indexes
+       +---- OCR, normalization, diff queues (reserved)
 ```
 
 Compose runs one worker consuming every queue for an inexpensive development footprint. The queue
@@ -35,6 +37,9 @@ changing task code.
 - `discovery`: source runs, candidates, observations, connector registry, and scheduling
 - `fetching`: safe HTTP retrieval, retries, conditional requests, and fetch-attempt history
 - `artifacts`: content-addressed raw bytes and append-only provenance observations
+- `extraction`: deterministic extractor runs, extracted documents, and traceable blocks
+- `documents`: stable identities, immutable versions, evidence records, and normalized sections
+- `knowledge`: structural graph nodes/edges and local vector projections
 - `events`: transactional pipeline history, delivery outbox, and append-only audit history
 - `api`: administrator-only read API
 - `health`: unauthenticated liveness and dependency readiness probes
@@ -56,10 +61,18 @@ changing task code.
    immutable artifact record and storage key.
 8. A completed `SourceRun` means discovery is complete and fetch tasks are durably queued. Fetch
    progress and terminal outcomes are tracked separately in `FetchAttempt` records.
+9. Extraction reads only the backend recorded on each artifact and verifies size and SHA-256 before
+   parsing. It never downloads the live source URL.
+10. Document identity uses collection plus canonical URL. Within that identity, equal normalized
+    content reuses one immutable version while each extraction retains its evidence link.
+11. Graph edges are deterministic structural projections and always record their source object.
+    Phase 3A does not infer legal meaning or cross-document legal relationships.
+12. The 384-dimensional local hash projection is deterministic and private, but lexical rather
+    than semantic. Its provider boundary can later target a self-hosted embedding model.
 
 ## Self-hosting and Cloudflare
 
-PostgreSQL and Redis are self-hosted Compose services without host port exposure. The application
+PostgreSQL with pgvector and Redis are self-hosted Compose services without host port exposure. The application
 is bound to `127.0.0.1` unless `ARIA_BIND_ADDRESS` is changed. A reverse proxy or Cloudflare Tunnel
 can be added at the host boundary later. Cloudflare R2 is the intended hosted exception for raw
 artifact storage. The default filesystem backend remains fully self-hosted in a named Docker
@@ -67,7 +80,8 @@ volume.
 
 ## Next slice
 
-1. Extract text and metadata from archived HTML and PDF artifacts, with OCR fallback.
-2. Resolve stable document identity and build immutable document versions.
+1. Review the JPDP extraction report and refine source-specific selectors where archived page
+   shells do not contain the intended publication body.
+2. Add a self-hosted OCR worker for the artifacts already marked `ocr_required`.
 3. Add RSS/Atom discovery and a browser retrieval fallback for explicitly approved sources.
 4. Diff versions and publish evidence-backed change events through the outbox.

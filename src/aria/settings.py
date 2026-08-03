@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
+    "django.contrib.postgres",
     "django.contrib.staticfiles",
     "rest_framework",
     "aria.authorities",
@@ -38,6 +39,9 @@ INSTALLED_APPS = [
     "aria.discovery",
     "aria.fetching",
     "aria.artifacts",
+    "aria.extraction",
+    "aria.documents",
+    "aria.knowledge",
     "aria.events",
     "aria.health",
     "aria.api",
@@ -130,6 +134,10 @@ HTTP_READ_TIMEOUT_SECONDS = float(os.getenv("ARIA_HTTP_READ_TIMEOUT_SECONDS", "3
 HTTP_MAX_RESPONSE_BYTES = int(os.getenv("ARIA_HTTP_MAX_RESPONSE_BYTES", str(25 * 1024 * 1024)))
 HTTP_MAX_REDIRECTS = int(os.getenv("ARIA_HTTP_MAX_REDIRECTS", "5"))
 HTTP_MIN_DOMAIN_INTERVAL_SECONDS = float(os.getenv("ARIA_HTTP_MIN_DOMAIN_INTERVAL_SECONDS", "1"))
+EMBEDDING_PROVIDER = os.getenv("ARIA_EMBEDDING_PROVIDER", "local_hash")
+EMBEDDING_MODEL = os.getenv("ARIA_EMBEDDING_MODEL", "aria-token-hash-v1")
+EMBEDDING_DIMENSIONS = int(os.getenv("ARIA_EMBEDDING_DIMENSIONS", "384"))
+PDF_OCR_MIN_CHARACTERS_PER_PAGE = int(os.getenv("ARIA_PDF_OCR_MIN_CHARACTERS_PER_PAGE", "40"))
 
 CELERY_BROKER_URL = os.getenv("ARIA_CELERY_BROKER_URL", "redis://localhost:6379/1")
 CELERY_TASK_IGNORE_RESULT = True
@@ -154,6 +162,7 @@ CELERY_TASK_QUEUES = tuple(
 CELERY_TASK_ROUTES = {
     "aria.discovery.tasks.*": {"queue": "discovery", "routing_key": "discovery"},
     "aria.fetching.tasks.*": {"queue": "http_fetch", "routing_key": "http_fetch"},
+    "aria.extraction.tasks.*": {"queue": "extraction", "routing_key": "extraction"},
     "aria.events.tasks.*": {"queue": "event_publish", "routing_key": "event_publish"},
 }
 CELERY_BEAT_SCHEDULE = {

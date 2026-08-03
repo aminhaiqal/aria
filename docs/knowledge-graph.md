@@ -1,0 +1,122 @@
+# Phase 3A extraction and evidence graph
+
+## Scope
+
+Phase 3A turns immutable archived JPDP artifacts into queryable, evidence-backed records. The
+entire processing path is self-hosted. Cloudflare R2 may hold raw bytes; PostgreSQL with pgvector
+holds workflow state, normalized text, graph records, full-text indexes, and vector projections.
+
+```text
+RawArtifact (filesystem or R2, immutable)
+    |
+    v  verified read: byte size + SHA-256
+ExtractionRun -> ExtractedDocument -> ExtractedBlock
+    |
+    v
+DocumentIdentity -> DocumentVersion -> NormalizedSection
+    |                    |                    |
+    +------ evidence ----+                    +-- full-text + pgvector
+                         |
+                         v
+ Authority -> Collection -> Document -> Version -> Section -> RawArtifact
+```
+
+## Extraction rules
+
+- Extractors read the stored artifact backend recorded in the database. They never fetch a URL.
+- HTML extraction removes layout/script elements, prefers known content containers, and stores a
+  DOM path for every block.
+- PDF extraction uses pypdf layout-mode text extraction and stores one traceable block per page.
+- A PDF averaging fewer than the configured non-whitespace characters per page is marked
+  `ocr_required`. Phase 3A routes it to review; it does not pretend that OCR has occurred.
+- Extracted output is keyed by artifact, extractor version, and configuration hash. Replaying the
+  same input and configuration is idempotent.
+
+Replay all archived artifacts without network access:
+
+```bash
+docker compose exec api python manage.py extract_artifacts --sync
+```
+
+Omit `--sync` to queue work for Celery. Use `--artifact <uuid>` to select one artifact or `--limit`
+for a bounded batch.
+
+## Identity, versions, and provenance
+
+A document identity is derived from its publication collection and canonical URL. Equal normalized
+content for the same identity reuses an immutable `DocumentVersion`. Extraction is shared when
+different observations contain the same artifact bytes, while every observation still gets a
+`VersionEvidence` record linking its identity/version to the raw artifact and extractor run.
+Normalized sections retain artifact SHA-256, observed URL, page or DOM locator, and character
+offsets.
+
+Phase 3A graph predicates are intentionally limited to:
+
+- `has_collection`
+- `has_document`
+- `has_version`
+- `has_section`
+- `derived_from`
+
+These are deterministic structural statements. Legal citations, amendments, obligations, and
+other interpreted relationships require a later reviewed extraction phase.
+
+## Retrieval
+
+PostgreSQL provides a GIN full-text index over headings and section text. pgvector provides an HNSW
+cosine index over 384-dimensional section projections. The default `aria-token-hash-v1` provider is
+a deterministic local lexical projection: it validates the private vector pipeline without calling
+a hosted model and must not be described as a semantic embedding model. A later self-hosted model
+can replace it through the provider boundary.
+
+The administrator-only search endpoint supports `hybrid`, `full_text`, and `vector` modes:
+
+```text
+GET /api/v1/knowledge-search/?q=personal+data+protection&mode=hybrid
+```
+
+Hybrid ranking uses reciprocal-rank fusion. Results include the authority, collection, identity,
+version content hash, source URL, raw artifact SHA-256, page or DOM locator, and section text.
+
+Other read-only endpoints are:
+
+| Resource | Endpoint |
+| --- | --- |
+| Extraction runs | `/api/v1/extraction-runs/` |
+| Extracted documents | `/api/v1/extracted-documents/` |
+| Document identities | `/api/v1/documents/` |
+| Document versions | `/api/v1/document-versions/` |
+| Normalized sections | `/api/v1/sections/` |
+| Graph nodes | `/api/v1/graph-nodes/` |
+| Graph neighborhood | `/api/v1/graph-nodes/{id}/neighbors/` |
+| Graph edges | `/api/v1/graph-edges/` |
+
+## Configuration
+
+```dotenv
+ARIA_EMBEDDING_PROVIDER=local_hash
+ARIA_EMBEDDING_MODEL=aria-token-hash-v1
+ARIA_EMBEDDING_DIMENSIONS=384
+ARIA_PDF_OCR_MIN_CHARACTERS_PER_PAGE=40
+```
+
+The vector dimension is schema-bound in Phase 3A and must remain 384. Changing a provider or model
+creates a new append-only embedding projection rather than overwriting an earlier one.
+
+When the S3-compatible backend is selected, validate the prepared R2 configuration with:
+
+```bash
+docker compose exec api python manage.py verify_object_storage
+```
+
+The command writes one uniquely named temporary probe, reads it back, verifies its hash, deletes
+that exact key, and confirms cleanup. It never prints credentials.
+
+## JPDP pilot verification
+
+On 2026-08-03, Phase 3A replayed the 20 archived JPDP artifacts entirely offline. All 20 extraction
+runs succeeded and all 8,428,140 raw bytes matched their recorded SHA-256 digests. The result is 20
+document identities, 20 immutable versions, 40 version-evidence links covering every archived
+observation, 234 traceable sections, 234 local vector projections, 296 graph nodes, and 549
+evidence edges. The 191-page PDF yielded text on all 191 pages and did not require OCR. A second
+replay left extraction, version, section, node, and embedding counts unchanged.

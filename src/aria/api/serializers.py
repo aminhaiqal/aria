@@ -4,7 +4,10 @@ from aria.artifacts.models import ArtifactObservation, RawArtifact
 from aria.authorities.models import Authority
 from aria.collections.models import PublicationCollection
 from aria.discovery.models import DiscoveredCandidate, SourceRun
+from aria.documents.models import DocumentIdentity, DocumentVersion, NormalizedSection
+from aria.extraction.models import ExtractedDocument, ExtractionRun
 from aria.fetching.models import FetchAttempt
+from aria.knowledge.models import GraphEdge, GraphNode, SectionEmbedding
 from aria.sources.models import ConnectorConfiguration, SourceEndpoint
 
 
@@ -191,4 +194,174 @@ class ArtifactObservationSerializer(serializers.ModelSerializer):
             "connector_configuration_version",
             "etag",
             "last_modified",
+        )
+
+
+class ExtractionRunSerializer(serializers.ModelSerializer):
+    artifact_sha256 = serializers.CharField(source="raw_artifact.sha256", read_only=True)
+
+    class Meta:
+        model = ExtractionRun
+        fields = (
+            "id",
+            "raw_artifact",
+            "artifact_sha256",
+            "extractor_name",
+            "extractor_version",
+            "configuration_hash",
+            "status",
+            "started_at",
+            "finished_at",
+            "error_code",
+            "error_message",
+            "created_at",
+            "updated_at",
+        )
+
+
+class ExtractedDocumentSerializer(serializers.ModelSerializer):
+    block_count = serializers.IntegerField(source="blocks.count", read_only=True)
+    artifact_sha256 = serializers.CharField(source="raw_artifact.sha256", read_only=True)
+
+    class Meta:
+        model = ExtractedDocument
+        fields = (
+            "id",
+            "extraction_run",
+            "raw_artifact",
+            "artifact_sha256",
+            "title",
+            "language_hint",
+            "plain_text_sha256",
+            "metadata",
+            "page_count",
+            "requires_ocr",
+            "block_count",
+            "created_at",
+        )
+
+
+class DocumentIdentitySerializer(serializers.ModelSerializer):
+    authority_name = serializers.CharField(source="collection.authority.name", read_only=True)
+    collection_name = serializers.CharField(source="collection.name", read_only=True)
+    version_count = serializers.IntegerField(source="versions.count", read_only=True)
+
+    class Meta:
+        model = DocumentIdentity
+        fields = (
+            "id",
+            "collection",
+            "authority_name",
+            "collection_name",
+            "stable_key",
+            "canonical_title",
+            "canonical_url",
+            "identity_basis",
+            "is_manual_override",
+            "version_count",
+            "created_at",
+            "updated_at",
+        )
+
+
+class DocumentVersionSerializer(serializers.ModelSerializer):
+    identity_title = serializers.CharField(source="identity.canonical_title", read_only=True)
+    section_count = serializers.IntegerField(source="sections.count", read_only=True)
+    evidence_count = serializers.IntegerField(source="evidence_records.count", read_only=True)
+
+    class Meta:
+        model = DocumentVersion
+        fields = (
+            "id",
+            "identity",
+            "identity_title",
+            "normalized_content_sha256",
+            "title",
+            "canonical_url",
+            "language_hint",
+            "normalized_metadata",
+            "extractor_name",
+            "extractor_version",
+            "section_count",
+            "evidence_count",
+            "created_at",
+        )
+
+
+class NormalizedSectionSerializer(serializers.ModelSerializer):
+    artifact_sha256 = serializers.CharField(source="source_artifact.sha256", read_only=True)
+    document_title = serializers.CharField(source="document_version.title", read_only=True)
+
+    class Meta:
+        model = NormalizedSection
+        fields = (
+            "id",
+            "document_version",
+            "document_title",
+            "source_artifact",
+            "artifact_sha256",
+            "extraction_run",
+            "ordinal",
+            "section_type",
+            "heading",
+            "text",
+            "text_sha256",
+            "page_number",
+            "char_start",
+            "char_end",
+            "source_locator",
+            "created_at",
+        )
+
+
+class GraphNodeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GraphNode
+        fields = (
+            "id",
+            "node_type",
+            "canonical_key",
+            "label",
+            "source_type",
+            "source_id",
+            "properties",
+            "created_at",
+            "updated_at",
+        )
+
+
+class GraphEdgeSerializer(serializers.ModelSerializer):
+    subject_label = serializers.CharField(source="subject.label", read_only=True)
+    object_label = serializers.CharField(source="object.label", read_only=True)
+
+    class Meta:
+        model = GraphEdge
+        fields = (
+            "id",
+            "subject",
+            "subject_label",
+            "predicate",
+            "object",
+            "object_label",
+            "source_type",
+            "source_id",
+            "evidence_version",
+            "evidence_section",
+            "evidence_artifact",
+            "properties",
+            "created_at",
+        )
+
+
+class SectionEmbeddingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SectionEmbedding
+        fields = (
+            "id",
+            "normalized_section",
+            "provider",
+            "model",
+            "dimensions",
+            "source_text_sha256",
+            "created_at",
         )

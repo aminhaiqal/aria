@@ -150,6 +150,9 @@ def complete_fetch(
             "content_type": raw_artifact.detected_content_type,
         },
     )
+    from aria.extraction.tasks import extract_raw_artifact
+
+    transaction.on_commit(lambda: extract_raw_artifact.delay(str(raw_artifact.id)))
     return observation
 
 
@@ -206,6 +209,9 @@ def complete_not_modified(attempt: FetchAttempt, response: FetchResponse) -> Art
             "fetch_attempt_id": str(attempt.id),
         },
     )
+    from aria.extraction.tasks import extract_raw_artifact
+
+    transaction.on_commit(lambda: extract_raw_artifact.delay(str(previous.raw_artifact_id)))
     return observation
 
 
