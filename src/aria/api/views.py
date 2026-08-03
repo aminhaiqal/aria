@@ -1,6 +1,7 @@
 from io import BytesIO
 
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
+from django.core.exceptions import ImproperlyConfigured
 from django.http import FileResponse
 from pgvector.django import CosineDistance
 from rest_framework import status
@@ -38,7 +39,13 @@ from aria.discovery.models import DiscoveredCandidate, SourceRun
 from aria.documents.models import DocumentIdentity, DocumentVersion, NormalizedSection
 from aria.extraction.models import ExtractedDocument, ExtractionRun
 from aria.fetching.models import FetchAttempt
-from aria.knowledge.embeddings import embed_text, embedding_configuration
+from aria.knowledge.embedding_services import current_sections_queryset
+from aria.knowledge.embeddings import (
+    SUPPORTED_PROVIDERS,
+    EmbeddingError,
+    embed_text,
+    embedding_configuration,
+)
 from aria.knowledge.models import GraphEdge, GraphNode
 from aria.ocr.models import OCRRun
 from aria.quality.models import (
@@ -225,9 +232,7 @@ class KnowledgeSearchViewSet(GenericViewSet):
             )
 
         candidate_limit = max(limit * 4, 50)
-        base = NormalizedSection.objects.filter(
-            document_version__identity__superseded_by__isnull=True
-        ).select_related(
+        base = current_sections_queryset().select_related(
             "document_version",
             "document_version__identity",
             "document_version__identity__collection",
@@ -254,9 +259,27 @@ class KnowledgeSearchViewSet(GenericViewSet):
                     "vector_distance": None,
                 }
 
+        vector_configuration = None
         if mode in {"hybrid", "vector"}:
-            provider, model, _ = embedding_configuration()
-            query_vector = embed_text(query_text)
+            requested_provider = request.query_params.get("embedding_provider", "").strip()
+            if requested_provider and requested_provider not in SUPPORTED_PROVIDERS:
+                return Response(
+                    {"detail": "embedding_provider must be local_hash or openai."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            try:
+                provider, model, dimensions = embedding_configuration(requested_provider or None)
+                query_vector = embed_text(query_text, provider_name=provider)
+            except (EmbeddingError, ImproperlyConfigured):
+                return Response(
+                    {"detail": "The selected embedding provider is temporarily unavailable."},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+            vector_configuration = {
+                "provider": provider,
+                "model": model,
+                "dimensions": dimensions,
+            }
             if any(query_vector):
                 vector_results = (
                     base.filter(embeddings__provider=provider, embeddings__model=model)
@@ -312,4 +335,11 @@ class KnowledgeSearchViewSet(GenericViewSet):
                     },
                 }
             )
-        return Response({"query": query_text, "mode": mode, "results": results})
+        return Response(
+            {
+                "query": query_text,
+                "mode": mode,
+                "embedding": vector_configuration,
+                "results": results,
+            }
+        )

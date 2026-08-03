@@ -1,4 +1,4 @@
-.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser extract route-linked plan-ocr ocr quality verify-storage
+.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser extract route-linked plan-ocr ocr embed-openai evaluate-embeddings quality verify-storage
 
 bootstrap:
 	@test -f .env || cp .env.example .env
@@ -45,6 +45,12 @@ plan-ocr:
 
 ocr:
 	docker compose exec ocr-worker python manage.py queue_ocr --sync
+
+embed-openai:
+	docker compose exec api python manage.py embed_sections --provider openai --sync
+
+evaluate-embeddings:
+	docker compose exec api python manage.py evaluate_embeddings
 
 quality:
 	docker compose exec api python manage.py assess_extraction_quality

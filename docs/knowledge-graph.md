@@ -3,8 +3,9 @@
 ## Scope
 
 Phase 3A turns immutable archived JPDP artifacts into queryable, evidence-backed records. The
-entire processing path is self-hosted. Cloudflare R2 may hold raw bytes; PostgreSQL with pgvector
-holds workflow state, normalized text, graph records, full-text indexes, and vector projections.
+evidence path is self-hosted. Cloudflare R2 may hold raw bytes; PostgreSQL with pgvector holds
+workflow state, normalized text, graph records, full-text indexes, and vector projections. Phase G
+adds an optional hosted embedding computation without moving vector storage or source evidence.
 
 ```text
 RawArtifact (filesystem or R2, immutable)
@@ -76,13 +77,15 @@ other interpreted relationships require a later reviewed extraction phase.
 PostgreSQL provides a GIN full-text index over headings and section text. pgvector provides an HNSW
 cosine index over 384-dimensional section projections. The default `aria-token-hash-v1` provider is
 a deterministic local lexical projection: it validates the private vector pipeline without calling
-a hosted model and must not be described as a semantic embedding model. A later self-hosted model
-can replace it through the provider boundary.
+a hosted model and must not be described as a semantic embedding model. The optional
+`text-embedding-3-small` provider requests 384-dimensional OpenAI vectors into the same local
+schema. Both projection sets coexist and are independently idempotent.
 
 The administrator-only search endpoint supports `hybrid`, `full_text`, and `vector` modes:
 
 ```text
 GET /api/v1/knowledge-search/?q=personal+data+protection&mode=hybrid
+GET /api/v1/knowledge-search/?q=privacy+risk&mode=vector&embedding_provider=openai
 ```
 
 Hybrid ranking uses reciprocal-rank fusion. Results include the authority, collection, identity,
@@ -111,13 +114,25 @@ Extraction quality is assessed over immutable document versions after projection
 
 ```dotenv
 ARIA_EMBEDDING_PROVIDER=local_hash
-ARIA_EMBEDDING_MODEL=aria-token-hash-v1
+ARIA_LOCAL_EMBEDDING_MODEL=aria-token-hash-v1
 ARIA_EMBEDDING_DIMENSIONS=384
+OPENAI_API_KEY=
+ARIA_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 ARIA_PDF_OCR_MIN_CHARACTERS_PER_PAGE=40
 ```
 
 The vector dimension is schema-bound in Phase 3A and must remain 384. Changing a provider or model
 creates a new append-only embedding projection rather than overwriting an earlier one.
+
+Populate and evaluate the optional provider with:
+
+```bash
+docker compose exec api python manage.py embed_sections --provider openai --sync
+docker compose exec api python manage.py evaluate_embeddings
+```
+
+See [Phase G hybrid embeddings](embeddings.md) for retry behavior, privacy boundaries, benchmark
+cases, and the verified JPDP result.
 
 When the S3-compatible backend is selected, validate the prepared R2 configuration with:
 
@@ -136,3 +151,8 @@ document identities, 20 immutable versions, 40 version-evidence links covering e
 observation, 234 traceable sections, 234 local vector projections, 296 graph nodes, and 549
 evidence edges. The 191-page PDF yielded text on all 191 pages and did not require OCR. A second
 replay left extraction, version, section, node, and embedding counts unchanged.
+
+On 2026-08-04, Phase G added 392 OpenAI projections for the latest versions of the 20 active JPDP
+identities. Replay skipped all 392 without an API call. On eight versioned queries, vector-only
+retrieval improved from local MRR `0.271` to OpenAI MRR `0.646`; hit@3 improved from `0.625` to
+`1.000`, and hit@5 improved from `0.625` to `1.000`.

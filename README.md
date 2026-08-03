@@ -20,7 +20,7 @@ publications before any AI interpretation is introduced.
 - BetterDocs detail-page routing to archived primary publications with stable landing-page identity
 - Stable document identities, immutable content versions, and append-only evidence links
 - A structural evidence graph from authority to raw artifact in PostgreSQL
-- PostgreSQL full-text search plus pgvector retrieval with a deterministic local baseline
+- PostgreSQL full-text search plus pgvector retrieval with local and OpenAI embedding providers
 - Deterministic, corpus-aware extraction quality runs with provenance-backed findings
 - Immutable OCR derivatives with source/output hashes, toolchain records, and page metrics
 - A dedicated self-hosted OCRmyPDF/Tesseract worker with Malay and English language data
@@ -43,6 +43,7 @@ mutates the official source artifact.
 - Phase 3A deterministic extraction and evidence graph: implemented
 - Phase 3B extraction quality and JPDP linked-file remediation: implemented
 - Phase 3F bounded self-hosted OCR completion: implemented
+- Phase 3G measured hybrid semantic retrieval: implemented
 - Phase 2 source breadth: RSS and browser fallback remain open
 - Next implementation slice: evidence-backed structural comparison of immutable document versions
 
@@ -79,6 +80,8 @@ make extract         # replay every archived artifact through extraction locally
 make route-linked    # route and queue official files linked by archived JPDP pages
 make plan-ocr        # list the deterministic OCR input set and current statuses
 make ocr             # process OCR synchronously inside the isolated OCR container
+make embed-openai    # populate missing OpenAI vectors for the current JPDP corpus
+make evaluate-embeddings # compare local and OpenAI vector retrieval on the JPDP benchmark
 make quality         # assess the current JPDP extraction corpus without network access
 make verify-storage  # write/read/delete one temporary R2 probe
 make superuser       # create an admin user
@@ -104,7 +107,13 @@ endpoint, bucket, access key, and secret in `.env`. Raw artifact bytes are archi
 extraction and are never mutated. Normalized records, graph edges, full-text indexes, and vectors
 remain in the self-hosted PostgreSQL service.
 
+OpenAI embeddings are optional. When selected, ARIA sends normalized section headings and text,
+plus the text of OpenAI-backed search queries, to the embeddings endpoint. Source PDFs, R2
+credentials, provenance records, and graph data remain local. The deterministic `local_hash`
+provider remains available as an offline fallback.
+
 See [Foundation architecture](docs/foundation.md), [Phase 2 retrieval](docs/retrieval.md),
-[Phase 3A extraction and evidence graph](docs/knowledge-graph.md), and
+[Phase 3A extraction and evidence graph](docs/knowledge-graph.md),
 [Phase 3B extraction quality](docs/quality.md), and [Phase F self-hosted OCR](docs/ocr.md) for
-design decisions and operating instructions.
+design decisions and operating instructions. [Phase G hybrid embeddings](docs/embeddings.md)
+documents the OpenAI boundary and measured retrieval results.

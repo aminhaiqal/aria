@@ -25,7 +25,7 @@ from aria.sources.models import SourceEndpoint
 
 @override_settings(
     EMBEDDING_PROVIDER="local_hash",
-    EMBEDDING_MODEL="aria-token-hash-v1",
+    LOCAL_EMBEDDING_MODEL="aria-token-hash-v1",
     EMBEDDING_DIMENSIONS=384,
 )
 class QualityAssessmentTestCase(TestCase):

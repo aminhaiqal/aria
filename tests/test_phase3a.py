@@ -2,6 +2,7 @@ import hashlib
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase, override_settings
@@ -21,9 +22,30 @@ from aria.extraction.models import ExtractedDocument, ExtractionRun
 from aria.extraction.services import extract_artifact
 from aria.fetching.client import FetchResponse
 from aria.fetching.services import begin_fetch_attempt, complete_fetch
-from aria.knowledge.embeddings import embed_text
+from aria.knowledge.embedding_services import project_section_embeddings
+from aria.knowledge.embeddings import EmbeddingBatch, embed_text
+from aria.knowledge.evaluation import RetrievalCase, evaluate_embedding_provider
 from aria.knowledge.models import GraphEdge, GraphNode, SectionEmbedding
+from aria.knowledge.services import project_document_version
 from aria.sources.models import SourceEndpoint
+
+
+class FakeSemanticEmbeddingProvider:
+    provider_name = "openai"
+    model = "text-embedding-3-small"
+    dimensions = 384
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def embed_texts(self, texts: list[str]) -> EmbeddingBatch:
+        self.calls += 1
+        vectors = []
+        for index, _ in enumerate(texts):
+            vector = [0.0] * self.dimensions
+            vector[index % self.dimensions] = 1.0
+            vectors.append(tuple(vector))
+        return EmbeddingBatch(vectors=tuple(vectors), prompt_tokens=len(texts) * 3)
 
 
 class ExtractorTestCase(SimpleTestCase):
@@ -103,7 +125,7 @@ class ExtractorTestCase(SimpleTestCase):
 
     @override_settings(
         EMBEDDING_PROVIDER="local_hash",
-        EMBEDDING_MODEL="aria-token-hash-v1",
+        LOCAL_EMBEDDING_MODEL="aria-token-hash-v1",
         EMBEDDING_DIMENSIONS=384,
     )
     def test_local_embedding_is_deterministic_and_normalized(self) -> None:
@@ -117,7 +139,7 @@ class ExtractorTestCase(SimpleTestCase):
 
 @override_settings(
     EMBEDDING_PROVIDER="local_hash",
-    EMBEDDING_MODEL="aria-token-hash-v1",
+    LOCAL_EMBEDDING_MODEL="aria-token-hash-v1",
     EMBEDDING_DIMENSIONS=384,
 )
 class ExtractionPipelineTestCase(TestCase):
@@ -230,6 +252,102 @@ class ExtractionPipelineTestCase(TestCase):
         self.assertEqual(result["artifact"]["sha256"], self.artifact.sha256)
         self.assertEqual(result["authority"]["name"], self.authority.name)
         self.assertEqual(result["document"]["canonical_url"], "https://example.com/acts/act-709/")
+
+    def test_openai_embeddings_are_parallel_idempotent_and_selectable(self) -> None:
+        with override_settings(OBJECT_STORAGE_ROOT=self.storage_root):
+            extract_artifact(self.artifact)
+        sections = NormalizedSection.objects.order_by("id")
+        provider = FakeSemanticEmbeddingProvider()
+
+        first = project_section_embeddings(sections, provider=provider, batch_size=1)
+        replay = project_section_embeddings(sections, provider=provider, batch_size=1)
+
+        self.assertEqual(first.created_count, 2)
+        self.assertEqual(first.prompt_tokens, 6)
+        self.assertEqual(replay.created_count, 0)
+        self.assertEqual(replay.skipped_count, 2)
+        self.assertEqual(provider.calls, 2)
+        self.assertEqual(SectionEmbedding.objects.filter(provider="openai").count(), 2)
+        self.assertEqual(SectionEmbedding.objects.filter(provider="local_hash").count(), 2)
+
+        user = get_user_model().objects.create_superuser(
+            username="semantic-search-admin", password="test-password"
+        )
+        self.client.force_login(user)
+        query_vector = [0.0] * 384
+        query_vector[0] = 1.0
+        with patch("aria.api.views.embed_text", return_value=query_vector):
+            response = self.client.get(
+                reverse("knowledge-search-list"),
+                {
+                    "q": "privacy obligations",
+                    "mode": "vector",
+                    "embedding_provider": "openai",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["embedding"]["provider"], "openai")
+        self.assertEqual(response.json()["results"][0]["artifact"]["sha256"], self.artifact.sha256)
+
+    @override_settings(
+        EMBEDDING_PROVIDER="openai",
+        OPENAI_EMBEDDING_MODEL="text-embedding-3-small",
+    )
+    def test_openai_ingestion_keeps_local_fallback_and_queues_hosted_projection(self) -> None:
+        with override_settings(OBJECT_STORAGE_ROOT=self.storage_root):
+            extract_artifact(self.artifact)
+        version = DocumentVersion.objects.get()
+        template = version.sections.order_by("id").first()
+        text = "A newly ingested official section keeps an offline fallback."
+        section = NormalizedSection.objects.create(
+            document_version=version,
+            source_artifact=template.source_artifact,
+            extraction_run=template.extraction_run,
+            source_block=template.source_block,
+            ordinal=version.sections.count() + 1,
+            section_type="paragraph",
+            heading="Fallback",
+            text=text,
+            text_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            char_start=template.char_end,
+            char_end=template.char_end + len(text),
+            source_locator={"test": "fallback"},
+        )
+
+        with (
+            patch("aria.knowledge.tasks.embed_document_version_sections.delay") as delay,
+            self.captureOnCommitCallbacks(execute=True),
+        ):
+            project_document_version(version)
+
+        self.assertTrue(section.embeddings.filter(provider="local_hash").exists())
+        delay.assert_called_once_with(str(version.id), "openai")
+
+    def test_retrieval_evaluation_reports_ranked_evidence(self) -> None:
+        with override_settings(OBJECT_STORAGE_ROOT=self.storage_root):
+            extract_artifact(self.artifact)
+        provider = FakeSemanticEmbeddingProvider()
+        project_section_embeddings(
+            NormalizedSection.objects.order_by("id"),
+            provider=provider,
+        )
+        result = evaluate_embedding_provider(
+            self.collection,
+            provider_name="openai",
+            provider=provider,
+            cases=(
+                RetrievalCase(
+                    name="act",
+                    query="Which law protects personal data?",
+                    expected_url_suffix="acts/act-709/",
+                ),
+            ),
+        )
+
+        self.assertEqual(result["mean_reciprocal_rank"], 1.0)
+        self.assertEqual(result["hit_at_1"], 1.0)
+        self.assertEqual(result["cases"][0]["rank"], 1)
 
     def test_shared_artifact_projects_each_official_url_without_reextracting(self) -> None:
         with override_settings(OBJECT_STORAGE_ROOT=self.storage_root):

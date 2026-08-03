@@ -90,6 +90,9 @@ class FailingFakeExecutor:
 
 @override_settings(
     OBJECT_STORAGE_BACKEND="filesystem",
+    EMBEDDING_PROVIDER="local_hash",
+    LOCAL_EMBEDDING_MODEL="aria-token-hash-v1",
+    EMBEDDING_DIMENSIONS=384,
     PDF_OCR_MIN_CHARACTERS_PER_PAGE=40,
     OCR_PROFILE_NAME="test-msa-eng",
     OCR_PROFILE_VERSION="1",

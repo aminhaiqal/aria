@@ -4,8 +4,9 @@ import json
 from django.db import transaction
 
 from aria.documents.models import DocumentVersion, NormalizedSection
-from aria.knowledge.embeddings import embed_text, embedding_configuration
-from aria.knowledge.models import GraphEdge, GraphNode, SectionEmbedding
+from aria.knowledge.embedding_services import project_section_embeddings
+from aria.knowledge.embeddings import embedding_configuration
+from aria.knowledge.models import GraphEdge, GraphNode
 
 
 def _fingerprint(*parts: str) -> str:
@@ -139,7 +140,6 @@ def project_document_version(version: DocumentVersion) -> None:
         evidence_version=version,
     )
 
-    provider, model, dimensions = embedding_configuration()
     for section in version.sections.select_related("source_artifact").all():
         section_node = _node(
             node_type=GraphNode.NodeType.SECTION,
@@ -186,17 +186,6 @@ def project_document_version(version: DocumentVersion) -> None:
             evidence_section=section,
             evidence_artifact=artifact,
         )
-        SectionEmbedding.objects.get_or_create(
-            normalized_section=section,
-            provider=provider,
-            model=model,
-            source_text_sha256=section.text_sha256,
-            defaults={
-                "dimensions": dimensions,
-                "embedding": embed_text(f"{section.heading}\n{section.text}"),
-            },
-        )
-
     for evidence in version.evidence_records.select_related("raw_artifact"):
         artifact = evidence.raw_artifact
         artifact_node = _node(
@@ -220,4 +209,14 @@ def project_document_version(version: DocumentVersion) -> None:
             evidence_version=version,
             evidence_artifact=artifact,
             properties={"observed_url": evidence.observed_url},
+        )
+
+    provider, _, _ = embedding_configuration()
+    sections = version.sections.order_by("id")
+    project_section_embeddings(sections, provider_name="local_hash")
+    if provider != "local_hash":
+        from aria.knowledge.tasks import embed_document_version_sections
+
+        transaction.on_commit(
+            lambda: embed_document_version_sections.delay(str(version.id), provider)
         )

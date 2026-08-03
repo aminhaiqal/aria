@@ -3,9 +3,10 @@
 ## Scope
 
 This foundation implements Phase 1, the Phase 2 JPDP retrieval slice, Phase 3A deterministic
-extraction and evidence projection, Phase 3B quality and linked-file remediation, and Phase F
-self-hosted OCR completion. It provides durable registry, workflow, retrieval, immutable evidence,
-document versioning, OCR lineage, graph, search, and extraction-quality boundaries.
+extraction and evidence projection, Phase 3B quality and linked-file remediation, Phase F
+self-hosted OCR completion, and Phase G hybrid semantic retrieval. It provides durable registry,
+workflow, retrieval, immutable evidence, document versioning, OCR lineage, graph, search, and
+extraction-quality boundaries.
 
 ## Runtime layout
 
@@ -16,6 +17,7 @@ Browser / operator
  Django API + Admin ---- PostgreSQL + pgvector
        |                       |
        |                       +---- pipeline events + outbox + audit
+       |                       +---- local + optional OpenAI vectors
        v
  Redis broker <--------- Celery beat
        |
@@ -44,7 +46,7 @@ language packs. This bounds resource use and keeps OCR system packages out of th
 - `extraction`: deterministic extractor runs, extracted documents, and traceable blocks
 - `ocr`: versioned OCR plans, execution state, toolchain evidence, and derivative orchestration
 - `documents`: stable identities, immutable versions, evidence records, and normalized sections
-- `knowledge`: structural graph nodes/edges and local vector projections
+- `knowledge`: structural graph nodes/edges, provider-versioned vectors, and retrieval evaluation
 - `quality`: versioned corpus assessments and append-only, provenance-backed findings
 - `events`: transactional pipeline history, delivery outbox, and append-only audit history
 - `api`: administrator-only read API
@@ -76,8 +78,9 @@ language packs. This bounds resource use and keeps OCR system packages out of th
     retained with deterministic `superseded_by` pointers rather than deleted.
 11. Graph edges are deterministic structural projections and always record their source object.
     Phase 3A does not infer legal meaning or cross-document legal relationships.
-12. The 384-dimensional local hash projection is deterministic and private, but lexical rather
-    than semantic. Its provider boundary can later target a self-hosted embedding model.
+12. Embedding projections are append-only by section, provider, model, dimension, and source-text
+    hash. The 384-dimensional local hash remains an offline lexical fallback; the optional OpenAI
+    provider adds semantic retrieval without replacing local vectors.
 13. Quality runs hash both their ruleset configuration and the complete immutable collection
     corpus. An unchanged replay reuses the completed run; changed evidence creates a new run.
 14. Quality assessment is diagnostic. It never mutates source artifacts, extracted text,
@@ -88,6 +91,9 @@ language packs. This bounds resource use and keeps OCR system packages out of th
 16. OCR idempotency uses the source artifact, profile name/version, and complete configuration
     hash. Completed runs are reused, and downstream extraction retains both source and derivative
     hashes in every OCR-derived section locator.
+17. Hosted embeddings receive normalized heading/text input only after evidence has been archived
+    and verified; hosted vector search also sends its query text. Original files, credentials,
+    provenance, graph state, and stored vectors remain in operator-controlled services.
 
 ## Self-hosting and Cloudflare
 
@@ -96,6 +102,10 @@ is bound to `127.0.0.1` unless `ARIA_BIND_ADDRESS` is changed. A reverse proxy o
 can be added at the host boundary later. Cloudflare R2 is the intended hosted exception for raw
 artifact storage. The default filesystem backend remains fully self-hosted in a named Docker
 volume.
+
+OpenAI embeddings are an opt-in exception. The repository and `.env.example` keep `local_hash` as
+the default. A deployment can activate OpenAI for better semantic retrieval or select
+`local_hash` per request without changing or deleting either projection set.
 
 ## Next slice
 

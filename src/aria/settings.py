@@ -137,8 +137,17 @@ HTTP_MAX_RESPONSE_BYTES = int(os.getenv("ARIA_HTTP_MAX_RESPONSE_BYTES", str(25 *
 HTTP_MAX_REDIRECTS = int(os.getenv("ARIA_HTTP_MAX_REDIRECTS", "5"))
 HTTP_MIN_DOMAIN_INTERVAL_SECONDS = float(os.getenv("ARIA_HTTP_MIN_DOMAIN_INTERVAL_SECONDS", "1"))
 EMBEDDING_PROVIDER = os.getenv("ARIA_EMBEDDING_PROVIDER", "local_hash")
-EMBEDDING_MODEL = os.getenv("ARIA_EMBEDDING_MODEL", "aria-token-hash-v1")
+LOCAL_EMBEDDING_MODEL = os.getenv(
+    "ARIA_LOCAL_EMBEDDING_MODEL",
+    os.getenv("ARIA_EMBEDDING_MODEL", "aria-token-hash-v1"),
+)
 EMBEDDING_DIMENSIONS = int(os.getenv("ARIA_EMBEDDING_DIMENSIONS", "384"))
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "")
+OPENAI_EMBEDDING_MODEL = os.getenv("ARIA_OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+OPENAI_EMBEDDING_BATCH_SIZE = int(os.getenv("ARIA_OPENAI_EMBEDDING_BATCH_SIZE", "64"))
+OPENAI_TIMEOUT_SECONDS = float(os.getenv("ARIA_OPENAI_TIMEOUT_SECONDS", "60"))
+OPENAI_MAX_RETRIES = int(os.getenv("ARIA_OPENAI_MAX_RETRIES", "3"))
 PDF_OCR_MIN_CHARACTERS_PER_PAGE = int(os.getenv("ARIA_PDF_OCR_MIN_CHARACTERS_PER_PAGE", "40"))
 OCR_PROFILE_NAME = os.getenv("ARIA_OCR_PROFILE_NAME", "jpdp-msa-eng")
 OCR_PROFILE_VERSION = os.getenv("ARIA_OCR_PROFILE_VERSION", "1")
@@ -176,6 +185,7 @@ CELERY_TASK_ROUTES = {
     "aria.fetching.tasks.*": {"queue": "http_fetch", "routing_key": "http_fetch"},
     "aria.extraction.tasks.*": {"queue": "extraction", "routing_key": "extraction"},
     "aria.ocr.tasks.*": {"queue": "ocr", "routing_key": "ocr"},
+    "aria.knowledge.tasks.*": {"queue": "normalization", "routing_key": "normalization"},
     "aria.events.tasks.*": {"queue": "event_publish", "routing_key": "event_publish"},
 }
 CELERY_BEAT_SCHEDULE = {
