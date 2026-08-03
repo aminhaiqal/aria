@@ -36,6 +36,8 @@ INSTALLED_APPS = [
     "aria.collections",
     "aria.sources",
     "aria.discovery",
+    "aria.fetching",
+    "aria.artifacts",
     "aria.events",
     "aria.health",
     "aria.api",
@@ -111,6 +113,24 @@ REST_FRAMEWORK = {
 }
 
 REDIS_URL = os.getenv("ARIA_REDIS_URL", "redis://localhost:6379/0")
+OBJECT_STORAGE_BACKEND = os.getenv("ARIA_OBJECT_STORAGE_BACKEND", "filesystem")
+OBJECT_STORAGE_ROOT = Path(os.getenv("ARIA_OBJECT_STORAGE_ROOT", "/var/lib/aria/artifacts"))
+OBJECT_STORAGE_ENDPOINT = os.getenv("ARIA_OBJECT_STORAGE_ENDPOINT", "")
+OBJECT_STORAGE_BUCKET = os.getenv("ARIA_OBJECT_STORAGE_BUCKET", "aria-artifacts")
+OBJECT_STORAGE_ACCESS_KEY = os.getenv("ARIA_OBJECT_STORAGE_ACCESS_KEY", "")
+OBJECT_STORAGE_SECRET_KEY = os.getenv("ARIA_OBJECT_STORAGE_SECRET_KEY", "")
+OBJECT_STORAGE_REGION = os.getenv("ARIA_OBJECT_STORAGE_REGION", "auto")
+
+HTTP_USER_AGENT = os.getenv(
+    "ARIA_HTTP_USER_AGENT",
+    "ARIA-Core/0.1 (+https://github.com/aminhaiqal/aria)",
+)
+HTTP_CONNECT_TIMEOUT_SECONDS = float(os.getenv("ARIA_HTTP_CONNECT_TIMEOUT_SECONDS", "10"))
+HTTP_READ_TIMEOUT_SECONDS = float(os.getenv("ARIA_HTTP_READ_TIMEOUT_SECONDS", "30"))
+HTTP_MAX_RESPONSE_BYTES = int(os.getenv("ARIA_HTTP_MAX_RESPONSE_BYTES", str(25 * 1024 * 1024)))
+HTTP_MAX_REDIRECTS = int(os.getenv("ARIA_HTTP_MAX_REDIRECTS", "5"))
+HTTP_MIN_DOMAIN_INTERVAL_SECONDS = float(os.getenv("ARIA_HTTP_MIN_DOMAIN_INTERVAL_SECONDS", "1"))
+
 CELERY_BROKER_URL = os.getenv("ARIA_CELERY_BROKER_URL", "redis://localhost:6379/1")
 CELERY_TASK_IGNORE_RESULT = True
 CELERY_TASK_TRACK_STARTED = True
@@ -133,6 +153,7 @@ CELERY_TASK_QUEUES = tuple(
 )
 CELERY_TASK_ROUTES = {
     "aria.discovery.tasks.*": {"queue": "discovery", "routing_key": "discovery"},
+    "aria.fetching.tasks.*": {"queue": "http_fetch", "routing_key": "http_fetch"},
     "aria.events.tasks.*": {"queue": "event_publish", "routing_key": "event_publish"},
 }
 CELERY_BEAT_SCHEDULE = {

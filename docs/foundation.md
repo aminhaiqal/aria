@@ -2,9 +2,8 @@
 
 ## Scope
 
-This foundation implements Phase 1 of the ARIA MVP plan and deliberately stops at the connector
-boundary. It provides enough durable structure to add RSS and HTML discovery without redesigning
-workflow state later.
+This foundation implements Phase 1 of the ARIA MVP plan and the first Phase 2 retrieval slice. It
+provides durable registry, workflow, discovery, retrieval, and raw-evidence storage boundaries.
 
 ## Runtime layout
 
@@ -19,7 +18,8 @@ Browser / operator
  Redis broker <--------- Celery beat
        |
        +---- discovery worker queue
-       +---- HTTP and browser queues (reserved)
+       +---- HTTP fetch queue ---- immutable artifact storage
+       +---- browser queue (reserved)
        +---- extraction, OCR, normalization, diff queues (reserved)
 ```
 
@@ -33,6 +33,8 @@ changing task code.
 - `collections`: logical families of publications owned by an authority
 - `sources`: technical endpoints and versioned connector configuration
 - `discovery`: source runs, candidates, observations, connector registry, and scheduling
+- `fetching`: safe HTTP retrieval, retries, conditional requests, and fetch-attempt history
+- `artifacts`: content-addressed raw bytes and append-only provenance observations
 - `events`: transactional pipeline history, delivery outbox, and append-only audit history
 - `api`: administrator-only read API
 - `health`: unauthenticated liveness and dependency readiness probes
@@ -46,20 +48,26 @@ changing task code.
    state transition that produced them.
 4. Celery acknowledgement happens after work. A lost worker can redeliver a task; completed or
    permanently failed runs are ignored safely.
-5. Outbox delivery is intentionally not marked complete yet. Phase 2 must choose and test the
-   delivery transport before a publisher is enabled.
+5. Outbox delivery is intentionally not marked complete yet. A later phase must choose and test
+   the delivery transport before a publisher is enabled.
+6. Every request and redirect is validated against the endpoint allowlist, resolved to public IP
+   addresses, and connected through one of those validated addresses.
+7. Artifact identity is the SHA-256 of the retrieved bytes. Repeat observations reuse the same
+   immutable artifact record and storage key.
+8. A completed `SourceRun` means discovery is complete and fetch tasks are durably queued. Fetch
+   progress and terminal outcomes are tracked separately in `FetchAttempt` records.
 
 ## Self-hosting and Cloudflare
 
 PostgreSQL and Redis are self-hosted Compose services without host port exposure. The application
 is bound to `127.0.0.1` unless `ARIA_BIND_ADDRESS` is changed. A reverse proxy or Cloudflare Tunnel
 can be added at the host boundary later. Cloudflare R2 is the intended hosted exception for raw
-artifact storage; local development can use any S3-compatible implementation once Phase 2 begins.
+artifact storage. The default filesystem backend remains fully self-hosted in a named Docker
+volume.
 
 ## Next slice
 
-1. Add an HTTP client with domain allowlisting, SSRF protection, response limits, retries, and
-   conditional request support.
-2. Implement RSS/Atom and static HTML listing connectors.
-3. Add immutable raw artifacts and observations backed by an S3-compatible adapter.
-4. Route fetched artifacts to the reserved extraction queues.
+1. Extract text and metadata from archived HTML and PDF artifacts, with OCR fallback.
+2. Resolve stable document identity and build immutable document versions.
+3. Add RSS/Atom discovery and a browser retrieval fallback for explicitly approved sources.
+4. Diff versions and publish evidence-backed change events through the outbox.

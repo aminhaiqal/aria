@@ -1,0 +1,129 @@
+import hashlib
+from collections.abc import Callable
+from pathlib import PurePosixPath
+from urllib.parse import urljoin, urlsplit, urlunsplit
+
+from bs4 import BeautifulSoup
+
+from aria.discovery.connectors import CandidateData
+from aria.fetching.client import SafeHttpClient, get_default_http_client, hostname_is_allowed
+from aria.sources.models import ConnectorConfiguration, SourceEndpoint
+
+
+class ConnectorStructureChanged(RuntimeError):
+    pass
+
+
+def normalize_publication_url(base_url: str, href: str) -> str:
+    absolute = urljoin(base_url, href)
+    parsed = urlsplit(absolute)
+    hostname = (parsed.hostname or "").encode("idna").decode("ascii").lower()
+    return urlunsplit((parsed.scheme.lower(), hostname, parsed.path or "/", parsed.query, ""))
+
+
+class ConfiguredHTMLListingConnector:
+    def __init__(
+        self,
+        client_factory: Callable[[], SafeHttpClient] = get_default_http_client,
+    ):
+        self.client_factory = client_factory
+
+    def discover(
+        self,
+        endpoint: SourceEndpoint,
+        cursor: dict | None,
+    ) -> list[CandidateData]:
+        connector_configuration = (
+            ConnectorConfiguration.objects.filter(
+                endpoint=endpoint,
+                version=endpoint.connector_configuration_version,
+                is_active=True,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        if not connector_configuration:
+            raise ConnectorStructureChanged(
+                f"Endpoint {endpoint.id} has no active connector configuration version "
+                f"{endpoint.connector_configuration_version}."
+            )
+        configuration = connector_configuration.configuration
+        selector = configuration.get("link_selector", "a[href]")
+        include_path_prefixes = tuple(configuration.get("include_path_prefixes", []))
+        exclude_path_suffixes = tuple(configuration.get("exclude_path_suffixes", ["/feed/"]))
+        document_extensions = {
+            extension.lower()
+            for extension in configuration.get(
+                "document_extensions",
+                [".pdf", ".doc", ".docx", ".csv", ".json", ".xml"],
+            )
+        }
+        upload_path_prefixes = tuple(
+            configuration.get("upload_path_prefixes", ["/wp-content/uploads/"])
+        )
+        max_candidates = int(configuration.get("max_candidates", 20))
+
+        client = self.client_factory()
+        try:
+            response = client.fetch(
+                endpoint.discovery_url,
+                allowed_domains=endpoint.allowed_domains,
+            )
+        finally:
+            client.close()
+        content_type = response.headers.get("content-type", "").lower()
+        if "html" not in content_type:
+            raise ConnectorStructureChanged(
+                f"Expected HTML discovery response, received '{content_type or 'unknown'}'."
+            )
+
+        soup = BeautifulSoup(response.content, "html.parser")
+        source_url = normalize_publication_url(endpoint.discovery_url, endpoint.discovery_url)
+        candidates_by_url: dict[str, CandidateData] = {}
+        for link in soup.select(selector):
+            href = link.get("href")
+            if not isinstance(href, str) or not href.strip():
+                continue
+            canonical_url = normalize_publication_url(endpoint.discovery_url, href.strip())
+            parsed = urlsplit(canonical_url)
+            if parsed.scheme != "https" or not parsed.hostname:
+                continue
+            if not hostname_is_allowed(parsed.hostname, endpoint.allowed_domains):
+                continue
+            if canonical_url == source_url:
+                continue
+            if include_path_prefixes and not any(
+                parsed.path.startswith(prefix) for prefix in include_path_prefixes
+            ):
+                continue
+            if any(parsed.path.endswith(suffix) for suffix in exclude_path_suffixes):
+                continue
+            if any(parsed.path.startswith(prefix) for prefix in upload_path_prefixes):
+                if PurePosixPath(parsed.path).suffix.lower() not in document_extensions:
+                    continue
+            title = " ".join(link.get_text(" ", strip=True).split())
+            candidates_by_url.setdefault(
+                canonical_url,
+                CandidateData(
+                    discovered_url=canonical_url,
+                    canonical_url=canonical_url,
+                    fingerprint=hashlib.sha256(canonical_url.encode("utf-8")).hexdigest(),
+                    metadata_hints={
+                        "title": title,
+                        "source_listing": endpoint.discovery_url,
+                    },
+                ),
+            )
+
+        candidates = list(candidates_by_url.values())
+        candidates.sort(
+            key=lambda item: (
+                PurePosixPath(urlsplit(item.canonical_url).path).suffix.lower()
+                not in document_extensions,
+            )
+        )
+        if not candidates:
+            raise ConnectorStructureChanged(
+                f"Selector '{selector}' produced no qualifying publication links."
+            )
+        return candidates[:max_candidates]

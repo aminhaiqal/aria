@@ -1,21 +1,7 @@
-from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
-from aria.common.models import UUIDModel
-
-
-class AppendOnlyModel(UUIDModel):
-    class Meta:
-        abstract = True
-
-    def save(self, *args, **kwargs) -> None:
-        if not self._state.adding:
-            raise ValidationError(f"{type(self).__name__} records are append-only.")
-        super().save(*args, **kwargs)
-
-    def delete(self, *args, **kwargs) -> None:
-        raise ValidationError(f"{type(self).__name__} records are append-only.")
+from aria.common.models import AppendOnlyModel, UUIDModel
 
 
 class PipelineEvent(AppendOnlyModel):

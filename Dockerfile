@@ -7,7 +7,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN addgroup --system aria && adduser --system --ingroup aria aria
+RUN addgroup --system aria \
+    && adduser --system --ingroup aria aria \
+    && mkdir -p /var/lib/aria/artifacts \
+    && chown -R aria:aria /var/lib/aria
 
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src

@@ -1,8 +1,10 @@
 from rest_framework import serializers
 
+from aria.artifacts.models import ArtifactObservation, RawArtifact
 from aria.authorities.models import Authority
 from aria.collections.models import PublicationCollection
 from aria.discovery.models import DiscoveredCandidate, SourceRun
+from aria.fetching.models import FetchAttempt
 from aria.sources.models import ConnectorConfiguration, SourceEndpoint
 
 
@@ -124,4 +126,69 @@ class DiscoveredCandidateSerializer(serializers.ModelSerializer):
             "pipeline_state",
             "first_discovered_at",
             "last_discovered_at",
+        )
+
+
+class FetchAttemptSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FetchAttempt
+        fields = (
+            "id",
+            "candidate",
+            "source_run",
+            "attempt_number",
+            "status",
+            "requested_url",
+            "final_url",
+            "request_headers",
+            "response_status",
+            "response_headers",
+            "redirect_chain",
+            "resolved_addresses",
+            "bytes_received",
+            "started_at",
+            "finished_at",
+            "error_code",
+            "error_message",
+        )
+
+
+class RawArtifactSerializer(serializers.ModelSerializer):
+    observation_count = serializers.IntegerField(source="observations.count", read_only=True)
+
+    class Meta:
+        model = RawArtifact
+        fields = (
+            "id",
+            "sha256",
+            "byte_size",
+            "detected_content_type",
+            "storage_backend",
+            "storage_key",
+            "created_at",
+            "observation_count",
+        )
+
+
+class ArtifactObservationSerializer(serializers.ModelSerializer):
+    sha256 = serializers.CharField(source="raw_artifact.sha256", read_only=True)
+
+    class Meta:
+        model = ArtifactObservation
+        fields = (
+            "id",
+            "raw_artifact",
+            "sha256",
+            "fetch_attempt",
+            "candidate",
+            "source_run",
+            "requested_url",
+            "final_url",
+            "response_status",
+            "response_headers",
+            "redirect_chain",
+            "retrieved_at",
+            "connector_configuration_version",
+            "etag",
+            "last_modified",
         )

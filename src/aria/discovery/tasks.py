@@ -43,8 +43,11 @@ def execute_source_run(self, source_run_id: str) -> None:
     try:
         connector = get_connector(source_run.endpoint.connector_type)
         candidates = connector.discover(source_run.endpoint, source_run.cursor_before)
+        from aria.fetching.tasks import fetch_candidate
+
         for candidate_data in candidates:
-            observe_candidate(source_run, candidate_data)
+            candidate, _ = observe_candidate(source_run, candidate_data)
+            fetch_candidate.delay(str(candidate.id), str(source_run.id))
         mark_source_run_completed(source_run)
     except ConnectorNotRegistered as error:
         mark_source_run_failed(source_run, code="connector_not_registered", message=str(error))

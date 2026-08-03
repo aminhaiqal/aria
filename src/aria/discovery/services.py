@@ -142,6 +142,7 @@ def observe_candidate(
             "canonical_url": data.canonical_url,
             "external_identifier": data.external_identifier,
             "metadata_hints": data.metadata_hints,
+            "pipeline_state": DiscoveredCandidate.PipelineState.FETCH_PENDING,
             "first_discovered_at": now,
             "last_discovered_at": now,
         },
@@ -153,6 +154,7 @@ def observe_candidate(
         candidate.canonical_url = data.canonical_url
         candidate.external_identifier = data.external_identifier
         candidate.metadata_hints = data.metadata_hints
+        candidate.pipeline_state = DiscoveredCandidate.PipelineState.FETCH_PENDING
         candidate.save(
             update_fields=(
                 "latest_source_run",
@@ -161,6 +163,7 @@ def observe_candidate(
                 "canonical_url",
                 "external_identifier",
                 "metadata_hints",
+                "pipeline_state",
                 "updated_at",
             )
         )

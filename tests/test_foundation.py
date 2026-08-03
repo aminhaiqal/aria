@@ -98,6 +98,8 @@ class FoundationTestCase(TestCase):
             event.delete()
 
     def test_unimplemented_connector_fails_visibly(self) -> None:
+        self.endpoint.connector_type = SourceEndpoint.ConnectorType.REST_API
+        self.endpoint.save(update_fields=("connector_type", "updated_at"))
         source_run, _ = create_source_run(self.endpoint, trigger=SourceRun.Trigger.MANUAL)
 
         execute_source_run.run(str(source_run.id))
