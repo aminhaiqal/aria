@@ -2,6 +2,7 @@ import hashlib
 import json
 from io import StringIO
 
+from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.test import TestCase
 
@@ -10,6 +11,8 @@ from aria.authorities.models import Authority
 from aria.collections.models import PublicationCollection
 from aria.comparisons.audit import audit_active_versions, audit_document_version
 from aria.comparisons.contracts import ProvenanceStatus, RepresentationKind
+from aria.comparisons.lineage import project_active_version_lineage, project_version_lineage
+from aria.comparisons.models import VersionLineageAssessment
 from aria.documents.models import (
     DocumentIdentity,
     DocumentVersion,
@@ -177,3 +180,56 @@ class VersionLineageAuditTestCase(Phase3CFixture):
         self.assertEqual(before["versions"], DocumentVersion.objects.count())
         self.assertEqual(before["evidence"], VersionEvidence.objects.count())
         self.assertEqual(audit_active_versions()["ruleset"], "aria-version-lineage-v1")
+
+
+class VersionLineageProjectionTestCase(Phase3CFixture):
+    def test_projection_is_append_only_idempotent_and_preserves_source_records(self) -> None:
+        verified = self.create_version("Verified projection text")
+        reconstructable = self.create_version(
+            "Reconstructable projection text",
+            with_evidence=False,
+        )
+        evidence_count = VersionEvidence.objects.count()
+
+        first = project_active_version_lineage()
+        replay = project_active_version_lineage()
+
+        self.assertEqual(first.created_count, 2)
+        self.assertEqual(first.verified_count, 1)
+        self.assertEqual(first.reconstructable_count, 1)
+        self.assertEqual(replay.created_count, 0)
+        self.assertEqual(replay.skipped_count, 2)
+        self.assertEqual(VersionEvidence.objects.count(), evidence_count)
+        self.assertEqual(
+            verified.lineage_assessments.get().provenance_status,
+            VersionLineageAssessment.ProvenanceStatus.VERIFIED,
+        )
+        reconstructed_assessment = reconstructable.lineage_assessments.get()
+        self.assertEqual(
+            reconstructed_assessment.provenance_status,
+            VersionLineageAssessment.ProvenanceStatus.RECONSTRUCTABLE,
+        )
+        self.assertIsNotNone(reconstructed_assessment.source_artifact_id)
+        self.assertIsNotNone(reconstructed_assessment.extraction_run_id)
+
+        reconstructed_assessment.basis = {"tampered": True}
+        with self.assertRaises(ValidationError):
+            reconstructed_assessment.save()
+
+    def test_unknown_representation_is_persisted_as_quarantined(self) -> None:
+        version = self.create_version(
+            "Unclassified projection text",
+            extractor_name="unknown",
+            with_evidence=False,
+            with_section=False,
+        )
+
+        assessment, created = project_version_lineage(version)
+
+        self.assertTrue(created)
+        self.assertEqual(
+            assessment.provenance_status,
+            VersionLineageAssessment.ProvenanceStatus.QUARANTINED,
+        )
+        self.assertIsNone(assessment.source_artifact_id)
+        self.assertIsNone(assessment.extraction_run_id)
