@@ -7,6 +7,7 @@ from django.utils import timezone
 from aria.artifacts.models import RawArtifact
 from aria.common.models import AppendOnlyModel, TimeStampedModel
 from aria.documents.models import DocumentIdentity, DocumentVersion, NormalizedSection
+from aria.events.models import PipelineEvent
 from aria.extraction.models import ExtractionRun
 
 
@@ -387,3 +388,29 @@ class ComparisonSummary(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.comparison_id} {self.model} [{self.status}]"
+
+
+class ReviewedChangePublication(AppendOnlyModel):
+    comparison_item = models.ForeignKey(
+        ComparisonItem,
+        on_delete=models.PROTECT,
+        related_name="reviewed_publications",
+    )
+    confirmation_review = models.OneToOneField(
+        ComparisonReview,
+        on_delete=models.PROTECT,
+        related_name="change_publication",
+    )
+    pipeline_event = models.OneToOneField(
+        PipelineEvent,
+        on_delete=models.PROTECT,
+        related_name="reviewed_change_publication",
+    )
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [models.Index(fields=("comparison_item", "created_at"))]
+
+    def __str__(self) -> str:
+        return f"{self.comparison_item_id} -> {self.pipeline_event_id}"

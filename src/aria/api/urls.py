@@ -24,6 +24,7 @@ from aria.api.views import (
     QualityAssessmentRunViewSet,
     QualityFindingViewSet,
     RawArtifactViewSet,
+    ReviewedChangePublicationViewSet,
     SourceEndpointViewSet,
     SourceRunViewSet,
     StructuralAnchorViewSet,
@@ -58,5 +59,6 @@ router.register("document-comparisons", DocumentComparisonViewSet)
 router.register("comparison-items", ComparisonItemViewSet)
 router.register("comparison-reviews", ComparisonReviewViewSet)
 router.register("comparison-summaries", ComparisonSummaryViewSet)
+router.register("reviewed-change-publications", ReviewedChangePublicationViewSet)
 
 urlpatterns = router.urls

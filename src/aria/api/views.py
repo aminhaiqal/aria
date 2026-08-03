@@ -32,6 +32,7 @@ from aria.api.serializers import (
     QualityAssessmentRunSerializer,
     QualityFindingSerializer,
     RawArtifactSerializer,
+    ReviewedChangePublicationSerializer,
     SourceEndpointSerializer,
     SourceRunSerializer,
     StructuralAnchorSerializer,
@@ -46,6 +47,7 @@ from aria.comparisons.models import (
     ComparisonReview,
     ComparisonSummary,
     DocumentComparison,
+    ReviewedChangePublication,
     StructuralAnchor,
     VersionLineageAssessment,
 )
@@ -261,6 +263,13 @@ class ComparisonReviewViewSet(ReadOnlyModelViewSet):
 class ComparisonSummaryViewSet(ReadOnlyModelViewSet):
     queryset = ComparisonSummary.objects.select_related("comparison", "comparison__identity")
     serializer_class = ComparisonSummarySerializer
+
+
+class ReviewedChangePublicationViewSet(ReadOnlyModelViewSet):
+    queryset = ReviewedChangePublication.objects.select_related(
+        "comparison_item", "confirmation_review", "pipeline_event"
+    )
+    serializer_class = ReviewedChangePublicationSerializer
 
 
 class KnowledgeSearchViewSet(GenericViewSet):

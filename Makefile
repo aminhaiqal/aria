@@ -1,4 +1,4 @@
-.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser extract route-linked plan-ocr ocr embed-openai evaluate-embeddings quality verify-storage
+.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser extract route-linked plan-ocr ocr embed-openai evaluate-embeddings quality audit-lineage classify-lineage anchors compare summarize publish-reviewed verify-storage
 
 bootstrap:
 	@test -f .env || cp .env.example .env
@@ -54,6 +54,26 @@ evaluate-embeddings:
 
 quality:
 	docker compose exec api python manage.py assess_extraction_quality
+
+audit-lineage:
+	docker compose exec api python manage.py audit_version_lineage
+
+classify-lineage:
+	docker compose exec api python manage.py classify_version_lineage
+
+anchors:
+	docker compose exec api python manage.py project_structural_anchors
+
+compare:
+	docker compose exec api python manage.py compare_versions --sync
+
+summarize:
+	@test -n "$(COMPARISON_ID)" || (echo "Set COMPARISON_ID=<uuid>" && exit 1)
+	docker compose exec api python manage.py summarize_comparison --comparison $(COMPARISON_ID) --sync
+
+publish-reviewed:
+	@test -n "$(COMPARISON_ID)" || (echo "Set COMPARISON_ID=<uuid>" && exit 1)
+	docker compose exec api python manage.py publish_reviewed_changes --comparison $(COMPARISON_ID)
 
 verify-storage:
 	docker compose exec api python manage.py verify_object_storage

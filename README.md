@@ -21,6 +21,8 @@ publications before any AI interpretation is introduced.
 - Stable document identities, immutable content versions, and append-only evidence links
 - A structural evidence graph from authority to raw artifact in PostgreSQL
 - PostgreSQL full-text search plus pgvector retrieval with local and OpenAI embedding providers
+- Provenance-gated bilingual structural anchors and deterministic immutable-version comparisons
+- Append-only human review, optional structured GPT summaries, and reviewed-change outbox events
 - Deterministic, corpus-aware extraction quality runs with provenance-backed findings
 - Immutable OCR derivatives with source/output hashes, toolchain records, and page metrics
 - A dedicated self-hosted OCRmyPDF/Tesseract worker with Malay and English language data
@@ -42,10 +44,11 @@ mutates the official source artifact.
 - Phase 2 JPDP retrieval pilot: complete
 - Phase 3A deterministic extraction and evidence graph: implemented
 - Phase 3B extraction quality and JPDP linked-file remediation: implemented
+- Phase 3C evidence-backed structural version comparison: implemented
 - Phase 3F bounded self-hosted OCR completion: implemented
 - Phase 3G measured hybrid semantic retrieval: implemented
 - Phase 2 source breadth: RSS and browser fallback remain open
-- Next implementation slice: evidence-backed structural comparison of immutable document versions
+- Next implementation slice: RSS/Atom source breadth and reviewed-event delivery adapters
 
 ## Local setup
 
@@ -83,6 +86,12 @@ make ocr             # process OCR synchronously inside the isolated OCR contain
 make embed-openai    # populate missing OpenAI vectors for the current JPDP corpus
 make evaluate-embeddings # compare local and OpenAI vector retrieval on the JPDP benchmark
 make quality         # assess the current JPDP extraction corpus without network access
+make audit-lineage   # read-only audit of version provenance and representation lineage
+make classify-lineage # persist append-only lineage assessments
+make anchors         # project current bilingual legal anchors
+make compare         # compare every eligible temporal version pair deterministically
+make summarize COMPARISON_ID=<uuid> # summarize confirmed deltas with structured GPT output
+make publish-reviewed COMPARISON_ID=<uuid> # create idempotent reviewed-change outbox events
 make verify-storage  # write/read/delete one temporary R2 probe
 make superuser       # create an admin user
 make down             # stop services without deleting data
@@ -114,6 +123,8 @@ provider remains available as an offline fallback.
 
 See [Foundation architecture](docs/foundation.md), [Phase 2 retrieval](docs/retrieval.md),
 [Phase 3A extraction and evidence graph](docs/knowledge-graph.md),
-[Phase 3B extraction quality](docs/quality.md), and [Phase F self-hosted OCR](docs/ocr.md) for
-design decisions and operating instructions. [Phase G hybrid embeddings](docs/embeddings.md)
-documents the OpenAI boundary and measured retrieval results.
+[Phase 3B extraction quality](docs/quality.md),
+[Phase 3C version comparison](docs/version-comparison.md), and
+[Phase F self-hosted OCR](docs/ocr.md) for design decisions and operating instructions.
+[Phase G hybrid embeddings](docs/embeddings.md) documents the OpenAI embedding boundary and
+measured retrieval results.

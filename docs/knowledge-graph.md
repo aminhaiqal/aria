@@ -134,6 +134,9 @@ docker compose exec api python manage.py evaluate_embeddings
 See [Phase G hybrid embeddings](embeddings.md) for retry behavior, privacy boundaries, benchmark
 cases, and the verified JPDP result.
 
+See [Phase 3C version comparison](version-comparison.md) for representation-safe lineage,
+structural anchors, deterministic textual deltas, human review, and optional GPT summaries.
+
 When the S3-compatible backend is selected, validate the prepared R2 configuration with:
 
 ```bash

@@ -8,6 +8,7 @@ from aria.comparisons.models import (
     ComparisonReview,
     ComparisonSummary,
     DocumentComparison,
+    ReviewedChangePublication,
     StructuralAnchor,
     VersionLineageAssessment,
 )
@@ -650,4 +651,16 @@ class ComparisonSummarySerializer(serializers.ModelSerializer):
             "error_message",
             "created_at",
             "updated_at",
+        )
+
+
+class ReviewedChangePublicationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ReviewedChangePublication
+        fields = (
+            "id",
+            "comparison_item",
+            "confirmation_review",
+            "pipeline_event",
+            "created_at",
         )

@@ -27,9 +27,11 @@ from aria.comparisons.models import (
     ComparisonReview,
     ComparisonSummary,
     DocumentComparison,
+    ReviewedChangePublication,
     StructuralAnchor,
     VersionLineageAssessment,
 )
+from aria.comparisons.publications import publish_confirmed_comparison_changes
 from aria.comparisons.reviews import record_comparison_review
 from aria.comparisons.services import (
     ComparisonEligibilityError,
@@ -50,7 +52,7 @@ from aria.documents.models import (
     NormalizedSection,
     VersionEvidence,
 )
-from aria.events.models import AuditEvent
+from aria.events.models import AuditEvent, OutboxEvent, PipelineEvent
 from aria.extraction.models import ExtractedBlock, ExtractedDocument, ExtractionRun
 
 
@@ -655,3 +657,77 @@ class GPTComparisonSummaryTestCase(Phase3CFixture):
         summary = ComparisonSummary.objects.get()
         self.assertEqual(summary.status, ComparisonSummary.Status.FAILED)
         self.assertEqual(summary.error_code, "SummaryError")
+
+
+class ReviewedChangePublicationTestCase(Phase3CFixture):
+    def setUp(self) -> None:
+        super().setUp()
+        before = self.create_version(
+            "Section 1 Notice\nNotice must be given promptly.\nSection 2 Stable\nStable text."
+        )
+        after = self.create_version(
+            "Section 1 Notice\nNotice must be given within 72 hours.\n"
+            "Section 2 Stable\nStable text."
+        )
+        self.comparison, _ = compare_document_versions(before, after)
+        self.item = self.comparison.items.get(change_type=ComparisonItem.ChangeType.MODIFIED)
+        self.reviewer = get_user_model().objects.create_superuser(
+            username="publication-reviewer",
+            password="test-password",
+        )
+
+    def test_only_currently_confirmed_changes_publish_idempotent_evidence_events(self) -> None:
+        unreviewed = publish_confirmed_comparison_changes(self.comparison)
+        record_comparison_review(
+            self.item,
+            decision=ComparisonReview.Decision.NEEDS_CONTEXT,
+            reviewer=self.reviewer,
+        )
+        needs_context = publish_confirmed_comparison_changes(self.comparison)
+        confirmation = record_comparison_review(
+            self.item,
+            decision=ComparisonReview.Decision.CONFIRMED,
+            reviewer=self.reviewer,
+            rationale="Confirmed against the exact before and after anchors.",
+        )
+
+        published = publish_confirmed_comparison_changes(self.comparison)
+        replay = publish_confirmed_comparison_changes(self.comparison)
+
+        self.assertEqual(unreviewed.published_count, 0)
+        self.assertEqual(needs_context.published_count, 0)
+        self.assertEqual(published.published_count, 1)
+        self.assertEqual(replay.published_count, 0)
+        self.assertEqual(replay.skipped_count, 1)
+        self.assertEqual(ReviewedChangePublication.objects.count(), 1)
+        self.assertEqual(PipelineEvent.objects.count(), 1)
+        self.assertEqual(OutboxEvent.objects.count(), 1)
+        event = PipelineEvent.objects.get()
+        self.assertEqual(event.event_type, "regulatory.textual_change.confirmed")
+        self.assertEqual(event.payload["confirmation_review_id"], str(confirmation.id))
+        self.assertFalse(event.payload["legal_effect_assessed"])
+        self.assertEqual(
+            event.payload["before"]["artifact_sha256"],
+            self.item.before_anchor.source_artifact.sha256,
+        )
+
+        record_comparison_review(
+            self.item,
+            decision=ComparisonReview.Decision.REJECTED,
+            reviewer=self.reviewer,
+        )
+        rejected = publish_confirmed_comparison_changes(self.comparison)
+        self.assertEqual(rejected.candidate_count, 0)
+        self.assertEqual(PipelineEvent.objects.count(), 1)
+
+        publication = ReviewedChangePublication.objects.get()
+        self.client.force_login(self.reviewer)
+        response = self.client.get(
+            reverse("reviewedchangepublication-detail", args=[publication.id])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["confirmation_review"], str(confirmation.id))
+        self.assertEqual(
+            self.client.post(reverse("reviewedchangepublication-list"), {}).status_code,
+            405,
+        )

@@ -113,5 +113,6 @@ the same run and counts.
 
 The remaining warnings are inspectable quality signals: five low title-token coverage findings,
 three incomplete native-PDF page-coverage findings, one repeated-content finding in an OCR
-document, and one missing-title finding. None is silently treated as reviewed. Structural version
-comparison and legal interpretation remain outside this milestone.
+document, and one missing-title finding. None is silently treated as reviewed. Phase 3C now adds
+structural version comparison behind a separate provenance and human-review boundary; legal
+interpretation remains outside both milestones. See [Phase 3C version comparison](version-comparison.md).

@@ -3,10 +3,10 @@
 ## Scope
 
 This foundation implements Phase 1, the Phase 2 JPDP retrieval slice, Phase 3A deterministic
-extraction and evidence projection, Phase 3B quality and linked-file remediation, Phase F
-self-hosted OCR completion, and Phase G hybrid semantic retrieval. It provides durable registry,
-workflow, retrieval, immutable evidence, document versioning, OCR lineage, graph, search, and
-extraction-quality boundaries.
+extraction and evidence projection, Phase 3B quality and linked-file remediation, Phase 3C
+evidence-backed version comparison, Phase F self-hosted OCR completion, and Phase G hybrid semantic
+retrieval. It provides durable registry, workflow, retrieval, immutable evidence, document
+versioning, OCR lineage, graph, search, comparison, review, and extraction-quality boundaries.
 
 ## Runtime layout
 
@@ -27,6 +27,7 @@ Browser / operator
        +---- extraction queue ---- versions + evidence graph + search indexes
        |                                  |
        |                                  +---- offline quality assessment
+       +---- diff queue ---------- lineage + anchors + deterministic comparisons + GPT summaries
        +---- dedicated OCR worker ---- immutable searchable PDF + text sidecar
        +---- normalization, diff queues (reserved)
 ```
@@ -47,6 +48,7 @@ language packs. This bounds resource use and keeps OCR system packages out of th
 - `ocr`: versioned OCR plans, execution state, toolchain evidence, and derivative orchestration
 - `documents`: stable identities, immutable versions, evidence records, and normalized sections
 - `knowledge`: structural graph nodes/edges, provider-versioned vectors, and retrieval evaluation
+- `comparisons`: version lineage, structural anchors, deterministic deltas, review, and summaries
 - `quality`: versioned corpus assessments and append-only, provenance-backed findings
 - `events`: transactional pipeline history, delivery outbox, and append-only audit history
 - `api`: administrator-only read API
@@ -94,6 +96,10 @@ language packs. This bounds resource use and keeps OCR system packages out of th
 17. Hosted embeddings receive normalized heading/text input only after evidence has been archived
     and verified; hosted vector search also sends its query text. Original files, credentials,
     provenance, graph state, and stored vectors remain in operator-controlled services.
+18. Version comparisons never cross representation tracks or compare re-extractions of the same
+    artifact. They produce textual candidates, not claims about legal effect.
+19. GPT summaries require currently confirmed change items and cannot alter deterministic change
+    classifications. Only explicit reviewed-change publication creates an outbox event.
 
 ## Self-hosting and Cloudflare
 
@@ -109,8 +115,7 @@ the default. A deployment can activate OpenAI for better semantic retrieval or s
 
 ## Next slice
 
-1. Define reviewed structural anchors for acts, regulations, circulars, and guidelines.
-2. Compare explicit immutable versions without claiming legal meaning from formatting noise.
-3. Persist evidence-backed change candidates with section and artifact provenance.
-4. Add RSS/Atom discovery and a browser retrieval fallback for explicitly approved sources.
-5. Publish reviewed change events through the outbox.
+1. Add RSS/Atom discovery for explicitly approved official sources.
+2. Add a bounded browser retrieval fallback for JavaScript-only official pages.
+3. Add an operator-selected delivery adapter for reviewed outbox events.
+4. Measure change-detection precision when JPDP publishes the first distinct temporal artifact pair.
