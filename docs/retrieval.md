@@ -136,3 +136,8 @@ Phase F then created five searchable-PDF and five text-sidecar derivatives under
 `derived/ocr/sha256/` namespace. The five original source hashes and bytes remain unchanged. Each
 derivative has an append-only source relationship, processing profile, configuration hash,
 toolchain record, and page metrics. See [Phase F self-hosted OCR](ocr.md).
+
+Phase 3D.0 and 3D.1 now add continuous six-hour JPDP monitoring, immutable discovery-endpoint
+observations, conditional candidate retrieval, source-specific R2 keys, and change-aware extraction
+dispatch. See [Phase 3D official-source monitoring](monitoring.md) for the safety contract,
+operations, live verification, and interface sequence.

@@ -11,6 +11,7 @@ publications before any AI interpretation is introduced.
 - Scheduled and manual source runs with durable PostgreSQL state
 - Idempotent discovered candidates and per-run observations
 - A configurable static HTML listing connector, initially seeded for Malaysia's JPDP
+- Six-hour JPDP monitoring with immutable endpoint observations and conditional artifact retrieval
 - An HTTPS client with domain allowlists, public-address validation, redirect revalidation,
   response limits, retries, conditional requests, and per-domain rate limiting
 - Immutable, content-addressed raw artifacts with SHA-256 integrity checks
@@ -34,9 +35,9 @@ publications before any AI interpretation is introduced.
 - Liveness and database/Redis readiness probes
 - A self-hosted Docker Compose stack using pgvector-enabled PostgreSQL and Redis
 
-RSS discovery, browser retrieval, legal-relationship extraction, version diffing, and change
-publication remain for later phases. OCR output is an explicit derivative and never replaces or
-mutates the official source artifact.
+RSS discovery, browser retrieval, legal-relationship extraction, and external outbox delivery
+remain for later phases. OCR output is an explicit derivative and never replaces or mutates the
+official source artifact.
 
 ## Current milestone
 
@@ -45,10 +46,12 @@ mutates the official source artifact.
 - Phase 3A deterministic extraction and evidence graph: implemented
 - Phase 3B extraction quality and JPDP linked-file remediation: implemented
 - Phase 3C evidence-backed structural version comparison: implemented
+- Phase 3D.0 durable source monitoring contract: implemented
+- Phase 3D.1 scheduled conditional JPDP retrieval: implemented
 - Phase 3F bounded self-hosted OCR completion: implemented
 - Phase 3G measured hybrid semantic retrieval: implemented
 - Phase 2 source breadth: RSS and browser fallback remain open
-- Next implementation slice: RSS/Atom source breadth and reviewed-event delivery adapters
+- Next implementation slice: independent detail-page/RSS discovery and the operator console
 
 ## Local setup
 
@@ -79,6 +82,7 @@ make logs            # follow API and worker logs
 make test            # run the Django test suite in Compose
 make makemigrations  # generate model migrations
 make migrate         # apply migrations
+make poll-jpdp       # queue one bounded manual JPDP monitoring cycle
 make extract         # replay every archived artifact through extraction locally
 make route-linked    # route and queue official files linked by archived JPDP pages
 make plan-ocr        # list the deterministic OCR input set and current statuses
@@ -124,7 +128,8 @@ provider remains available as an offline fallback.
 See [Foundation architecture](docs/foundation.md), [Phase 2 retrieval](docs/retrieval.md),
 [Phase 3A extraction and evidence graph](docs/knowledge-graph.md),
 [Phase 3B extraction quality](docs/quality.md),
-[Phase 3C version comparison](docs/version-comparison.md), and
+[Phase 3C version comparison](docs/version-comparison.md),
+[Phase 3D source monitoring](docs/monitoring.md), and
 [Phase F self-hosted OCR](docs/ocr.md) for design decisions and operating instructions.
 [Phase G hybrid embeddings](docs/embeddings.md) documents the OpenAI embedding boundary and
 measured retrieval results.

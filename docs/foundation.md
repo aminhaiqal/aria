@@ -4,9 +4,10 @@
 
 This foundation implements Phase 1, the Phase 2 JPDP retrieval slice, Phase 3A deterministic
 extraction and evidence projection, Phase 3B quality and linked-file remediation, Phase 3C
-evidence-backed version comparison, Phase F self-hosted OCR completion, and Phase G hybrid semantic
-retrieval. It provides durable registry, workflow, retrieval, immutable evidence, document
-versioning, OCR lineage, graph, search, comparison, review, and extraction-quality boundaries.
+evidence-backed version comparison, Phase 3D.0/3D.1 continuous official-source monitoring,
+Phase F self-hosted OCR completion, and Phase G hybrid semantic retrieval. It provides durable
+registry, workflow, retrieval, immutable evidence, document versioning, OCR lineage, graph, search,
+comparison, review, monitoring, and extraction-quality boundaries.
 
 ## Runtime layout
 
@@ -100,6 +101,10 @@ language packs. This bounds resource use and keeps OCR system packages out of th
     artifact. They produce textual candidates, not claims about legal effect.
 19. GPT summaries require currently confirmed change items and cannot alter deterministic change
     classifications. Only explicit reviewed-change publication creates an outbox event.
+20. Successful offline replay cannot reset an external source's health. Only a persisted endpoint
+    observation can do so.
+21. A changed HTTP payload is evidence of changed bytes, not a new legal version. Extraction and
+    normalized-content identity must independently establish a new version.
 
 ## Self-hosting and Cloudflare
 
@@ -115,7 +120,8 @@ the default. A deployment can activate OpenAI for better semantic retrieval or s
 
 ## Next slice
 
-1. Add RSS/Atom discovery for explicitly approved official sources.
-2. Add a bounded browser retrieval fallback for JavaScript-only official pages.
-3. Add an operator-selected delivery adapter for reviewed outbox events.
-4. Measure change-detection precision when JPDP publishes the first distinct temporal artifact pair.
+1. Add independent conditional monitoring for JPDP detail pages and official RSS/Atom feeds.
+2. Build the Phase 3D.5 self-hosted operator console for monitoring and review.
+3. Add a bounded browser retrieval fallback for JavaScript-only official pages.
+4. Add an operator-selected delivery adapter for reviewed outbox events.
+5. Measure change-detection precision when JPDP publishes the first distinct temporal artifact pair.
