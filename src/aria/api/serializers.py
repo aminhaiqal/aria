@@ -12,7 +12,7 @@ from aria.comparisons.models import (
     StructuralAnchor,
     VersionLineageAssessment,
 )
-from aria.discovery.models import DiscoveredCandidate, SourceRun
+from aria.discovery.models import DiscoveredCandidate, EndpointObservation, SourceRun
 from aria.documents.models import DocumentIdentity, DocumentVersion, NormalizedSection
 from aria.extraction.models import ExtractedDocument, ExtractionRun
 from aria.fetching.models import FetchAttempt
@@ -97,7 +97,10 @@ class SourceEndpointSerializer(serializers.ModelSerializer):
             "requires_javascript",
             "connector_configuration_version",
             "connector_configurations",
+            "last_checked_at",
+            "last_changed_at",
             "last_successful_run_at",
+            "consecutive_failures",
             "health_state",
             "is_enabled",
             "created_at",
@@ -126,6 +129,31 @@ class SourceRunSerializer(serializers.ModelSerializer):
             "error_message",
             "created_at",
             "updated_at",
+        )
+
+
+class EndpointObservationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EndpointObservation
+        fields = (
+            "id",
+            "source_run",
+            "endpoint",
+            "previous_observation",
+            "outcome",
+            "requested_url",
+            "final_url",
+            "response_status",
+            "request_headers",
+            "response_headers",
+            "redirect_chain",
+            "resolved_addresses",
+            "byte_size",
+            "content_sha256",
+            "etag",
+            "last_modified",
+            "connector_configuration_version",
+            "checked_at",
         )
 
 

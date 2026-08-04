@@ -108,7 +108,8 @@ class FoundationTestCase(TestCase):
         self.endpoint.refresh_from_db()
         self.assertEqual(source_run.status, SourceRun.Status.FAILED)
         self.assertEqual(source_run.error_code, "connector_not_registered")
-        self.assertEqual(self.endpoint.health_state, SourceEndpoint.HealthState.UNHEALTHY)
+        self.assertEqual(self.endpoint.health_state, SourceEndpoint.HealthState.DEGRADED)
+        self.assertEqual(self.endpoint.consecutive_failures, 1)
         self.assertTrue(
             PipelineEvent.objects.filter(
                 aggregate_id=source_run.id,

@@ -21,6 +21,7 @@ from aria.api.serializers import (
     DocumentIdentitySerializer,
     DocumentQualityAssessmentSerializer,
     DocumentVersionSerializer,
+    EndpointObservationSerializer,
     ExtractedDocumentSerializer,
     ExtractionRunSerializer,
     FetchAttemptSerializer,
@@ -51,7 +52,7 @@ from aria.comparisons.models import (
     StructuralAnchor,
     VersionLineageAssessment,
 )
-from aria.discovery.models import DiscoveredCandidate, SourceRun
+from aria.discovery.models import DiscoveredCandidate, EndpointObservation, SourceRun
 from aria.documents.models import DocumentIdentity, DocumentVersion, NormalizedSection
 from aria.extraction.models import ExtractedDocument, ExtractionRun
 from aria.fetching.models import FetchAttempt
@@ -93,6 +94,13 @@ class SourceEndpointViewSet(ReadOnlyModelViewSet):
 class SourceRunViewSet(ReadOnlyModelViewSet):
     queryset = SourceRun.objects.select_related("endpoint")
     serializer_class = SourceRunSerializer
+
+
+class EndpointObservationViewSet(ReadOnlyModelViewSet):
+    queryset = EndpointObservation.objects.select_related(
+        "source_run", "endpoint", "previous_observation"
+    )
+    serializer_class = EndpointObservationSerializer
 
 
 class DiscoveredCandidateViewSet(ReadOnlyModelViewSet):

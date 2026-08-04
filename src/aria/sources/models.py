@@ -49,7 +49,10 @@ class SourceEndpoint(TimeStampedModel):
     expected_content_types = models.JSONField(default=list, blank=True)
     requires_javascript = models.BooleanField(default=False)
     connector_configuration_version = models.PositiveIntegerField(default=1)
+    last_checked_at = models.DateTimeField(null=True, blank=True)
+    last_changed_at = models.DateTimeField(null=True, blank=True)
     last_successful_run_at = models.DateTimeField(null=True, blank=True)
+    consecutive_failures = models.PositiveSmallIntegerField(default=0)
     health_state = models.CharField(
         max_length=16,
         choices=HealthState.choices,

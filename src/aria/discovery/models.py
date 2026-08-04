@@ -1,6 +1,9 @@
+from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
 from django.db import models
+from django.utils import timezone
 
-from aria.common.models import TimeStampedModel
+from aria.common.models import AppendOnlyModel, TimeStampedModel
 from aria.sources.models import SourceEndpoint
 
 
@@ -125,3 +128,74 @@ class CandidateObservation(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.source_run_id}: {self.candidate_id}"
+
+
+class EndpointObservation(AppendOnlyModel):
+    class Outcome(models.TextChoices):
+        CHANGED = "changed", "Changed"
+        UNCHANGED = "unchanged", "Unchanged"
+        NOT_MODIFIED = "not_modified", "HTTP not modified"
+
+    source_run = models.OneToOneField(
+        SourceRun,
+        on_delete=models.PROTECT,
+        related_name="endpoint_observation",
+    )
+    endpoint = models.ForeignKey(
+        SourceEndpoint,
+        on_delete=models.PROTECT,
+        related_name="endpoint_observations",
+    )
+    previous_observation = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        related_name="next_observations",
+        null=True,
+        blank=True,
+    )
+    outcome = models.CharField(max_length=16, choices=Outcome.choices, db_index=True)
+    requested_url = models.URLField(max_length=2048)
+    final_url = models.URLField(max_length=2048)
+    response_status = models.PositiveSmallIntegerField()
+    request_headers = models.JSONField(default=dict, blank=True)
+    response_headers = models.JSONField(default=dict, blank=True)
+    redirect_chain = models.JSONField(default=list, blank=True)
+    resolved_addresses = models.JSONField(default=list, blank=True)
+    byte_size = models.PositiveBigIntegerField(default=0)
+    content_sha256 = models.CharField(
+        max_length=64,
+        validators=[RegexValidator(r"^[0-9a-f]{64}$")],
+    )
+    etag = models.CharField(max_length=512, blank=True)
+    last_modified = models.CharField(max_length=255, blank=True)
+    connector_configuration_version = models.PositiveIntegerField()
+    checked_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ("-checked_at", "-id")
+        indexes = [models.Index(fields=("endpoint", "outcome", "checked_at"))]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(outcome="not_modified", response_status=304)
+                    | models.Q(
+                        outcome__in=("changed", "unchanged"),
+                        response_status__gte=200,
+                        response_status__lt=300,
+                    )
+                ),
+                name="endpoint_observation_outcome_matches_status",
+            )
+        ]
+
+    def clean(self) -> None:
+        if self.source_run_id and self.endpoint_id != self.source_run.endpoint_id:
+            raise ValidationError("Endpoint observation must match its source run endpoint.")
+        if (
+            self.previous_observation_id
+            and self.previous_observation.endpoint_id != self.endpoint_id
+        ):
+            raise ValidationError("Previous observation must belong to the same endpoint.")
+
+    def __str__(self) -> str:
+        return f"{self.endpoint_id} {self.checked_at:%Y-%m-%d %H:%M:%S} [{self.outcome}]"

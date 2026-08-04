@@ -12,6 +12,7 @@ from aria.api.views import (
     DocumentIdentityViewSet,
     DocumentQualityAssessmentViewSet,
     DocumentVersionViewSet,
+    EndpointObservationViewSet,
     ExtractedDocumentViewSet,
     ExtractionRunViewSet,
     FetchAttemptViewSet,
@@ -36,6 +37,7 @@ router.register("authorities", AuthorityViewSet)
 router.register("collections", PublicationCollectionViewSet)
 router.register("source-endpoints", SourceEndpointViewSet)
 router.register("source-runs", SourceRunViewSet)
+router.register("endpoint-observations", EndpointObservationViewSet)
 router.register("candidates", DiscoveredCandidateViewSet)
 router.register("fetch-attempts", FetchAttemptViewSet)
 router.register("artifacts", RawArtifactViewSet)

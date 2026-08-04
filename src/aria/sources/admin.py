@@ -17,6 +17,8 @@ class SourceEndpointAdmin(admin.ModelAdmin):
         "collection",
         "connector_type",
         "health_state",
+        "consecutive_failures",
+        "last_checked_at",
         "next_poll_at",
         "is_enabled",
     )

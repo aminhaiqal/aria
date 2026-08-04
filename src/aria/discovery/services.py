@@ -1,14 +1,60 @@
+import hashlib
 import uuid
 from datetime import timedelta
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import F, Q
 from django.utils import timezone
 
 from aria.discovery.connectors import CandidateData
-from aria.discovery.models import CandidateObservation, DiscoveredCandidate, SourceRun
+from aria.discovery.models import (
+    CandidateObservation,
+    DiscoveredCandidate,
+    EndpointObservation,
+    SourceRun,
+)
 from aria.events.services import record_audit_event, record_pipeline_event
+from aria.fetching.client import FetchResponse
 from aria.sources.models import SourceEndpoint
+
+MONITOR_RESPONSE_HEADERS = frozenset(
+    {
+        "cache-control",
+        "content-length",
+        "content-type",
+        "date",
+        "etag",
+        "expires",
+        "last-modified",
+        "retry-after",
+    }
+)
+
+
+def endpoint_monitor_cursor(endpoint: SourceEndpoint) -> dict | None:
+    observation = endpoint.endpoint_observations.order_by("-checked_at", "-id").first()
+    if observation is None:
+        return None
+    return {
+        "strategy": "http_conditional_v1",
+        "endpoint_observation_id": str(observation.id),
+        "source_run_id": str(observation.source_run_id),
+        "content_sha256": observation.content_sha256,
+        "etag": observation.etag,
+        "last_modified": observation.last_modified,
+    }
+
+
+def conditional_headers_from_cursor(cursor: dict | None) -> dict[str, str]:
+    if not cursor or cursor.get("strategy") != "http_conditional_v1":
+        return {}
+    headers: dict[str, str] = {}
+    if cursor.get("etag"):
+        headers["If-None-Match"] = str(cursor["etag"])
+    if cursor.get("last_modified"):
+        headers["If-Modified-Since"] = str(cursor["last_modified"])
+    return headers
 
 
 @transaction.atomic
@@ -25,6 +71,7 @@ def create_source_run(
             "endpoint": endpoint,
             "trigger": trigger,
             "connector_configuration_version": endpoint.connector_configuration_version,
+            "cursor_before": endpoint_monitor_cursor(endpoint),
         },
     )
     if created:
@@ -86,20 +133,38 @@ def mark_source_run_started(source_run: SourceRun) -> SourceRun:
 @transaction.atomic
 def mark_source_run_completed(source_run: SourceRun, cursor_after: dict | None = None) -> SourceRun:
     now = timezone.now()
+    observation = EndpointObservation.objects.filter(source_run=source_run).first()
+    if cursor_after is None and observation is not None:
+        cursor_after = endpoint_monitor_cursor(source_run.endpoint)
     source_run.status = SourceRun.Status.COMPLETED
     source_run.finished_at = now
     source_run.cursor_after = cursor_after
     source_run.save(update_fields=("status", "finished_at", "cursor_after", "updated_at"))
-    SourceEndpoint.objects.filter(pk=source_run.endpoint_id).update(
-        last_successful_run_at=now,
-        health_state=SourceEndpoint.HealthState.HEALTHY,
-        updated_at=now,
+    endpoint = SourceEndpoint.objects.select_for_update().get(pk=source_run.endpoint_id)
+    endpoint.last_checked_at = observation.checked_at if observation is not None else now
+    if observation is not None and observation.outcome == EndpointObservation.Outcome.CHANGED:
+        endpoint.last_changed_at = observation.checked_at
+    endpoint.last_successful_run_at = now
+    endpoint.consecutive_failures = 0
+    endpoint.health_state = SourceEndpoint.HealthState.HEALTHY
+    endpoint.save(
+        update_fields=(
+            "last_checked_at",
+            "last_changed_at",
+            "last_successful_run_at",
+            "consecutive_failures",
+            "health_state",
+            "updated_at",
+        )
     )
     record_pipeline_event(
         event_type="source.run.completed",
         aggregate_type="source_run",
         aggregate_id=source_run.id,
-        payload={"candidate_count": source_run.discovered_candidate_count},
+        payload={
+            "candidate_count": source_run.discovered_candidate_count,
+            "monitor_outcome": observation.outcome if observation is not None else "",
+        },
     )
     return source_run
 
@@ -114,17 +179,104 @@ def mark_source_run_failed(source_run: SourceRun, *, code: str, message: str) ->
     source_run.save(
         update_fields=("status", "finished_at", "error_code", "error_message", "updated_at")
     )
-    SourceEndpoint.objects.filter(pk=source_run.endpoint_id).update(
-        health_state=SourceEndpoint.HealthState.UNHEALTHY,
-        updated_at=now,
+    endpoint = SourceEndpoint.objects.select_for_update().get(pk=source_run.endpoint_id)
+    endpoint.last_checked_at = now
+    endpoint.consecutive_failures += 1
+    endpoint.health_state = (
+        SourceEndpoint.HealthState.UNHEALTHY
+        if endpoint.consecutive_failures >= settings.MONITOR_UNHEALTHY_AFTER_FAILURES
+        else SourceEndpoint.HealthState.DEGRADED
+    )
+    endpoint.save(
+        update_fields=(
+            "last_checked_at",
+            "consecutive_failures",
+            "health_state",
+            "updated_at",
+        )
     )
     record_pipeline_event(
         event_type="source.run.failed",
         aggregate_type="source_run",
         aggregate_id=source_run.id,
-        payload={"error_code": code, "error_message": message},
+        payload={
+            "error_code": code,
+            "error_message": message,
+            "consecutive_failures": endpoint.consecutive_failures,
+            "health_state": endpoint.health_state,
+        },
     )
     return source_run
+
+
+@transaction.atomic
+def record_endpoint_observation(
+    source_run: SourceRun,
+    response: FetchResponse,
+    *,
+    request_headers: dict[str, str] | None = None,
+) -> EndpointObservation:
+    previous = (
+        EndpointObservation.objects.filter(endpoint=source_run.endpoint)
+        .select_for_update()
+        .order_by("-checked_at", "-id")
+        .first()
+    )
+    if response.status_code == 304:
+        if previous is None:
+            raise ValueError("Received HTTP 304 without a previous endpoint observation.")
+        outcome = EndpointObservation.Outcome.NOT_MODIFIED
+        content_sha256 = previous.content_sha256
+        byte_size = previous.byte_size
+    else:
+        content_sha256 = hashlib.sha256(response.content).hexdigest()
+        byte_size = len(response.content)
+        outcome = (
+            EndpointObservation.Outcome.UNCHANGED
+            if previous is not None and previous.content_sha256 == content_sha256
+            else EndpointObservation.Outcome.CHANGED
+        )
+    response_headers = {
+        key.lower(): value
+        for key, value in response.headers.items()
+        if key.lower() in MONITOR_RESPONSE_HEADERS
+    }
+    observation = EndpointObservation(
+        source_run=source_run,
+        endpoint=source_run.endpoint,
+        previous_observation=previous,
+        outcome=outcome,
+        requested_url=response.requested_url,
+        final_url=response.final_url,
+        response_status=response.status_code,
+        request_headers=request_headers or {},
+        response_headers=response_headers,
+        redirect_chain=response.redirect_chain,
+        resolved_addresses=response.resolved_addresses,
+        byte_size=byte_size,
+        content_sha256=content_sha256,
+        etag=response_headers.get("etag", previous.etag if previous is not None else ""),
+        last_modified=response_headers.get(
+            "last-modified", previous.last_modified if previous is not None else ""
+        ),
+        connector_configuration_version=source_run.connector_configuration_version,
+    )
+    observation.full_clean()
+    observation.save()
+    record_pipeline_event(
+        event_type="source.endpoint.observed",
+        aggregate_type="source_endpoint",
+        aggregate_id=source_run.endpoint_id,
+        payload={
+            "source_run_id": str(source_run.id),
+            "endpoint_observation_id": str(observation.id),
+            "outcome": observation.outcome,
+            "response_status": observation.response_status,
+            "content_sha256": observation.content_sha256,
+            "byte_size": observation.byte_size,
+        },
+    )
+    return observation
 
 
 @transaction.atomic
