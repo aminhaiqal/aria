@@ -5,7 +5,9 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup
 
-from aria.discovery.connectors import CandidateData
+from aria.discovery.connectors import CandidateData, DiscoveryResult
+from aria.discovery.models import DiscoveredCandidate
+from aria.discovery.services import conditional_headers_from_cursor
 from aria.fetching.client import SafeHttpClient, get_default_http_client, hostname_is_allowed
 from aria.sources.models import ConnectorConfiguration, SourceEndpoint
 
@@ -32,7 +34,7 @@ class ConfiguredHTMLListingConnector:
         self,
         endpoint: SourceEndpoint,
         cursor: dict | None,
-    ) -> list[CandidateData]:
+    ) -> DiscoveryResult:
         connector_configuration = (
             ConnectorConfiguration.objects.filter(
                 endpoint=endpoint,
@@ -69,11 +71,24 @@ class ConfiguredHTMLListingConnector:
         max_detail_pages = int(configuration.get("max_detail_pages", max_candidates))
 
         client = self.client_factory()
+        conditional_headers = conditional_headers_from_cursor(cursor)
         try:
             response = client.fetch(
                 endpoint.discovery_url,
                 allowed_domains=endpoint.allowed_domains,
+                headers=conditional_headers,
             )
+            if response.status_code == 304:
+                candidates = self._reuse_previous_candidates(endpoint, cursor)
+                if not candidates:
+                    raise ConnectorStructureChanged(
+                        "The endpoint returned HTTP 304 without reusable prior candidates."
+                    )
+                return DiscoveryResult(
+                    candidates=tuple(candidates),
+                    response=response,
+                    request_headers=conditional_headers,
+                )
             content_type = response.headers.get("content-type", "").lower()
             if "html" not in content_type:
                 raise ConnectorStructureChanged(
@@ -190,4 +205,34 @@ class ConfiguredHTMLListingConnector:
             raise ConnectorStructureChanged(
                 f"Selector '{selector}' produced no qualifying publication links."
             )
-        return candidates
+        return DiscoveryResult(
+            candidates=tuple(candidates),
+            response=response,
+            request_headers=conditional_headers,
+        )
+
+    @staticmethod
+    def _reuse_previous_candidates(
+        endpoint: SourceEndpoint,
+        cursor: dict | None,
+    ) -> list[CandidateData]:
+        if not cursor or not cursor.get("source_run_id"):
+            return []
+        candidates = (
+            DiscoveredCandidate.objects.filter(
+                endpoint=endpoint,
+                observations__source_run_id=cursor["source_run_id"],
+            )
+            .distinct()
+            .order_by("canonical_url", "id")
+        )
+        return [
+            CandidateData(
+                discovered_url=candidate.discovered_url,
+                canonical_url=candidate.canonical_url,
+                external_identifier=candidate.external_identifier,
+                fingerprint=candidate.fingerprint,
+                metadata_hints=candidate.metadata_hints,
+            )
+            for candidate in candidates
+        ]

@@ -1,6 +1,7 @@
 import logging
 
 from celery import shared_task
+from django.db import transaction
 
 from aria.discovery.connectors import ConnectorNotRegistered, get_connector
 from aria.discovery.models import SourceRun
@@ -9,6 +10,7 @@ from aria.discovery.services import (
     mark_source_run_failed,
     mark_source_run_started,
     observe_candidate,
+    record_endpoint_observation,
     schedule_due_source_runs,
 )
 from aria.events.services import record_pipeline_event
@@ -42,13 +44,24 @@ def execute_source_run(self, source_run_id: str) -> None:
 
     try:
         connector = get_connector(source_run.endpoint.connector_type)
-        candidates = connector.discover(source_run.endpoint, source_run.cursor_before)
+        result = connector.discover(source_run.endpoint, source_run.cursor_before)
         from aria.fetching.tasks import fetch_candidate
 
-        for candidate_data in candidates:
-            candidate, _ = observe_candidate(source_run, candidate_data)
-            fetch_candidate.delay(str(candidate.id), str(source_run.id))
-        mark_source_run_completed(source_run)
+        with transaction.atomic():
+            record_endpoint_observation(
+                source_run,
+                result.response,
+                request_headers=result.request_headers,
+            )
+            for candidate_data in result.candidates:
+                candidate, _ = observe_candidate(source_run, candidate_data)
+                transaction.on_commit(
+                    lambda candidate_id=str(candidate.id): fetch_candidate.delay(
+                        candidate_id,
+                        str(source_run.id),
+                    )
+                )
+            mark_source_run_completed(source_run)
     except ConnectorNotRegistered as error:
         mark_source_run_failed(source_run, code="connector_not_registered", message=str(error))
     except Exception as error:

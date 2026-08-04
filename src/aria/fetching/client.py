@@ -31,6 +31,10 @@ class ResponseTooLargeError(PermanentFetchError):
     pass
 
 
+class UnexpectedContentTypeError(PermanentFetchError):
+    pass
+
+
 @dataclass(frozen=True)
 class FetchResponse:
     requested_url: str

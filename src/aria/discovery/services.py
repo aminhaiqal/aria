@@ -140,23 +140,24 @@ def mark_source_run_completed(source_run: SourceRun, cursor_after: dict | None =
     source_run.finished_at = now
     source_run.cursor_after = cursor_after
     source_run.save(update_fields=("status", "finished_at", "cursor_after", "updated_at"))
-    endpoint = SourceEndpoint.objects.select_for_update().get(pk=source_run.endpoint_id)
-    endpoint.last_checked_at = observation.checked_at if observation is not None else now
-    if observation is not None and observation.outcome == EndpointObservation.Outcome.CHANGED:
-        endpoint.last_changed_at = observation.checked_at
-    endpoint.last_successful_run_at = now
-    endpoint.consecutive_failures = 0
-    endpoint.health_state = SourceEndpoint.HealthState.HEALTHY
-    endpoint.save(
-        update_fields=(
-            "last_checked_at",
-            "last_changed_at",
-            "last_successful_run_at",
-            "consecutive_failures",
-            "health_state",
-            "updated_at",
+    if observation is not None:
+        endpoint = SourceEndpoint.objects.select_for_update().get(pk=source_run.endpoint_id)
+        endpoint.last_checked_at = observation.checked_at
+        if observation.outcome == EndpointObservation.Outcome.CHANGED:
+            endpoint.last_changed_at = observation.checked_at
+        endpoint.last_successful_run_at = now
+        endpoint.consecutive_failures = 0
+        endpoint.health_state = SourceEndpoint.HealthState.HEALTHY
+        endpoint.save(
+            update_fields=(
+                "last_checked_at",
+                "last_changed_at",
+                "last_successful_run_at",
+                "consecutive_failures",
+                "health_state",
+                "updated_at",
+            )
         )
-    )
     record_pipeline_event(
         event_type="source.run.completed",
         aggregate_type="source_run",
@@ -216,6 +217,7 @@ def record_endpoint_observation(
     *,
     request_headers: dict[str, str] | None = None,
 ) -> EndpointObservation:
+    SourceEndpoint.objects.select_for_update().get(pk=source_run.endpoint_id)
     previous = (
         EndpointObservation.objects.filter(endpoint=source_run.endpoint)
         .select_for_update()
@@ -306,7 +308,6 @@ def observe_candidate(
         candidate.canonical_url = data.canonical_url
         candidate.external_identifier = data.external_identifier
         candidate.metadata_hints = data.metadata_hints
-        candidate.pipeline_state = DiscoveredCandidate.PipelineState.FETCH_PENDING
         candidate.save(
             update_fields=(
                 "latest_source_run",
@@ -315,7 +316,6 @@ def observe_candidate(
                 "canonical_url",
                 "external_identifier",
                 "metadata_hints",
-                "pipeline_state",
                 "updated_at",
             )
         )

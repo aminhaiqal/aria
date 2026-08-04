@@ -1,17 +1,39 @@
 import hashlib
 from email.message import Message
+from pathlib import PurePosixPath
+from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Max
 from django.utils import timezone
 
-from aria.artifacts.models import ArtifactObservation, RawArtifact
-from aria.artifacts.storage import ArtifactStore, get_artifact_store
+from aria.artifacts.models import ArtifactObservation
+from aria.artifacts.storage import ArtifactStore, persist_artifact
 from aria.discovery.models import DiscoveredCandidate, SourceRun
 from aria.events.services import record_pipeline_event
-from aria.fetching.client import FetchResponse
+from aria.fetching.client import FetchResponse, UnexpectedContentTypeError
 from aria.fetching.models import FetchAttempt
+
+DOCUMENT_CONTENT_TYPES = {
+    ".csv": {"application/csv", "text/csv"},
+    ".doc": {"application/msword"},
+    ".docx": {"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+    ".json": {"application/json"},
+    ".pdf": {"application/pdf"},
+    ".xml": {"application/xml", "text/xml"},
+}
+
+STABLE_CANDIDATE_STATES = {
+    DiscoveredCandidate.PipelineState.RAW_STORED,
+    DiscoveredCandidate.PipelineState.EXTRACTED,
+    DiscoveredCandidate.PipelineState.NORMALIZED,
+    DiscoveredCandidate.PipelineState.IDENTITY_RESOLVED,
+    DiscoveredCandidate.PipelineState.VERSIONED,
+    DiscoveredCandidate.PipelineState.DIFFED,
+    DiscoveredCandidate.PipelineState.PUBLISHED,
+    DiscoveredCandidate.PipelineState.MANUAL_REVIEW,
+}
 
 
 def detect_content_type(content: bytes, response_headers: dict[str, str]) -> str:
@@ -40,6 +62,33 @@ def latest_conditional_headers(candidate: DiscoveredCandidate) -> dict[str, str]
     if observation.last_modified:
         headers["If-Modified-Since"] = observation.last_modified
     return headers
+
+
+def expected_content_types(candidate: DiscoveredCandidate) -> set[str]:
+    url = candidate.canonical_url or candidate.discovered_url
+    suffix = PurePosixPath(urlsplit(url).path).suffix.lower()
+    if suffix in DOCUMENT_CONTENT_TYPES:
+        return DOCUMENT_CONTENT_TYPES[suffix]
+    return {
+        str(content_type).split(";", 1)[0].strip().lower()
+        for content_type in candidate.endpoint.expected_content_types
+        if str(content_type).strip()
+    }
+
+
+def artifact_namespace(candidate: DiscoveredCandidate) -> str:
+    collection = candidate.endpoint.collection
+    return f"sources/{collection.authority.slug}/{collection.slug}"
+
+
+def restore_unchanged_candidate_state(candidate_id, *, now) -> None:
+    candidate = DiscoveredCandidate.objects.get(pk=candidate_id)
+    if candidate.pipeline_state in STABLE_CANDIDATE_STATES:
+        return
+    DiscoveredCandidate.objects.filter(pk=candidate_id).update(
+        pipeline_state=DiscoveredCandidate.PipelineState.RAW_STORED,
+        updated_at=now,
+    )
 
 
 @transaction.atomic
@@ -74,28 +123,25 @@ def complete_fetch(
     store: ArtifactStore | None = None,
 ) -> ArtifactObservation:
     detected_content_type = detect_content_type(response.content, response.headers)
+    allowed_content_types = expected_content_types(attempt.candidate)
+    if allowed_content_types and detected_content_type not in allowed_content_types:
+        raise UnexpectedContentTypeError(
+            f"Detected content type '{detected_content_type}' is not allowed for "
+            f"{attempt.requested_url}."
+        )
     digest = hashlib.sha256(response.content).hexdigest()
-    existing_artifact = RawArtifact.objects.filter(sha256=digest).first()
-    if existing_artifact:
-        if existing_artifact.byte_size != len(response.content):
-            raise ValueError("Existing artifact size does not match retrieved content.")
-        raw_artifact = existing_artifact
-    else:
-        artifact_store = store or get_artifact_store()
-        storage_key = artifact_store.put_if_absent(
-            digest,
-            response.content,
-            detected_content_type,
-        )
-        raw_artifact, _ = RawArtifact.objects.get_or_create(
-            sha256=digest,
-            defaults={
-                "byte_size": len(response.content),
-                "detected_content_type": detected_content_type,
-                "storage_backend": artifact_store.backend_name,
-                "storage_key": storage_key,
-            },
-        )
+    previous = (
+        attempt.candidate.artifact_observations.select_related("raw_artifact")
+        .order_by("-retrieved_at", "-id")
+        .first()
+    )
+    content_changed = previous is None or previous.raw_artifact.sha256 != digest
+    raw_artifact = persist_artifact(
+        response.content,
+        detected_content_type,
+        store=store,
+        namespace=artifact_namespace(attempt.candidate),
+    )
 
     now = timezone.now()
     observation = ArtifactObservation.objects.create(
@@ -108,6 +154,7 @@ def complete_fetch(
         response_status=response.status_code,
         response_headers=response.headers,
         redirect_chain=response.redirect_chain,
+        content_changed=content_changed,
         retrieved_at=now,
         connector_configuration_version=attempt.source_run.connector_configuration_version,
         etag=response.headers.get("etag", ""),
@@ -134,12 +181,15 @@ def complete_fetch(
             "updated_at",
         )
     )
-    DiscoveredCandidate.objects.filter(pk=attempt.candidate_id).update(
-        pipeline_state=DiscoveredCandidate.PipelineState.RAW_STORED,
-        updated_at=now,
-    )
+    if content_changed:
+        DiscoveredCandidate.objects.filter(pk=attempt.candidate_id).update(
+            pipeline_state=DiscoveredCandidate.PipelineState.RAW_STORED,
+            updated_at=now,
+        )
+    else:
+        restore_unchanged_candidate_state(attempt.candidate_id, now=now)
     record_pipeline_event(
-        event_type="artifact.fetched",
+        event_type="artifact.fetched" if content_changed else "artifact.unchanged",
         aggregate_type="raw_artifact",
         aggregate_id=raw_artifact.id,
         payload={
@@ -148,11 +198,13 @@ def complete_fetch(
             "sha256": raw_artifact.sha256,
             "byte_size": raw_artifact.byte_size,
             "content_type": raw_artifact.detected_content_type,
+            "content_changed": content_changed,
         },
     )
-    from aria.extraction.tasks import extract_raw_artifact
+    if content_changed:
+        from aria.extraction.tasks import extract_raw_artifact
 
-    transaction.on_commit(lambda: extract_raw_artifact.delay(str(raw_artifact.id)))
+        transaction.on_commit(lambda: extract_raw_artifact.delay(str(raw_artifact.id)))
     return observation
 
 
@@ -172,6 +224,7 @@ def complete_not_modified(attempt: FetchAttempt, response: FetchResponse) -> Art
         response_status=response.status_code,
         response_headers=response.headers,
         redirect_chain=response.redirect_chain,
+        content_changed=False,
         retrieved_at=now,
         connector_configuration_version=attempt.source_run.connector_configuration_version,
         etag=response.headers.get("etag", previous.etag),
@@ -196,10 +249,7 @@ def complete_not_modified(attempt: FetchAttempt, response: FetchResponse) -> Art
             "updated_at",
         )
     )
-    DiscoveredCandidate.objects.filter(pk=attempt.candidate_id).update(
-        pipeline_state=DiscoveredCandidate.PipelineState.RAW_STORED,
-        updated_at=now,
-    )
+    restore_unchanged_candidate_state(attempt.candidate_id, now=now)
     record_pipeline_event(
         event_type="artifact.not_modified",
         aggregate_type="raw_artifact",
@@ -209,9 +259,6 @@ def complete_not_modified(attempt: FetchAttempt, response: FetchResponse) -> Art
             "fetch_attempt_id": str(attempt.id),
         },
     )
-    from aria.extraction.tasks import extract_raw_artifact
-
-    transaction.on_commit(lambda: extract_raw_artifact.delay(str(previous.raw_artifact_id)))
     return observation
 
 

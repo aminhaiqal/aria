@@ -1,7 +1,7 @@
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from aria.fetching.client import FetchResponse
 from aria.sources.models import SourceEndpoint
 
 
@@ -14,12 +14,19 @@ class CandidateData:
     metadata_hints: dict = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class DiscoveryResult:
+    candidates: tuple[CandidateData, ...]
+    response: FetchResponse
+    request_headers: dict[str, str] = field(default_factory=dict)
+
+
 class Connector(Protocol):
     def discover(
         self,
         endpoint: SourceEndpoint,
         cursor: dict | None,
-    ) -> Iterable[CandidateData]: ...
+    ) -> DiscoveryResult: ...
 
 
 class ConnectorNotRegistered(LookupError):

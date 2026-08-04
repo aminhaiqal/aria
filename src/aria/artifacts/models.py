@@ -56,6 +56,7 @@ class ArtifactObservation(AppendOnlyModel):
     response_status = models.PositiveSmallIntegerField()
     response_headers = models.JSONField(default=dict)
     redirect_chain = models.JSONField(default=list)
+    content_changed = models.BooleanField(default=True, db_index=True)
     retrieved_at = models.DateTimeField(default=timezone.now, db_index=True)
     connector_configuration_version = models.PositiveIntegerField()
     etag = models.CharField(max_length=512, blank=True)

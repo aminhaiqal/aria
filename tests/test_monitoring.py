@@ -1,5 +1,5 @@
 import hashlib
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -8,7 +8,8 @@ from django.urls import reverse
 
 from aria.authorities.models import Authority
 from aria.collections.models import PublicationCollection
-from aria.discovery.models import EndpointObservation, SourceRun
+from aria.discovery.connectors import CandidateData, DiscoveryResult
+from aria.discovery.models import DiscoveredCandidate, EndpointObservation, SourceRun
 from aria.discovery.services import (
     conditional_headers_from_cursor,
     create_source_run,
@@ -17,6 +18,7 @@ from aria.discovery.services import (
     mark_source_run_started,
     record_endpoint_observation,
 )
+from aria.discovery.tasks import execute_source_run
 from aria.fetching.client import FetchResponse
 from aria.sources.models import SourceEndpoint
 
@@ -178,6 +180,19 @@ class EndpointMonitoringContractTestCase(TestCase):
         ):
             observation.full_clean()
 
+    def test_offline_replay_completion_does_not_change_monitor_health(self) -> None:
+        self.endpoint.health_state = SourceEndpoint.HealthState.DEGRADED
+        self.endpoint.consecutive_failures = 2
+        self.endpoint.save(update_fields=("health_state", "consecutive_failures", "updated_at"))
+        replay, _ = create_source_run(self.endpoint, trigger=SourceRun.Trigger.REPLAY)
+
+        mark_source_run_completed(replay, cursor_after={"strategy": "offline-replay"})
+
+        self.endpoint.refresh_from_db()
+        self.assertEqual(self.endpoint.health_state, SourceEndpoint.HealthState.DEGRADED)
+        self.assertEqual(self.endpoint.consecutive_failures, 2)
+        self.assertIsNone(self.endpoint.last_checked_at)
+
     def test_observation_api_is_administrator_only_and_read_only(self) -> None:
         source_run, _ = create_source_run(self.endpoint, trigger=SourceRun.Trigger.MANUAL)
         observation = record_endpoint_observation(source_run, self.response())
@@ -198,3 +213,33 @@ class EndpointMonitoringContractTestCase(TestCase):
             self.client.post(reverse("endpointobservation-list"), {}).status_code,
             405,
         )
+
+    @patch("aria.fetching.tasks.fetch_candidate.delay")
+    @patch("aria.discovery.tasks.get_connector")
+    def test_source_task_persists_monitor_result_before_queuing_fetches(
+        self,
+        get_connector: Mock,
+        fetch_delay: Mock,
+    ) -> None:
+        source_run, _ = create_source_run(self.endpoint, trigger=SourceRun.Trigger.MANUAL)
+        get_connector.return_value.discover.return_value = DiscoveryResult(
+            candidates=(
+                CandidateData(
+                    discovered_url="https://example.com/files/new-rule.pdf",
+                    canonical_url="https://example.com/files/new-rule.pdf",
+                    fingerprint="b" * 64,
+                    metadata_hints={"title": "New rule"},
+                ),
+            ),
+            response=self.response(),
+        )
+
+        with self.captureOnCommitCallbacks(execute=True):
+            execute_source_run.run(str(source_run.id))
+
+        source_run.refresh_from_db()
+        candidate = DiscoveredCandidate.objects.get()
+        self.assertEqual(source_run.status, SourceRun.Status.COMPLETED)
+        self.assertEqual(source_run.endpoint_observation.outcome, "changed")
+        self.assertEqual(candidate.latest_source_run_id, source_run.id)
+        fetch_delay.assert_called_once_with(str(candidate.id), str(source_run.id))

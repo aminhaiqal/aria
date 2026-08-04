@@ -34,10 +34,11 @@ class ArtifactObservationAdmin(ReadOnlyArtifactAdmin):
         "raw_artifact",
         "candidate",
         "response_status",
+        "content_changed",
         "final_url",
         "retrieved_at",
     )
-    list_filter = ("response_status", "raw_artifact__detected_content_type")
+    list_filter = ("content_changed", "response_status", "raw_artifact__detected_content_type")
     search_fields = ("requested_url", "final_url", "raw_artifact__sha256")
     date_hierarchy = "retrieved_at"
 

@@ -233,6 +233,7 @@ class ArtifactObservationSerializer(serializers.ModelSerializer):
             "response_status",
             "response_headers",
             "redirect_chain",
+            "content_changed",
             "retrieved_at",
             "connector_configuration_version",
             "etag",

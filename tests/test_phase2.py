@@ -1,6 +1,7 @@
 import hashlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 import httpx
 from django.core.exceptions import ValidationError
@@ -14,12 +15,18 @@ from aria.collections.models import PublicationCollection
 from aria.discovery.connectors import CandidateData
 from aria.discovery.html_connector import ConfiguredHTMLListingConnector
 from aria.discovery.models import DiscoveredCandidate, SourceRun
-from aria.discovery.services import create_source_run, observe_candidate
+from aria.discovery.services import (
+    create_source_run,
+    mark_source_run_completed,
+    observe_candidate,
+    record_endpoint_observation,
+)
 from aria.fetching.client import (
     FetchResponse,
     RateLimiter,
     ResponseTooLargeError,
     SafeHttpClient,
+    UnexpectedContentTypeError,
     UnsafeTargetError,
     validate_target_url,
 )
@@ -174,9 +181,11 @@ class PhaseTwoTestCase(TestCase):
         )
         connector = ConfiguredHTMLListingConnector(client_factory=lambda: client)
 
-        candidates = connector.discover(self.endpoint, cursor=None)
+        result = connector.discover(self.endpoint, cursor=None)
+        candidates = result.candidates
 
         self.assertEqual(len(candidates), 2)
+        self.assertEqual(result.response.status_code, 200)
         self.assertEqual(candidates[0].canonical_url, "https://example.com/files/rule-two.pdf")
         self.assertEqual(candidates[0].metadata_hints["title"], "Rule Two PDF")
         self.assertEqual(len(candidates[0].fingerprint), 64)
@@ -219,7 +228,8 @@ class PhaseTwoTestCase(TestCase):
         )
         connector = ConfiguredHTMLListingConnector(client_factory=lambda: client)
 
-        candidates = connector.discover(self.endpoint, cursor=None)
+        result = connector.discover(self.endpoint, cursor=None)
+        candidates = result.candidates
 
         self.assertEqual(len(candidates), 1)
         self.assertEqual(candidates[0].canonical_url, "https://example.com/files/rule-one.pdf")
@@ -250,10 +260,16 @@ class PhaseTwoTestCase(TestCase):
 
         with TemporaryDirectory() as temporary_directory:
             store = FilesystemArtifactStore(Path(temporary_directory))
-            first_attempt = begin_fetch_attempt(candidate, first_run, request_headers={})
-            first_observation = complete_fetch(first_attempt, response, store=store)
-            second_attempt = begin_fetch_attempt(candidate, second_run, request_headers={})
-            second_observation = complete_fetch(second_attempt, response, store=store)
+            with patch("aria.extraction.tasks.extract_raw_artifact.delay") as extract_delay:
+                first_attempt = begin_fetch_attempt(candidate, first_run, request_headers={})
+                with self.captureOnCommitCallbacks(execute=True):
+                    first_observation = complete_fetch(first_attempt, response, store=store)
+                DiscoveredCandidate.objects.filter(pk=candidate.id).update(
+                    pipeline_state=DiscoveredCandidate.PipelineState.VERSIONED
+                )
+                second_attempt = begin_fetch_attempt(candidate, second_run, request_headers={})
+                with self.captureOnCommitCallbacks(execute=True):
+                    second_observation = complete_fetch(second_attempt, response, store=store)
 
             artifact = RawArtifact.objects.get()
             self.assertEqual(artifact.sha256, hashlib.sha256(content).hexdigest())
@@ -261,6 +277,14 @@ class PhaseTwoTestCase(TestCase):
             self.assertEqual(RawArtifact.objects.count(), 1)
             self.assertEqual(ArtifactObservation.objects.count(), 2)
             self.assertEqual(first_observation.raw_artifact_id, second_observation.raw_artifact_id)
+            self.assertTrue(first_observation.content_changed)
+            self.assertFalse(second_observation.content_changed)
+            extract_delay.assert_called_once_with(str(artifact.id))
+            candidate.refresh_from_db()
+            self.assertEqual(candidate.pipeline_state, DiscoveredCandidate.PipelineState.VERSIONED)
+            self.assertTrue(
+                artifact.storage_key.startswith("sources/test-regulator/test-publications/sha256/")
+            )
             artifact.byte_size = 1
             with self.assertRaises(ValidationError):
                 artifact.save()
@@ -275,38 +299,114 @@ class PhaseTwoTestCase(TestCase):
             headers={"etag": '"one"'},
             redirect_chain=[],
             resolved_addresses=[PUBLIC_IP],
-            content=b"first",
+            content=b"%PDF-1.7\nfirst",
         )
         with TemporaryDirectory() as temporary_directory:
-            first_attempt = begin_fetch_attempt(candidate, first_run, request_headers={})
-            first_observation = complete_fetch(
-                first_attempt,
-                first_response,
-                store=FilesystemArtifactStore(temporary_directory),
-            )
-            second_run, _ = create_source_run(self.endpoint, trigger=SourceRun.Trigger.MANUAL)
-            candidate = self.make_candidate(second_run)
-            second_attempt = begin_fetch_attempt(
-                candidate,
-                second_run,
-                request_headers={"If-None-Match": '"one"'},
-            )
-            second_observation = complete_not_modified(
-                second_attempt,
-                FetchResponse(
-                    requested_url=candidate.canonical_url,
-                    final_url=candidate.canonical_url,
-                    status_code=304,
-                    headers={"etag": '"one"'},
-                    redirect_chain=[],
-                    resolved_addresses=[PUBLIC_IP],
-                    content=b"",
-                ),
-            )
+            with patch("aria.extraction.tasks.extract_raw_artifact.delay") as extract_delay:
+                first_attempt = begin_fetch_attempt(candidate, first_run, request_headers={})
+                with self.captureOnCommitCallbacks(execute=True):
+                    first_observation = complete_fetch(
+                        first_attempt,
+                        first_response,
+                        store=FilesystemArtifactStore(temporary_directory),
+                    )
+                DiscoveredCandidate.objects.filter(pk=candidate.id).update(
+                    pipeline_state=DiscoveredCandidate.PipelineState.VERSIONED
+                )
+                second_run, _ = create_source_run(self.endpoint, trigger=SourceRun.Trigger.MANUAL)
+                candidate = self.make_candidate(second_run)
+                second_attempt = begin_fetch_attempt(
+                    candidate,
+                    second_run,
+                    request_headers={"If-None-Match": '"one"'},
+                )
+                with self.captureOnCommitCallbacks(execute=True):
+                    second_observation = complete_not_modified(
+                        second_attempt,
+                        FetchResponse(
+                            requested_url=candidate.canonical_url,
+                            final_url=candidate.canonical_url,
+                            status_code=304,
+                            headers={"etag": '"one"'},
+                            redirect_chain=[],
+                            resolved_addresses=[PUBLIC_IP],
+                            content=b"",
+                        ),
+                    )
 
         self.assertEqual(first_observation.raw_artifact_id, second_observation.raw_artifact_id)
+        self.assertFalse(second_observation.content_changed)
+        extract_delay.assert_called_once_with(str(first_observation.raw_artifact_id))
+        candidate.refresh_from_db()
+        self.assertEqual(candidate.pipeline_state, DiscoveredCandidate.PipelineState.VERSIONED)
         second_attempt.refresh_from_db()
         self.assertEqual(second_attempt.status, FetchAttempt.Status.NOT_MODIFIED)
+
+    def test_pdf_candidate_rejects_an_html_error_page_before_storage(self) -> None:
+        source_run, _ = create_source_run(self.endpoint, trigger=SourceRun.Trigger.MANUAL)
+        candidate = self.make_candidate(source_run)
+        attempt = begin_fetch_attempt(candidate, source_run, request_headers={})
+
+        with TemporaryDirectory() as temporary_directory:
+            with self.assertRaises(UnexpectedContentTypeError):
+                complete_fetch(
+                    attempt,
+                    FetchResponse(
+                        requested_url=candidate.canonical_url,
+                        final_url=candidate.canonical_url,
+                        status_code=200,
+                        headers={"content-type": "text/html"},
+                        redirect_chain=[],
+                        resolved_addresses=[PUBLIC_IP],
+                        content=b"<html>upstream error</html>",
+                    ),
+                    store=FilesystemArtifactStore(temporary_directory),
+                )
+
+        self.assertEqual(RawArtifact.objects.count(), 0)
+        self.assertEqual(ArtifactObservation.objects.count(), 0)
+
+    def test_listing_uses_conditional_headers_and_reuses_candidates_on_304(self) -> None:
+        ConnectorConfiguration.objects.create(
+            endpoint=self.endpoint,
+            version=1,
+            configuration={
+                "include_path_prefixes": ["/publications/", "/files/"],
+                "document_extensions": [".pdf"],
+            },
+        )
+        first_run, _ = create_source_run(self.endpoint, trigger=SourceRun.Trigger.MANUAL)
+        candidate = self.make_candidate(first_run)
+        first_response = FetchResponse(
+            requested_url=self.endpoint.discovery_url,
+            final_url=self.endpoint.discovery_url,
+            status_code=200,
+            headers={"etag": '"listing-one"', "content-type": "text/html"},
+            redirect_chain=[],
+            resolved_addresses=[PUBLIC_IP],
+            content=b'<a href="/files/act.pdf">Act</a>',
+        )
+        record_endpoint_observation(first_run, first_response)
+        mark_source_run_completed(first_run)
+        second_run, _ = create_source_run(self.endpoint, trigger=SourceRun.Trigger.SCHEDULED)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(request.headers["If-None-Match"], '"listing-one"')
+            return httpx.Response(304, headers={"ETag": '"listing-one"'})
+
+        client = SafeHttpClient(
+            resolver=lambda _hostname, _port: [PUBLIC_IP],
+            rate_limiter=RateLimiter(),
+            transport=httpx.MockTransport(handler),
+        )
+        connector = ConfiguredHTMLListingConnector(client_factory=lambda: client)
+
+        result = connector.discover(self.endpoint, cursor=second_run.cursor_before)
+
+        self.assertEqual(result.response.status_code, 304)
+        self.assertEqual(result.request_headers, {"If-None-Match": '"listing-one"'})
+        self.assertEqual(len(result.candidates), 1)
+        self.assertEqual(result.candidates[0].fingerprint, candidate.fingerprint)
 
 
 class JpdpSeedTestCase(TestCase):
@@ -331,3 +431,14 @@ class JpdpSeedTestCase(TestCase):
         self.assertIn("/ppdpv1/en/akta/", endpoint.discovery_url)
         self.assertEqual(endpoint.health_state, SourceEndpoint.HealthState.HEALTHY)
         self.assertEqual(endpoint.next_poll_at, original_next_poll_at)
+
+    @patch("aria.discovery.management.commands.poll_jpdp.execute_source_run.delay")
+    def test_poll_jpdp_queues_one_manual_monitor_cycle(self, execute_delay) -> None:
+        call_command("seed_jpdp")
+
+        call_command("poll_jpdp")
+
+        source_run = SourceRun.objects.get()
+        self.assertEqual(source_run.trigger, SourceRun.Trigger.MANUAL)
+        self.assertEqual(source_run.status, SourceRun.Status.PENDING)
+        execute_delay.assert_called_once_with(str(source_run.id))
