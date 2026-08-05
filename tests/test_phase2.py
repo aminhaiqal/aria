@@ -14,7 +14,7 @@ from aria.authorities.models import Authority
 from aria.collections.models import PublicationCollection
 from aria.discovery.connectors import CandidateData
 from aria.discovery.html_connector import ConfiguredHTMLListingConnector
-from aria.discovery.models import DiscoveredCandidate, SourceRun
+from aria.discovery.models import DiscoveredCandidate, MonitoredResource, SourceRun
 from aria.discovery.services import (
     create_source_run,
     mark_source_run_completed,
@@ -422,12 +422,16 @@ class JpdpSeedTestCase(TestCase):
         self.assertEqual(endpoint.collection.authority.country_code, "MY")
         self.assertEqual(endpoint.allowed_domains, ["pdp.gov.my"])
         self.assertEqual(endpoint.connector_type, SourceEndpoint.ConnectorType.HTML_LISTING)
-        self.assertEqual(endpoint.connector_configuration_version, 2)
-        self.assertEqual(endpoint.connector_configurations.count(), 2)
+        self.assertEqual(endpoint.connector_configuration_version, 3)
+        self.assertEqual(endpoint.connector_configurations.count(), 3)
         self.assertFalse(endpoint.connector_configurations.get(version=1).is_active)
+        self.assertFalse(endpoint.connector_configurations.get(version=2).is_active)
         self.assertTrue(
-            endpoint.connector_configurations.get(version=2).configuration["follow_detail_pages"]
+            endpoint.connector_configurations.get(version=3).configuration["follow_detail_pages"]
         )
+        feed = endpoint.monitored_resources.get(resource_type=MonitoredResource.ResourceType.RSS)
+        self.assertEqual(feed.url, "https://www.pdp.gov.my/ppdpv1/en/feed/")
+        self.assertTrue(feed.is_approved)
         self.assertIn("/ppdpv1/en/akta/", endpoint.discovery_url)
         self.assertEqual(endpoint.health_state, SourceEndpoint.HealthState.HEALTHY)
         self.assertEqual(endpoint.next_poll_at, original_next_poll_at)

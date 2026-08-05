@@ -7,17 +7,17 @@ from aria.discovery.connectors import ConnectorNotRegistered, get_connector
 from aria.discovery.models import MonitoredResource, ResourceRun, SourceRun
 from aria.discovery.resource_connectors import parse_detail_page, parse_feed
 from aria.discovery.services import (
-    mark_source_run_completed,
-    mark_source_run_failed,
-    mark_source_run_started,
     mark_resource_run_completed,
     mark_resource_run_failed,
     mark_resource_run_started,
+    mark_source_run_completed,
+    mark_source_run_failed,
+    mark_source_run_started,
     observe_candidate,
-    record_endpoint_observation,
-    record_resource_observation,
     reconcile_listing_candidates,
     reconcile_resource_links,
+    record_endpoint_observation,
+    record_resource_observation,
     resource_conditional_headers,
     schedule_due_resource_runs,
     schedule_due_source_runs,

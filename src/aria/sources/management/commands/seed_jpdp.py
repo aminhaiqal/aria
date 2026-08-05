@@ -5,8 +5,8 @@ from django.utils import timezone
 
 from aria.authorities.models import Authority
 from aria.collections.models import PublicationCollection
-from aria.discovery.models import SourceRun
-from aria.discovery.services import create_source_run
+from aria.discovery.models import DiscoveredCandidate, MonitoredResource, SourceRun
+from aria.discovery.services import create_source_run, register_monitored_resource
 from aria.discovery.tasks import execute_source_run
 from aria.sources.models import ConnectorConfiguration, SourceEndpoint
 
@@ -60,7 +60,7 @@ class Command(BaseCommand):
                 "pagination_strategy": SourceEndpoint.PaginationStrategy.NONE,
                 "expected_content_types": ["text/html", "application/pdf"],
                 "requires_javascript": False,
-                "connector_configuration_version": 2,
+                "connector_configuration_version": 3,
                 "is_enabled": True,
             },
         )
@@ -118,7 +118,81 @@ class Command(BaseCommand):
                 "is_active": True,
             },
         )
+        ConnectorConfiguration.objects.filter(endpoint=endpoint, version=2).update(is_active=False)
+        ConnectorConfiguration.objects.update_or_create(
+            endpoint=endpoint,
+            version=3,
+            defaults={
+                "configuration": {
+                    "link_selector": "a[href]",
+                    "include_path_prefixes": [
+                        "/ppdpv1/en/akta/",
+                        "/ppdpv1/wp-content/uploads/",
+                    ],
+                    "upload_path_prefixes": ["/ppdpv1/wp-content/uploads/"],
+                    "exclude_path_suffixes": ["/feed/"],
+                    "document_extensions": [
+                        ".pdf",
+                        ".doc",
+                        ".docx",
+                        ".csv",
+                        ".json",
+                        ".xml",
+                    ],
+                    "max_candidates": 20,
+                    "follow_detail_pages": True,
+                    "detail_content_selector": ".betterdocs-entry-content",
+                    "detail_resource_path_prefixes": ["/ppdpv1/en/akta/"],
+                    "max_detail_pages": 20,
+                    "max_feed_entries": 20,
+                },
+                "notes": (
+                    "JPDP Phase 3D.2 configuration: retain bounded listing discovery while "
+                    "monitoring approved detail pages and the official English RSS feed "
+                    "independently. Feed entries outside the Act 709 path remain disabled "
+                    "pending review."
+                ),
+                "is_active": True,
+            },
+        )
+        feed, _ = register_monitored_resource(
+            endpoint,
+            resource_type=MonitoredResource.ResourceType.RSS,
+            url="https://www.pdp.gov.my/ppdpv1/en/feed/",
+            title="JPDP English official site feed",
+            is_approved=True,
+            approval_basis="Declared as application/rss+xml by the approved JPDP listing page",
+            polling_interval_minutes=60,
+            metadata={
+                "declaration_page": endpoint.discovery_url,
+                "excludes": ["comments feeds"],
+            },
+        )
+        detail_urls = {
+            str(candidate.metadata_hints.get("source_detail_page")): str(
+                candidate.metadata_hints.get("title", "")
+            )
+            for candidate in DiscoveredCandidate.objects.filter(endpoint=endpoint)
+            if candidate.metadata_hints.get("source_detail_page")
+        }
+        for detail_url, title in sorted(detail_urls.items()):
+            register_monitored_resource(
+                endpoint,
+                resource_type=MonitoredResource.ResourceType.DETAIL_PAGE,
+                url=detail_url,
+                title=title,
+                is_approved=True,
+                approval_basis="Backfilled from prior approved JPDP listing evidence",
+                polling_interval_minutes=360,
+                metadata={"source_listing": endpoint.discovery_url},
+            )
         self.stdout.write(self.style.SUCCESS(f"JPDP endpoint ready: {endpoint.id}"))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"JPDP monitored resources ready: feed={feed.id} "
+                f"backfilled_details={len(detail_urls)}"
+            )
+        )
 
         if options["run"]:
             source_run, _ = create_source_run(endpoint, trigger=SourceRun.Trigger.MANUAL)

@@ -16,8 +16,8 @@ from aria.collections.models import PublicationCollection
 from aria.discovery.models import (
     DiscoveredCandidate,
     MonitoredResource,
-    ResourceObservation,
     ResourceLinkObservation,
+    ResourceObservation,
     ResourceRun,
     SourceRun,
 )
@@ -26,8 +26,8 @@ from aria.discovery.resource_connectors import (
     parse_detail_page,
     parse_feed,
 )
+from aria.discovery.services import create_resource_run as create_monitored_resource_run
 from aria.discovery.services import (
-    create_resource_run as create_monitored_resource_run,
     create_source_run,
     mark_resource_run_completed,
     reconcile_resource_links,
@@ -325,7 +325,10 @@ class ResourceMonitoringTestCase(TestCase):
             allowed_domains=self.endpoint.allowed_domains,
         )
         self.assertTrue(
-            all(link.quarantine_reason == "ambiguous_external_identifier" for link in parsed_ambiguous.links)
+            all(
+                link.quarantine_reason == "ambiguous_external_identifier"
+                for link in parsed_ambiguous.links
+            )
         )
 
         atom = b"""<?xml version="1.0"?>
