@@ -15,7 +15,11 @@ from aria.discovery.models import (
     ResourceRun,
     SourceRun,
 )
-from aria.discovery.resource_connectors import parse_detail_page
+from aria.discovery.resource_connectors import (
+    ResourceStructureChanged,
+    parse_detail_page,
+    parse_feed,
+)
 from aria.discovery.services import (
     create_resource_run as create_monitored_resource_run,
     create_source_run,
@@ -267,3 +271,84 @@ class ResourceMonitoringTestCase(TestCase):
         self.endpoint.refresh_from_db()
         self.assertEqual(resource.health_state, MonitoredResource.HealthState.HEALTHY)
         self.assertEqual(self.endpoint.health_state, SourceEndpoint.HealthState.UNKNOWN)
+
+    def test_feed_parser_supports_bounded_rss_and_atom(self) -> None:
+        rss = b"""<?xml version="1.0"?>
+          <rss version="2.0"><channel><title>Official updates</title>
+            <item><title>Rule A</title><link>https://example.com/rule-a/</link>
+              <guid>rule-a</guid><pubDate>Mon, 25 Aug 2025 00:40:41 +0000</pubDate></item>
+            <item><title>Outside</title><link>https://outside.example/rule-b/</link></item>
+            <item><title>Ignored by bound</title><link>https://example.com/rule-c/</link></item>
+          </channel></rss>"""
+        parsed_rss = parse_feed(
+            rss,
+            feed_url="https://example.com/feed/",
+            allowed_domains=self.endpoint.allowed_domains,
+            max_entries=2,
+        )
+        self.assertEqual(parsed_rss.feed_type, "rss")
+        self.assertEqual(len(parsed_rss.links), 2)
+        self.assertEqual(parsed_rss.links[0].external_identifier, "rule-a")
+        self.assertEqual(parsed_rss.links[0].metadata["published_at"], "2025-08-25T00:40:41+00:00")
+        self.assertEqual(parsed_rss.links[1].disposition, "quarantined")
+
+        atom = b"""<?xml version="1.0"?>
+          <feed xmlns="http://www.w3.org/2005/Atom"><title>Official Atom</title>
+            <entry><title>Rule D</title><id>tag:example.com,2026:rule-d</id>
+              <updated>2026-08-05T01:00:00Z</updated>
+              <link rel="alternate" href="https://example.com/rule-d/" /></entry>
+          </feed>"""
+        parsed_atom = parse_feed(
+            atom,
+            feed_url="https://example.com/atom/",
+            allowed_domains=self.endpoint.allowed_domains,
+        )
+        self.assertEqual(parsed_atom.feed_type, "atom")
+        self.assertEqual(parsed_atom.links[0].target_url, "https://example.com/rule-d/")
+        self.assertEqual(parsed_atom.links[0].metadata["updated_at"], "2026-08-05T01:00:00+00:00")
+
+    def test_feed_parser_rejects_entities(self) -> None:
+        malicious = b"""<?xml version="1.0"?>
+          <!DOCTYPE rss [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+          <rss version="2.0"><channel><title>&xxe;</title>
+            <item><title>A</title><link>https://example.com/a/</link></item>
+          </channel></rss>"""
+        with self.assertRaisesMessage(ResourceStructureChanged, "well-formed XML"):
+            parse_feed(
+                malicious,
+                feed_url="https://example.com/feed/",
+                allowed_domains=self.endpoint.allowed_domains,
+            )
+
+    @patch("aria.discovery.tasks.get_default_http_client")
+    def test_approved_rss_task_records_feed_entries(self, client_factory: Mock) -> None:
+        resource, _ = register_monitored_resource(
+            self.endpoint,
+            resource_type=MonitoredResource.ResourceType.RSS,
+            url="https://example.com/feed/",
+            is_approved=True,
+            approval_basis="Declared by the official listing page",
+        )
+        resource_run, _ = create_monitored_resource_run(
+            resource,
+            trigger=SourceRun.Trigger.MANUAL,
+        )
+        rss = b"""<?xml version="1.0"?>
+          <rss version="2.0"><channel><title>Official updates</title>
+            <item><title>Rule A</title><link>https://example.com/rule-a/</link>
+              <guid>rule-a</guid></item>
+          </channel></rss>"""
+        client_factory.return_value.fetch.return_value = self.response(
+            resource,
+            content=rss,
+            headers={"Content-Type": "application/rss+xml", "ETag": '"feed-v1"'},
+        )
+
+        execute_resource_run.run(str(resource_run.id))
+
+        resource_run.refresh_from_db()
+        link = resource_run.observation.link_observations.get()
+        self.assertEqual(resource_run.status, ResourceRun.Status.COMPLETED)
+        self.assertEqual(link.relation, "entry")
+        self.assertEqual(link.target_url, "https://example.com/rule-a/")
+        self.assertEqual(link.external_identifier, "rule-a")

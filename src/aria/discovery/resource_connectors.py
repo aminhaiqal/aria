@@ -1,9 +1,14 @@
 import hashlib
 from dataclasses import dataclass, field
+from datetime import datetime
+from email.utils import parsedate_to_datetime
 from pathlib import PurePosixPath
 from urllib.parse import urljoin, urlsplit, urlunsplit
+from xml.etree.ElementTree import ParseError
 
 from bs4 import BeautifulSoup
+from defusedxml import ElementTree
+from defusedxml.common import DefusedXmlException
 
 from aria.fetching.client import hostname_is_allowed
 
@@ -22,6 +27,13 @@ class ResourceLinkData:
     disposition: str = "accepted"
     quarantine_reason: str = ""
     metadata: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ParsedFeed:
+    feed_type: str
+    title: str
+    links: tuple[ResourceLinkData, ...]
 
 
 def normalize_link_url(base_url: str, href: str) -> str:
@@ -81,3 +93,142 @@ def parse_detail_page(
             ),
         )
     return tuple(sorted(links.values(), key=lambda item: item.target_url))
+
+
+def _local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1].lower()
+
+
+def _direct_child(element, name: str):
+    return next((child for child in element if _local_name(child.tag) == name), None)
+
+
+def _child_text(element, name: str) -> str:
+    child = _direct_child(element, name)
+    return " ".join("".join(child.itertext()).split()) if child is not None else ""
+
+
+def _iso_date(value: str) -> str:
+    if not value:
+        return ""
+    try:
+        parsed = parsedate_to_datetime(value)
+    except (TypeError, ValueError, OverflowError):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return ""
+    return parsed.isoformat()
+
+
+def _feed_link_data(
+    *,
+    feed_url: str,
+    target: str,
+    title: str,
+    external_identifier: str,
+    allowed_domains: list[str],
+    metadata: dict,
+) -> ResourceLinkData | None:
+    if not target.strip():
+        return None
+    target_url = normalize_link_url(feed_url, target)
+    parsed = urlsplit(target_url)
+    disposition = "accepted"
+    quarantine_reason = ""
+    if parsed.scheme != "https" or not parsed.hostname:
+        disposition = "quarantined"
+        quarantine_reason = "non_https_or_missing_hostname"
+    elif not hostname_is_allowed(parsed.hostname, allowed_domains):
+        disposition = "quarantined"
+        quarantine_reason = "hostname_not_allowlisted"
+    return ResourceLinkData(
+        target_url=target_url,
+        fingerprint=link_fingerprint(target_url),
+        title=title[:1024],
+        external_identifier=external_identifier[:512],
+        relation="entry",
+        disposition=disposition,
+        quarantine_reason=quarantine_reason,
+        metadata=metadata,
+    )
+
+
+def parse_feed(
+    content: bytes,
+    *,
+    feed_url: str,
+    allowed_domains: list[str],
+    max_entries: int = 50,
+) -> ParsedFeed:
+    if len(content) > 5 * 1024 * 1024:
+        raise ResourceStructureChanged("Feed exceeds the 5 MiB parser limit.")
+    try:
+        root = ElementTree.fromstring(content)
+    except (ParseError, DefusedXmlException) as error:
+        raise ResourceStructureChanged("Feed is not well-formed XML.") from error
+
+    root_name = _local_name(root.tag)
+    links: dict[str, ResourceLinkData] = {}
+    if root_name == "rss":
+        channel = _direct_child(root, "channel")
+        if channel is None:
+            raise ResourceStructureChanged("RSS feed does not contain a channel.")
+        feed_type = "rss"
+        title = _child_text(channel, "title")[:512]
+        entries = [child for child in channel if _local_name(child.tag) == "item"]
+        for entry in entries[:max_entries]:
+            entry_title = _child_text(entry, "title")
+            target = _child_text(entry, "link")
+            guid = _child_text(entry, "guid")
+            link = _feed_link_data(
+                feed_url=feed_url,
+                target=target,
+                title=entry_title,
+                external_identifier=guid,
+                allowed_domains=allowed_domains,
+                metadata={
+                    "feed_url": feed_url,
+                    "published_at": _iso_date(_child_text(entry, "pubdate")),
+                },
+            )
+            if link is not None:
+                links.setdefault(link.target_url, link)
+    elif root_name == "feed":
+        feed_type = "atom"
+        title = _child_text(root, "title")[:512]
+        entries = [child for child in root if _local_name(child.tag) == "entry"]
+        for entry in entries[:max_entries]:
+            entry_title = _child_text(entry, "title")
+            target = ""
+            for child in entry:
+                if _local_name(child.tag) != "link":
+                    continue
+                relation = child.attrib.get("rel", "alternate").lower()
+                if relation == "alternate" and child.attrib.get("href"):
+                    target = child.attrib["href"]
+                    break
+            link = _feed_link_data(
+                feed_url=feed_url,
+                target=target,
+                title=entry_title,
+                external_identifier=_child_text(entry, "id"),
+                allowed_domains=allowed_domains,
+                metadata={
+                    "feed_url": feed_url,
+                    "published_at": _iso_date(_child_text(entry, "published")),
+                    "updated_at": _iso_date(_child_text(entry, "updated")),
+                },
+            )
+            if link is not None:
+                links.setdefault(link.target_url, link)
+    else:
+        raise ResourceStructureChanged(f"Unsupported XML feed root element: {root_name}.")
+
+    if not links:
+        raise ResourceStructureChanged("Feed contains no usable entries.")
+    return ParsedFeed(
+        feed_type=feed_type,
+        title=title,
+        links=tuple(sorted(links.values(), key=lambda item: item.target_url)),
+    )

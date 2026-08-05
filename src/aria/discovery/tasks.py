@@ -5,7 +5,7 @@ from django.db import transaction
 
 from aria.discovery.connectors import ConnectorNotRegistered, get_connector
 from aria.discovery.models import MonitoredResource, ResourceRun, SourceRun
-from aria.discovery.resource_connectors import parse_detail_page
+from aria.discovery.resource_connectors import parse_detail_page, parse_feed
 from aria.discovery.services import (
     mark_source_run_completed,
     mark_source_run_failed,
@@ -114,8 +114,6 @@ def execute_resource_run(self, resource_run_id: str) -> None:
     try:
         if not resource.is_enabled or not resource.is_approved:
             raise ValueError("Monitored resource is not enabled and explicitly approved.")
-        if resource.resource_type != MonitoredResource.ResourceType.DETAIL_PAGE:
-            raise ValueError(f"Unsupported monitored resource type: {resource.resource_type}")
         configuration = (
             ConnectorConfiguration.objects.filter(
                 endpoint=resource.endpoint,
@@ -138,24 +136,48 @@ def execute_resource_run(self, resource_run_id: str) -> None:
         if response.status_code != 304:
             normalized_headers = {key.lower(): value for key, value in response.headers.items()}
             content_type = normalized_headers.get("content-type", "").lower()
-            if "html" not in content_type:
-                raise ValueError(
-                    f"Expected HTML detail resource, received '{content_type or 'unknown'}'."
-                )
-            links = parse_detail_page(
-                response.content,
-                resource_url=resource.url,
-                allowed_domains=resource.endpoint.allowed_domains,
-                content_selector=configuration.get(
-                    "detail_content_selector", ".betterdocs-entry-content"
-                ),
-                document_extensions=tuple(
-                    configuration.get(
-                        "document_extensions",
-                        [".pdf", ".doc", ".docx", ".csv", ".json", ".xml"],
+            if resource.resource_type == MonitoredResource.ResourceType.DETAIL_PAGE:
+                if "html" not in content_type:
+                    raise ValueError(
+                        f"Expected HTML detail resource, received '{content_type or 'unknown'}'."
                     )
-                ),
-            )
+                links = parse_detail_page(
+                    response.content,
+                    resource_url=resource.url,
+                    allowed_domains=resource.endpoint.allowed_domains,
+                    content_selector=configuration.get(
+                        "detail_content_selector", ".betterdocs-entry-content"
+                    ),
+                    document_extensions=tuple(
+                        configuration.get(
+                            "document_extensions",
+                            [".pdf", ".doc", ".docx", ".csv", ".json", ".xml"],
+                        )
+                    ),
+                )
+            elif resource.resource_type in (
+                MonitoredResource.ResourceType.RSS,
+                MonitoredResource.ResourceType.ATOM,
+            ):
+                accepted_feed_types = ("xml", "rss", "atom")
+                if not any(token in content_type for token in accepted_feed_types):
+                    raise ValueError(
+                        f"Expected XML feed resource, received '{content_type or 'unknown'}'."
+                    )
+                parsed_feed = parse_feed(
+                    response.content,
+                    feed_url=resource.url,
+                    allowed_domains=resource.endpoint.allowed_domains,
+                    max_entries=int(configuration.get("max_feed_entries", 50)),
+                )
+                if parsed_feed.feed_type != resource.resource_type:
+                    raise ValueError(
+                        f"Configured {resource.resource_type} resource returned "
+                        f"{parsed_feed.feed_type}."
+                    )
+                links = parsed_feed.links
+            else:
+                raise ValueError(f"Unsupported monitored resource type: {resource.resource_type}")
         record_resource_observation(
             resource_run,
             response,
