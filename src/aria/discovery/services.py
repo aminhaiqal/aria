@@ -253,9 +253,7 @@ def schedule_due_resource_runs() -> list[ResourceRun]:
         endpoint__collection__authority__is_enabled=True,
     ).exclude(runs__status__in=(ResourceRun.Status.PENDING, ResourceRun.Status.RUNNING))
     endpoint_ids = list(
-        due.order_by("endpoint_id")
-        .values_list("endpoint_id", flat=True)
-        .distinct()[:batch_size]
+        due.order_by("endpoint_id").values_list("endpoint_id", flat=True).distinct()[:batch_size]
     )
     resources_by_endpoint = {
         endpoint_id: list(
@@ -735,9 +733,7 @@ def record_resource_observation(
             if previous is not None and previous.content_sha256 == content_sha256
             else ResourceObservation.Outcome.CHANGED
         )
-    link_set_sha256 = hashlib.sha256(
-        "\n".join(sorted(current_links)).encode("utf-8")
-    ).hexdigest()
+    link_set_sha256 = hashlib.sha256("\n".join(sorted(current_links)).encode("utf-8")).hexdigest()
     response_headers = {
         key.lower(): value
         for key, value in response.headers.items()
@@ -811,9 +807,7 @@ def record_resource_observation(
         link.disposition == ResourceLinkObservation.Disposition.QUARANTINED
         for link in current_links.values()
     )
-    resource_run.save(
-        update_fields=("observed_link_count", "quarantined_link_count", "updated_at")
-    )
+    resource_run.save(update_fields=("observed_link_count", "quarantined_link_count", "updated_at"))
     record_pipeline_event(
         event_type="source.resource.observed",
         aggregate_type="monitored_resource",

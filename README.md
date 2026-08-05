@@ -12,6 +12,7 @@ publications before any AI interpretation is introduced.
 - Idempotent discovered candidates and per-run observations
 - A configurable static HTML listing connector, initially seeded for Malaysia's JPDP
 - Six-hour JPDP monitoring with immutable endpoint observations and conditional artifact retrieval
+- Independently scheduled JPDP detail-page and approved RSS monitoring with immutable link snapshots
 - An HTTPS client with domain allowlists, public-address validation, redirect revalidation,
   response limits, retries, conditional requests, and per-domain rate limiting
 - Immutable, content-addressed raw artifacts with SHA-256 integrity checks
@@ -35,9 +36,9 @@ publications before any AI interpretation is introduced.
 - Liveness and database/Redis readiness probes
 - A self-hosted Docker Compose stack using pgvector-enabled PostgreSQL and Redis
 
-RSS discovery, browser retrieval, legal-relationship extraction, and external outbox delivery
-remain for later phases. OCR output is an explicit derivative and never replaces or mutates the
-official source artifact.
+Browser retrieval, legal-relationship extraction, and external outbox delivery remain for later
+phases. OCR output is an explicit derivative and never replaces or mutates the official source
+artifact.
 
 ## Current milestone
 
@@ -48,10 +49,11 @@ official source artifact.
 - Phase 3C evidence-backed structural version comparison: implemented
 - Phase 3D.0 durable source monitoring contract: implemented
 - Phase 3D.1 scheduled conditional JPDP retrieval: implemented
+- Phase 3D.2 independent detail-page/RSS monitoring and safe reconciliation: implemented
 - Phase 3F bounded self-hosted OCR completion: implemented
 - Phase 3G measured hybrid semantic retrieval: implemented
-- Phase 2 source breadth: RSS and browser fallback remain open
-- Next implementation slice: independent detail-page/RSS discovery and the operator console
+- Phase 2 source breadth: the approved JPDP RSS path is implemented; browser fallback remains open
+- Next implementation slice: Phase 3D.3 downstream change orchestration, then the operator console
 
 ## Local setup
 
@@ -83,6 +85,7 @@ make test            # run the Django test suite in Compose
 make makemigrations  # generate model migrations
 make migrate         # apply migrations
 make poll-jpdp       # queue one bounded manual JPDP monitoring cycle
+make poll-resource RESOURCE_ID=<uuid> # queue one approved detail/feed resource check
 make extract         # replay every archived artifact through extraction locally
 make route-linked    # route and queue official files linked by archived JPDP pages
 make plan-ocr        # list the deterministic OCR input set and current statuses
@@ -108,7 +111,9 @@ docker compose exec api python manage.py seed_jpdp --run
 ```
 
 The command registers the Personal Data Protection Commissioner, Malaysia (JPDP), its Act 709
-publication collection, and a versioned connector configuration before queueing one manual run.
+publication collection, versioned connector configuration, and explicitly approved English RSS
+feed before queueing one manual run. Existing proven detail pages are backfilled into the resource
+registry; later listing runs add newly observed detail pages automatically.
 Discovery completion means the candidates have been persisted and their fetch tasks have been
 queued; inspect fetch attempts or worker logs until every candidate reaches a terminal state.
 

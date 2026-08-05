@@ -2,25 +2,27 @@
 
 ## Scope
 
-Phase 3D.0 and 3D.1 turn the approved JPDP connector into a continuous, evidence-backed monitor.
-They identify changed HTTP bytes and retrieve new official artifacts; they do not declare that a
-legal change occurred. Phase 3C retains that separate deterministic comparison and human-review
-boundary.
+Phase 3D.0–3D.2 turn the approved JPDP connector into a continuous, evidence-backed monitor. They
+identify changed HTTP bytes, independently check known detail pages and the approved site feed,
+and retrieve new official artifacts. They do not declare that a legal change occurred. Phase 3C
+retains that separate deterministic comparison and human-review boundary.
 
 ```text
 Celery Beat every minute
-  -> claim enabled endpoints whose next_poll_at is due
-  -> immutable SourceRun
-  -> allowlisted conditional endpoint request
-  -> immutable EndpointObservation
-  -> observed candidates
-  -> conditional artifact requests
+  -> claim a bounded set of due endpoints and monitored resources
+  -> conditional root listing -> immutable EndpointObservation
+  -> conditional detail/feed -> immutable ResourceObservation + link snapshot
+  -> safe accepted document links -> observed candidates
+  -> approved in-scope feed entries -> staggered detail resources
+  -> quarantined or out-of-scope links -> evidence/review only
+  -> known/new candidates -> conditional artifact requests
   -> immutable R2 artifacts and ArtifactObservations
   -> extraction/versioning only when candidate bytes changed
 ```
 
-JPDP is currently the only enabled official source. Its configured cadence is six hours. The
-scheduler's one-minute tick only finds due work; it does not request JPDP every minute.
+JPDP is currently the only enabled official source. Its root and detail cadence is six hours; the
+official English RSS cadence is one hour. The scheduler's one-minute tick only finds due work; it
+does not request every resource every minute.
 
 ## Monitoring contract
 
@@ -40,6 +42,32 @@ response and compares its hash.
 A failed network run marks the endpoint `degraded`. Three consecutive failed runs mark it
 `unhealthy`; a later successful observed run resets the counter. Offline extraction or routing
 replays cannot alter external-source health.
+
+## Resource and link contract
+
+`MonitoredResource` gives every approved detail page or feed its own URL, resource type, approval
+basis, cadence, validators, health, and capacity state. A `ResourceRun` is linked to a source run so
+accepted documents reuse the existing candidate/provenance contract without letting a detail-page
+failure degrade the parent listing's health.
+
+Each successful resource check appends a `ResourceObservation`. It records the same bounded HTTP
+evidence as the endpoint observation plus a hash of the current link set. Its append-only
+`ResourceLinkObservation` rows classify each link as `added`, `retained`, or `removed`, and as
+`accepted` or `quarantined`. A 304 copies the prior current link set as retained evidence, which is
+important because a linked PDF can change at a stable URL even when its detail page does not.
+
+The feed parser accepts bounded RSS 2.0 and Atom XML and rejects XML entity declarations. A feed
+must be explicitly approved before execution. Links leaving the endpoint domain allowlist and
+duplicate feed identifiers that point to different URLs are quarantined. Official-domain feed
+entries outside `detail_resource_path_prefixes` are registered disabled for operator review.
+Removal is evidence, never deletion.
+
+The default scheduler limits resource dispatch to five per minute, three per endpoint per batch,
+and 50 enabled resources per endpoint. New resources receive deterministic offsets across their
+polling interval, and a resource with a pending or running check cannot overlap itself. These can
+be changed with `ARIA_MONITOR_RESOURCE_BATCH_SIZE`,
+`ARIA_MONITOR_RESOURCE_BATCH_PER_ENDPOINT`, and
+`ARIA_MONITOR_MAX_ENABLED_RESOURCES_PER_ENDPOINT`.
 
 ## Retrieval safety and change handling
 
@@ -86,16 +114,29 @@ docker compose exec api python manage.py poll_jpdp --sync --json
 Synchronous means discovery runs in the command process. Candidate artifact retrieval still uses
 the isolated `http_fetch` queue. Inspect terminal attempts with the administrator API or Admin:
 
+Run one explicitly selected approved detail page or feed:
+
+```bash
+make poll-resource RESOURCE_ID=<uuid>
+docker compose exec api python manage.py poll_resource <uuid> --sync --json
+```
+
+`--replay` labels the fresh conditional HTTP observation as operator-requested replay; it does not
+reuse or rewrite historical response bytes.
+
 | Resource | Endpoint |
 |---|---|
 | Source endpoints | `/api/v1/source-endpoints/` |
 | Source runs | `/api/v1/source-runs/` |
 | Endpoint observations | `/api/v1/endpoint-observations/` |
+| Monitored resources | `/api/v1/monitored-resources/` |
+| Resource runs | `/api/v1/resource-runs/` |
+| Resource/link observations | `/api/v1/resource-observations/` |
 | Candidates | `/api/v1/candidates/` |
 | Fetch attempts | `/api/v1/fetch-attempts/` |
 | Artifact observations | `/api/v1/artifact-observations/` |
 
-All resources are administrator-only. Endpoint observations and artifacts are read-only.
+All APIs are administrator-only and read-only.
 
 ## Interface sequence
 
@@ -119,12 +160,34 @@ On 2026-08-04, one bounded manual cycle completed against the live approved JPDP
 - endpoint health remained `healthy` with zero consecutive failures.
 
 This result demonstrates the intended boundary: changed website bytes alone do not become a
-regulatory-change claim. The 26 focused monitoring/retrieval tests and complete 73-test repository
-suite pass with external requests mocked.
+regulatory-change claim.
+
+On 2026-08-05, the Phase 3D.2 read-only audit confirmed:
+
+- 18 distinct JPDP detail pages already backed by stored candidate provenance;
+- the approved Act 709 page declares `https://www.pdp.gov.my/ppdpv1/en/feed/` as its English RSS
+  2.0 site feed;
+- separate comments feeds are declared but are intentionally not approved;
+- the feed advertises hourly updates and returned bounded official entry metadata.
+
+The pre-deployment gate passed all 85 repository tests with external requests mocked.
+
+The controlled post-deployment pilot then completed without failed resource runs:
+
+- seeding registered 18 approved detail resources and one approved RSS resource;
+- the first RSS check returned HTTP 200 with 10,080 bytes and 10 official entry links;
+- all 10 entries were outside the configured Act 709 detail path, so they were registered disabled
+  for review and none became fetch candidates;
+- the second RSS check sent its stored validators, received HTTP 304, and appended 10 retained link
+  observations while preserving the prior content and link-set hashes;
+- the selected detail page returned HTTP 200 with 395,166 bytes and one accepted official PDF;
+- its second check returned the same bytes, recorded `unchanged`, and retained the PDF link;
+- both resulting PDF checks returned HTTP 304 and did not enqueue extraction;
+- the parent endpoint remained `healthy` with zero failures, while feed and selected detail health
+  became independently `healthy`.
 
 ## Next slices
 
-Phase 3D.2 should add independently conditional detail-page monitoring and official RSS/Atom feed
-discovery. This closes the case where a detail page changes while a validator-enabled parent
-listing remains `304`. Phase 3D.3 will then automate identity-safe routing from genuinely new
-artifacts into extraction, anchor projection, and eligible comparison.
+Phase 3D.3 should automate identity-safe orchestration from genuinely changed artifacts into
+extraction, anchor projection, and eligible comparison. Phase 3D.5 then adds the self-hosted
+operator console. Neither slice may bypass deterministic comparison or human review.

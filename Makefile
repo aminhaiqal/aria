@@ -1,4 +1,4 @@
-.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser poll-jpdp extract route-linked plan-ocr ocr embed-openai evaluate-embeddings quality audit-lineage classify-lineage anchors compare summarize publish-reviewed verify-storage
+.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser poll-jpdp poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings quality audit-lineage classify-lineage anchors compare summarize publish-reviewed verify-storage
 
 bootstrap:
 	@test -f .env || cp .env.example .env
@@ -36,6 +36,10 @@ superuser:
 
 poll-jpdp:
 	docker compose exec api python manage.py poll_jpdp
+
+poll-resource:
+	@test -n "$(RESOURCE_ID)" || (echo "Set RESOURCE_ID=<uuid>" && exit 1)
+	docker compose exec api python manage.py poll_resource $(RESOURCE_ID)
 
 extract:
 	docker compose exec api python manage.py extract_artifacts --sync

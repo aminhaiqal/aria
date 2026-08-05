@@ -4,7 +4,7 @@
 
 This foundation implements Phase 1, the Phase 2 JPDP retrieval slice, Phase 3A deterministic
 extraction and evidence projection, Phase 3B quality and linked-file remediation, Phase 3C
-evidence-backed version comparison, Phase 3D.0/3D.1 continuous official-source monitoring,
+evidence-backed version comparison, Phase 3D.0–3D.2 continuous official-source monitoring,
 Phase F self-hosted OCR completion, and Phase G hybrid semantic retrieval. It provides durable
 registry, workflow, retrieval, immutable evidence, document versioning, OCR lineage, graph, search,
 comparison, review, monitoring, and extraction-quality boundaries.
@@ -105,6 +105,11 @@ language packs. This bounds resource use and keeps OCR system packages out of th
     observation can do so.
 21. A changed HTTP payload is evidence of changed bytes, not a new legal version. Extraction and
     normalized-content identity must independently establish a new version.
+22. Detail pages and approved feeds are first-class monitored resources with independent cadence,
+    validators, health, immutable response chains, and immutable link-set snapshots.
+23. Resource scheduling is staggered, globally bounded, bounded per endpoint, and overlap-safe.
+    An official-domain link outside configured scope is registered disabled for review; an unsafe
+    or ambiguous link is quarantined and never becomes a fetch candidate.
 
 ## Self-hosting and Cloudflare
 
@@ -120,7 +125,8 @@ the default. A deployment can activate OpenAI for better semantic retrieval or s
 
 ## Next slice
 
-1. Add independent conditional monitoring for JPDP detail pages and official RSS/Atom feeds.
+1. Add Phase 3D.3 orchestration from genuinely changed artifacts into extraction, anchoring, and
+   eligible comparison without bypassing review.
 2. Build the Phase 3D.5 self-hosted operator console for monitoring and review.
 3. Add a bounded browser retrieval fallback for JavaScript-only official pages.
 4. Add an operator-selected delivery adapter for reviewed outbox events.
