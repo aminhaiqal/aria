@@ -141,6 +141,18 @@ MONITOR_UNHEALTHY_AFTER_FAILURES = max(
     1,
     int(os.getenv("ARIA_MONITOR_UNHEALTHY_AFTER_FAILURES", "3")),
 )
+MONITOR_RESOURCE_BATCH_SIZE = max(
+    1,
+    int(os.getenv("ARIA_MONITOR_RESOURCE_BATCH_SIZE", "5")),
+)
+MONITOR_RESOURCE_BATCH_PER_ENDPOINT = max(
+    1,
+    int(os.getenv("ARIA_MONITOR_RESOURCE_BATCH_PER_ENDPOINT", "3")),
+)
+MONITOR_MAX_ENABLED_RESOURCES_PER_ENDPOINT = max(
+    1,
+    int(os.getenv("ARIA_MONITOR_MAX_ENABLED_RESOURCES_PER_ENDPOINT", "50")),
+)
 EMBEDDING_PROVIDER = os.getenv("ARIA_EMBEDDING_PROVIDER", "local_hash")
 LOCAL_EMBEDDING_MODEL = os.getenv(
     "ARIA_LOCAL_EMBEDDING_MODEL",
@@ -204,6 +216,10 @@ CELERY_TASK_ROUTES = {
 CELERY_BEAT_SCHEDULE = {
     "schedule-due-source-endpoints": {
         "task": "aria.discovery.tasks.schedule_due_endpoints",
+        "schedule": crontab(minute="*"),
+    },
+    "schedule-due-monitored-resources": {
+        "task": "aria.discovery.tasks.schedule_due_resources",
         "schedule": crontab(minute="*"),
     },
 }

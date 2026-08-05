@@ -1,10 +1,15 @@
 import hashlib
+from datetime import timedelta
+from io import StringIO
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.core.management import call_command
+from django.core.management.base import CommandError
+from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from aria.authorities.models import Authority
 from aria.collections.models import PublicationCollection
@@ -28,6 +33,7 @@ from aria.discovery.services import (
     reconcile_resource_links,
     record_resource_observation,
     register_monitored_resource,
+    schedule_due_resource_runs,
 )
 from aria.discovery.tasks import execute_resource_run
 from aria.fetching.client import FetchResponse
@@ -425,3 +431,67 @@ class ResourceMonitoringTestCase(TestCase):
         self.assertFalse(pending.is_approved)
         self.assertFalse(pending.is_enabled)
         self.assertEqual(pending.metadata["scope_disposition"], "pending_review")
+
+    @override_settings(
+        MONITOR_RESOURCE_BATCH_SIZE=2,
+        MONITOR_RESOURCE_BATCH_PER_ENDPOINT=2,
+    )
+    def test_resource_scheduler_is_bounded_and_prevents_overlap(self) -> None:
+        resources = []
+        for number in range(3):
+            resource, _ = register_monitored_resource(
+                self.endpoint,
+                resource_type=MonitoredResource.ResourceType.DETAIL_PAGE,
+                url=f"https://example.com/rules/{number}/",
+                is_approved=True,
+            )
+            resource.next_poll_at = timezone.now() - timedelta(minutes=1)
+            resource.save(update_fields=("next_poll_at", "updated_at"))
+            resources.append(resource)
+
+        first_batch = schedule_due_resource_runs()
+
+        self.assertEqual(len(first_batch), 2)
+        self.assertTrue(all(run.status == ResourceRun.Status.PENDING for run in first_batch))
+        for run in first_batch:
+            run.resource.next_poll_at = timezone.now() - timedelta(minutes=1)
+            run.resource.save(update_fields=("next_poll_at", "updated_at"))
+        second_batch = schedule_due_resource_runs()
+        self.assertEqual(len(second_batch), 1)
+        self.assertNotIn(second_batch[0].resource_id, {run.resource_id for run in first_batch})
+
+    @override_settings(MONITOR_MAX_ENABLED_RESOURCES_PER_ENDPOINT=1)
+    def test_resource_registration_staggers_checks_and_enforces_enabled_cap(self) -> None:
+        before = timezone.now()
+        first, _ = register_monitored_resource(
+            self.endpoint,
+            resource_type=MonitoredResource.ResourceType.DETAIL_PAGE,
+            url="https://example.com/rules/first/",
+            is_approved=True,
+            polling_interval_minutes=60,
+        )
+        second, _ = register_monitored_resource(
+            self.endpoint,
+            resource_type=MonitoredResource.ResourceType.DETAIL_PAGE,
+            url="https://example.com/rules/second/",
+            is_approved=True,
+            polling_interval_minutes=60,
+        )
+
+        self.assertGreaterEqual(first.next_poll_at, before)
+        self.assertLess(first.next_poll_at, before + timedelta(hours=1, seconds=1))
+        self.assertTrue(first.is_enabled)
+        self.assertTrue(second.is_approved)
+        self.assertFalse(second.is_enabled)
+        self.assertEqual(second.metadata["capacity_disposition"], "disabled_at_cap")
+
+    def test_manual_resource_command_refuses_unapproved_resource(self) -> None:
+        resource, _ = register_monitored_resource(
+            self.endpoint,
+            resource_type=MonitoredResource.ResourceType.RSS,
+            url="https://example.com/unapproved-feed/",
+            is_approved=False,
+            is_enabled=False,
+        )
+        with self.assertRaisesMessage(CommandError, "not enabled, approved"):
+            call_command("poll_resource", str(resource.id), stdout=StringIO())

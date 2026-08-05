@@ -19,6 +19,7 @@ from aria.discovery.services import (
     reconcile_listing_candidates,
     reconcile_resource_links,
     resource_conditional_headers,
+    schedule_due_resource_runs,
     schedule_due_source_runs,
 )
 from aria.events.services import record_pipeline_event
@@ -36,6 +37,16 @@ def schedule_due_endpoints() -> int:
     for source_run in source_runs:
         execute_source_run.delay(str(source_run.id))
     return len(source_runs)
+
+
+@shared_task(name="aria.discovery.tasks.schedule_due_resources")
+def schedule_due_resources() -> int:
+    from aria.discovery.tasks import execute_resource_run
+
+    resource_runs = schedule_due_resource_runs()
+    for resource_run in resource_runs:
+        execute_resource_run.delay(str(resource_run.id))
+    return len(resource_runs)
 
 
 @shared_task(

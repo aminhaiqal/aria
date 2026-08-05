@@ -68,6 +68,21 @@ def register_monitored_resource(
     fingerprint = monitored_resource_fingerprint(normalized_url)
     interval = polling_interval_minutes or endpoint.polling_interval_minutes
     enabled = is_approved if is_enabled is None else is_enabled
+    SourceEndpoint.objects.select_for_update().get(pk=endpoint.pk)
+    exists = MonitoredResource.objects.filter(
+        endpoint=endpoint,
+        fingerprint=fingerprint,
+    ).exists()
+    resource_metadata = metadata or {}
+    enabled_count = MonitoredResource.objects.filter(endpoint=endpoint, is_enabled=True).count()
+    at_capacity = enabled_count >= settings.MONITOR_MAX_ENABLED_RESOURCES_PER_ENDPOINT
+    if enabled and not exists and at_capacity:
+        enabled = False
+        resource_metadata = {**resource_metadata, "capacity_disposition": "disabled_at_cap"}
+    if next_poll_at is None:
+        stagger_window_seconds = max(1, interval * 60)
+        offset_seconds = int(fingerprint[:8], 16) % stagger_window_seconds
+        next_poll_at = timezone.now() + timedelta(seconds=offset_seconds)
     resource, created = MonitoredResource.objects.get_or_create(
         endpoint=endpoint,
         fingerprint=fingerprint,
@@ -81,7 +96,7 @@ def register_monitored_resource(
             "approval_basis": approval_basis[:255],
             "polling_interval_minutes": interval,
             "next_poll_at": next_poll_at,
-            "metadata": metadata or {},
+            "metadata": resource_metadata,
         },
     )
     if not created:
@@ -90,13 +105,13 @@ def register_monitored_resource(
         resource.url = normalized_url
         resource.title = title[:512] or resource.title
         resource.is_approved = resource.is_approved or is_approved
-        if is_approved:
+        if is_approved and (resource.is_enabled or not at_capacity):
             resource.is_enabled = True
         elif is_enabled is not None:
             resource.is_enabled = is_enabled
         resource.approval_basis = approval_basis[:255] or resource.approval_basis
         resource.polling_interval_minutes = interval
-        resource.metadata = {**resource.metadata, **(metadata or {})}
+        resource.metadata = {**resource.metadata, **resource_metadata}
         if resource.next_poll_at is None and next_poll_at is not None:
             resource.next_poll_at = next_poll_at
         resource.full_clean()
@@ -222,6 +237,53 @@ def schedule_due_source_runs() -> list[SourceRun]:
         if created:
             created_runs.append(source_run)
     return created_runs
+
+
+@transaction.atomic
+def schedule_due_resource_runs() -> list[ResourceRun]:
+    now = timezone.now()
+    batch_size = settings.MONITOR_RESOURCE_BATCH_SIZE
+    per_endpoint = settings.MONITOR_RESOURCE_BATCH_PER_ENDPOINT
+    due = MonitoredResource.objects.filter(
+        is_enabled=True,
+        is_approved=True,
+        next_poll_at__lte=now,
+        endpoint__is_enabled=True,
+        endpoint__collection__is_enabled=True,
+        endpoint__collection__authority__is_enabled=True,
+    ).exclude(runs__status__in=(ResourceRun.Status.PENDING, ResourceRun.Status.RUNNING))
+    endpoint_ids = list(
+        due.order_by("endpoint_id")
+        .values_list("endpoint_id", flat=True)
+        .distinct()[:batch_size]
+    )
+    resources_by_endpoint = {
+        endpoint_id: list(
+            due.select_for_update(skip_locked=True)
+            .filter(endpoint_id=endpoint_id)
+            .order_by("next_poll_at", "id")[:per_endpoint]
+        )
+        for endpoint_id in endpoint_ids
+    }
+    resources: list[MonitoredResource] = []
+    for offset in range(per_endpoint):
+        for endpoint_id in endpoint_ids:
+            endpoint_resources = resources_by_endpoint[endpoint_id]
+            if offset < len(endpoint_resources):
+                resources.append(endpoint_resources[offset])
+    scheduled: list[ResourceRun] = []
+    for resource in resources[:batch_size]:
+        scheduled_for = resource.next_poll_at
+        resource_run, created = create_resource_run(
+            resource,
+            trigger=SourceRun.Trigger.SCHEDULED,
+            idempotency_key=f"resource:scheduled:{resource.id}:{scheduled_for.isoformat()}",
+        )
+        resource.next_poll_at = now + timedelta(minutes=resource.polling_interval_minutes)
+        resource.save(update_fields=("next_poll_at", "updated_at"))
+        if created:
+            scheduled.append(resource_run)
+    return scheduled
 
 
 @transaction.atomic
