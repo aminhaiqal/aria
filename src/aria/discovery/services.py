@@ -1,6 +1,7 @@
 import hashlib
 import uuid
 from datetime import timedelta
+from pathlib import PurePosixPath
 from urllib.parse import urlsplit, urlunsplit
 
 from django.conf import settings
@@ -56,6 +57,7 @@ def register_monitored_resource(
     url: str,
     title: str = "",
     is_approved: bool = False,
+    is_enabled: bool | None = None,
     approval_basis: str = "",
     parent: MonitoredResource | None = None,
     metadata: dict | None = None,
@@ -65,6 +67,7 @@ def register_monitored_resource(
     normalized_url = normalize_resource_url(url)
     fingerprint = monitored_resource_fingerprint(normalized_url)
     interval = polling_interval_minutes or endpoint.polling_interval_minutes
+    enabled = is_approved if is_enabled is None else is_enabled
     resource, created = MonitoredResource.objects.get_or_create(
         endpoint=endpoint,
         fingerprint=fingerprint,
@@ -74,6 +77,7 @@ def register_monitored_resource(
             "url": normalized_url,
             "title": title[:512],
             "is_approved": is_approved,
+            "is_enabled": enabled,
             "approval_basis": approval_basis[:255],
             "polling_interval_minutes": interval,
             "next_poll_at": next_poll_at,
@@ -86,6 +90,10 @@ def register_monitored_resource(
         resource.url = normalized_url
         resource.title = title[:512] or resource.title
         resource.is_approved = resource.is_approved or is_approved
+        if is_approved:
+            resource.is_enabled = True
+        elif is_enabled is not None:
+            resource.is_enabled = is_enabled
         resource.approval_basis = approval_basis[:255] or resource.approval_basis
         resource.polling_interval_minutes = interval
         resource.metadata = {**resource.metadata, **(metadata or {})}
@@ -759,3 +767,107 @@ def record_resource_observation(
         },
     )
     return observation
+
+
+@transaction.atomic
+def reconcile_listing_candidates(
+    endpoint: SourceEndpoint,
+    candidates: tuple[CandidateData, ...],
+    *,
+    document_extensions: tuple[str, ...],
+) -> tuple[CandidateData, ...]:
+    fetchable: list[CandidateData] = []
+    extensions = {extension.lower() for extension in document_extensions}
+    for data in candidates:
+        detail_url = str(data.metadata_hints.get("source_detail_page", ""))
+        candidate_url = data.canonical_url or data.discovered_url
+        suffix = PurePosixPath(urlsplit(candidate_url).path).suffix.lower()
+        if detail_url:
+            register_monitored_resource(
+                endpoint,
+                resource_type=MonitoredResource.ResourceType.DETAIL_PAGE,
+                url=detail_url,
+                title=str(data.metadata_hints.get("title", "")),
+                is_approved=True,
+                approval_basis="Discovered from the approved official listing",
+                metadata={"source_listing": endpoint.discovery_url},
+            )
+            fetchable.append(data)
+        elif suffix in extensions:
+            fetchable.append(data)
+        else:
+            register_monitored_resource(
+                endpoint,
+                resource_type=MonitoredResource.ResourceType.DETAIL_PAGE,
+                url=candidate_url,
+                title=str(data.metadata_hints.get("title", "")),
+                is_approved=True,
+                approval_basis="Discovered from the approved official listing",
+                metadata={"source_listing": endpoint.discovery_url},
+            )
+    return tuple(fetchable)
+
+
+@transaction.atomic
+def reconcile_resource_links(
+    resource_run: ResourceRun,
+    *,
+    detail_path_prefixes: tuple[str, ...] = (),
+) -> tuple[DiscoveredCandidate, ...]:
+    observation = resource_run.observation
+    accepted_candidates: list[DiscoveredCandidate] = []
+    current_links = observation.link_observations.exclude(
+        state=ResourceLinkObservation.State.REMOVED
+    ).order_by("target_url")
+    for link in current_links:
+        if link.disposition != ResourceLinkObservation.Disposition.ACCEPTED:
+            continue
+        if link.relation == "entry":
+            path = urlsplit(link.target_url).path
+            in_scope = not detail_path_prefixes or any(
+                path.startswith(prefix) for prefix in detail_path_prefixes
+            )
+            register_monitored_resource(
+                resource_run.resource.endpoint,
+                resource_type=MonitoredResource.ResourceType.DETAIL_PAGE,
+                url=link.target_url,
+                title=link.title,
+                is_approved=in_scope,
+                is_enabled=in_scope,
+                approval_basis=(
+                    "Discovered from an approved official feed"
+                    if in_scope
+                    else "Pending review: official feed entry is outside configured detail scope"
+                ),
+                parent=resource_run.resource,
+                metadata={
+                    **link.metadata,
+                    "feed_external_identifier": link.external_identifier,
+                    "scope_disposition": "approved" if in_scope else "pending_review",
+                },
+            )
+            continue
+        fingerprint_basis = f"{resource_run.resource.url}\n{link.target_url}".encode()
+        candidate, _ = observe_candidate(
+            resource_run.source_run,
+            CandidateData(
+                discovered_url=link.target_url,
+                canonical_url=link.target_url,
+                external_identifier=link.external_identifier,
+                fingerprint=hashlib.sha256(fingerprint_basis).hexdigest(),
+                metadata_hints={
+                    **link.metadata,
+                    "title": link.title or resource_run.resource.title,
+                    "source_listing": resource_run.resource.endpoint.discovery_url,
+                    "source_detail_page": resource_run.resource.url,
+                    "document_identity_url": resource_run.resource.url,
+                    "monitored_resource_id": str(resource_run.resource_id),
+                    "resource_observation_id": str(observation.id),
+                    "resource_link_state": link.state,
+                },
+            ),
+        )
+        accepted_candidates.append(candidate)
+    resource_run.accepted_candidate_count = len(accepted_candidates)
+    resource_run.save(update_fields=("accepted_candidate_count", "updated_at"))
+    return tuple(accepted_candidates)

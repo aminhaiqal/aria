@@ -9,6 +9,7 @@ from django.urls import reverse
 from aria.authorities.models import Authority
 from aria.collections.models import PublicationCollection
 from aria.discovery.models import (
+    DiscoveredCandidate,
     MonitoredResource,
     ResourceObservation,
     ResourceLinkObservation,
@@ -24,6 +25,7 @@ from aria.discovery.services import (
     create_resource_run as create_monitored_resource_run,
     create_source_run,
     mark_resource_run_completed,
+    reconcile_resource_links,
     record_resource_observation,
     register_monitored_resource,
 )
@@ -218,6 +220,21 @@ class ResourceMonitoringTestCase(TestCase):
         self.assertEqual(states["https://example.com/files/c.pdf"], "added")
         self.assertEqual(states["https://outside.example/b.pdf"], "removed")
 
+        accepted = reconcile_resource_links(second_run)
+        self.assertEqual(len(accepted), 2)
+        self.assertEqual(DiscoveredCandidate.objects.count(), 2)
+        self.assertFalse(
+            DiscoveredCandidate.objects.filter(
+                canonical_url="https://outside.example/b.pdf"
+            ).exists()
+        )
+        self.assertTrue(
+            all(
+                candidate.metadata_hints["document_identity_url"] == resource.url
+                for candidate in accepted
+            )
+        )
+
     @patch("aria.discovery.tasks.get_default_http_client")
     def test_detail_task_uses_conditional_headers_and_preserves_links_on_304(
         self,
@@ -292,6 +309,19 @@ class ResourceMonitoringTestCase(TestCase):
         self.assertEqual(parsed_rss.links[0].metadata["published_at"], "2025-08-25T00:40:41+00:00")
         self.assertEqual(parsed_rss.links[1].disposition, "quarantined")
 
+        ambiguous = b"""<rss version="2.0"><channel><title>Official</title>
+          <item><title>A</title><link>https://example.com/a/</link><guid>same</guid></item>
+          <item><title>B</title><link>https://example.com/b/</link><guid>same</guid></item>
+        </channel></rss>"""
+        parsed_ambiguous = parse_feed(
+            ambiguous,
+            feed_url="https://example.com/feed/",
+            allowed_domains=self.endpoint.allowed_domains,
+        )
+        self.assertTrue(
+            all(link.quarantine_reason == "ambiguous_external_identifier" for link in parsed_ambiguous.links)
+        )
+
         atom = b"""<?xml version="1.0"?>
           <feed xmlns="http://www.w3.org/2005/Atom"><title>Official Atom</title>
             <entry><title>Rule D</title><id>tag:example.com,2026:rule-d</id>
@@ -352,3 +382,46 @@ class ResourceMonitoringTestCase(TestCase):
         self.assertEqual(link.relation, "entry")
         self.assertEqual(link.target_url, "https://example.com/rule-a/")
         self.assertEqual(link.external_identifier, "rule-a")
+        child = MonitoredResource.objects.get(parent=resource)
+        self.assertEqual(child.resource_type, MonitoredResource.ResourceType.DETAIL_PAGE)
+        self.assertTrue(child.is_approved)
+        self.assertTrue(child.is_enabled)
+
+    def test_feed_reconciliation_keeps_out_of_scope_entries_disabled(self) -> None:
+        feed_resource, _ = register_monitored_resource(
+            self.endpoint,
+            resource_type=MonitoredResource.ResourceType.RSS,
+            url="https://example.com/feed/",
+            is_approved=True,
+        )
+        resource_run, _ = create_monitored_resource_run(
+            feed_resource,
+            trigger=SourceRun.Trigger.MANUAL,
+        )
+        rss = b"""<rss version="2.0"><channel><title>Official</title>
+          <item><title>In scope</title><link>https://example.com/rules/a/</link></item>
+          <item><title>Review</title><link>https://example.com/news/b/</link></item>
+        </channel></rss>"""
+        record_resource_observation(
+            resource_run,
+            self.response(
+                feed_resource,
+                content=rss,
+                headers={"Content-Type": "application/rss+xml"},
+            ),
+            links=parse_feed(
+                rss,
+                feed_url=feed_resource.url,
+                allowed_domains=self.endpoint.allowed_domains,
+            ).links,
+        )
+
+        reconcile_resource_links(resource_run, detail_path_prefixes=("/rules/",))
+
+        approved = MonitoredResource.objects.get(url="https://example.com/rules/a/")
+        pending = MonitoredResource.objects.get(url="https://example.com/news/b/")
+        self.assertTrue(approved.is_approved)
+        self.assertTrue(approved.is_enabled)
+        self.assertFalse(pending.is_approved)
+        self.assertFalse(pending.is_enabled)
+        self.assertEqual(pending.metadata["scope_disposition"], "pending_review")

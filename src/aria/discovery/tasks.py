@@ -16,6 +16,8 @@ from aria.discovery.services import (
     observe_candidate,
     record_endpoint_observation,
     record_resource_observation,
+    reconcile_listing_candidates,
+    reconcile_resource_links,
     resource_conditional_headers,
     schedule_due_source_runs,
 )
@@ -56,12 +58,33 @@ def execute_source_run(self, source_run_id: str) -> None:
         from aria.fetching.tasks import fetch_candidate
 
         with transaction.atomic():
+            configuration = (
+                ConnectorConfiguration.objects.filter(
+                    endpoint=source_run.endpoint,
+                    version=source_run.connector_configuration_version,
+                    is_active=True,
+                )
+                .order_by("-created_at")
+                .values_list("configuration", flat=True)
+                .first()
+                or {}
+            )
             record_endpoint_observation(
                 source_run,
                 result.response,
                 request_headers=result.request_headers,
             )
-            for candidate_data in result.candidates:
+            fetchable_candidates = reconcile_listing_candidates(
+                source_run.endpoint,
+                result.candidates,
+                document_extensions=tuple(
+                    configuration.get(
+                        "document_extensions",
+                        [".pdf", ".doc", ".docx", ".csv", ".json", ".xml"],
+                    )
+                ),
+            )
+            for candidate_data in fetchable_candidates:
                 candidate, _ = observe_candidate(source_run, candidate_data)
                 transaction.on_commit(
                     lambda candidate_id=str(candidate.id): fetch_candidate.delay(
@@ -178,13 +201,27 @@ def execute_resource_run(self, resource_run_id: str) -> None:
                 links = parsed_feed.links
             else:
                 raise ValueError(f"Unsupported monitored resource type: {resource.resource_type}")
-        record_resource_observation(
-            resource_run,
-            response,
-            links=links,
-            request_headers=headers,
-        )
-        mark_resource_run_completed(resource_run)
+        from aria.fetching.tasks import fetch_candidate
+
+        with transaction.atomic():
+            record_resource_observation(
+                resource_run,
+                response,
+                links=links,
+                request_headers=headers,
+            )
+            candidates = reconcile_resource_links(
+                resource_run,
+                detail_path_prefixes=tuple(configuration.get("detail_resource_path_prefixes", [])),
+            )
+            for candidate in candidates:
+                transaction.on_commit(
+                    lambda candidate_id=str(candidate.id): fetch_candidate.delay(
+                        candidate_id,
+                        str(resource_run.source_run_id),
+                    )
+                )
+            mark_resource_run_completed(resource_run)
     except Exception as error:
         logger.exception("Resource run %s failed", resource_run.id)
         if self.request.retries >= self.max_retries:

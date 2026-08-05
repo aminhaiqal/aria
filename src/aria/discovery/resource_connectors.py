@@ -1,5 +1,5 @@
 import hashlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from pathlib import PurePosixPath
@@ -227,6 +227,26 @@ def parse_feed(
 
     if not links:
         raise ResourceStructureChanged("Feed contains no usable entries.")
+    identifiers: dict[str, set[str]] = {}
+    for link in links.values():
+        if link.external_identifier:
+            identifiers.setdefault(link.external_identifier, set()).add(link.target_url)
+    ambiguous_identifiers = {
+        identifier for identifier, targets in identifiers.items() if len(targets) > 1
+    }
+    if ambiguous_identifiers:
+        links = {
+            target: (
+                replace(
+                    link,
+                    disposition="quarantined",
+                    quarantine_reason="ambiguous_external_identifier",
+                )
+                if link.external_identifier in ambiguous_identifiers
+                else link
+            )
+            for target, link in links.items()
+        }
     return ParsedFeed(
         feed_type=feed_type,
         title=title,
