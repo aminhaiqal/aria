@@ -14,9 +14,12 @@ from aria.discovery.models import (
     DiscoveredCandidate,
     EndpointObservation,
     MonitoredResource,
+    ResourceLinkObservation,
     ResourceObservation,
+    ResourceRun,
     SourceRun,
 )
+from aria.discovery.resource_connectors import ResourceLinkData
 from aria.events.services import record_audit_event, record_pipeline_event
 from aria.fetching.client import FetchResponse
 from aria.sources.models import SourceEndpoint
@@ -452,3 +455,307 @@ def audit_manual_run(source_run: SourceRun, actor_identifier: str) -> None:
         actor_identifier=actor_identifier,
         details={"endpoint_id": str(source_run.endpoint_id)},
     )
+
+
+@transaction.atomic
+def create_resource_run(
+    resource: MonitoredResource,
+    *,
+    trigger: str,
+    idempotency_key: str | None = None,
+) -> tuple[ResourceRun, bool]:
+    key = idempotency_key or f"resource:{trigger}:{resource.id}:{uuid.uuid4()}"
+    existing = ResourceRun.objects.filter(idempotency_key=key).first()
+    if existing is not None:
+        return existing, False
+    source_run, source_created = create_source_run(
+        resource.endpoint,
+        trigger=trigger,
+        idempotency_key=key,
+    )
+    if not source_created:
+        existing = ResourceRun.objects.filter(source_run=source_run).first()
+        if existing is not None:
+            return existing, False
+    cursor = resource_monitor_cursor(resource)
+    resource_run = ResourceRun.objects.create(
+        resource=resource,
+        source_run=source_run,
+        idempotency_key=key,
+        cursor_before=cursor,
+    )
+    record_pipeline_event(
+        event_type="source.resource_run.created",
+        aggregate_type="resource_run",
+        aggregate_id=resource_run.id,
+        payload={
+            "resource_id": str(resource.id),
+            "source_run_id": str(source_run.id),
+            "trigger": trigger,
+        },
+    )
+    return resource_run, True
+
+
+@transaction.atomic
+def mark_resource_run_started(resource_run: ResourceRun) -> ResourceRun:
+    now = timezone.now()
+    resource_run.status = ResourceRun.Status.RUNNING
+    resource_run.started_at = now
+    resource_run.error_code = ""
+    resource_run.error_message = ""
+    resource_run.save(
+        update_fields=("status", "started_at", "error_code", "error_message", "updated_at")
+    )
+    if resource_run.source_run.status == SourceRun.Status.PENDING:
+        mark_source_run_started(resource_run.source_run)
+    record_pipeline_event(
+        event_type="source.resource_run.started",
+        aggregate_type="resource_run",
+        aggregate_id=resource_run.id,
+        payload={"resource_id": str(resource_run.resource_id)},
+    )
+    return resource_run
+
+
+@transaction.atomic
+def mark_resource_run_completed(resource_run: ResourceRun) -> ResourceRun:
+    now = timezone.now()
+    observation = resource_run.observation
+    cursor = resource_monitor_cursor(resource_run.resource)
+    resource_run.status = ResourceRun.Status.COMPLETED
+    resource_run.finished_at = now
+    resource_run.cursor_after = cursor
+    resource_run.save(update_fields=("status", "finished_at", "cursor_after", "updated_at"))
+    resource = MonitoredResource.objects.select_for_update().get(pk=resource_run.resource_id)
+    resource.last_checked_at = observation.checked_at
+    if observation.outcome == ResourceObservation.Outcome.CHANGED:
+        resource.last_changed_at = observation.checked_at
+    resource.last_successful_run_at = now
+    resource.consecutive_failures = 0
+    resource.health_state = MonitoredResource.HealthState.HEALTHY
+    resource.save(
+        update_fields=(
+            "last_checked_at",
+            "last_changed_at",
+            "last_successful_run_at",
+            "consecutive_failures",
+            "health_state",
+            "updated_at",
+        )
+    )
+    mark_source_run_completed(resource_run.source_run, cursor_after=cursor)
+    record_pipeline_event(
+        event_type="source.resource_run.completed",
+        aggregate_type="resource_run",
+        aggregate_id=resource_run.id,
+        payload={
+            "resource_id": str(resource.id),
+            "outcome": observation.outcome,
+            "link_count": observation.link_count,
+        },
+    )
+    return resource_run
+
+
+@transaction.atomic
+def mark_resource_run_failed(
+    resource_run: ResourceRun,
+    *,
+    code: str,
+    message: str,
+) -> ResourceRun:
+    now = timezone.now()
+    resource_run.status = ResourceRun.Status.FAILED
+    resource_run.finished_at = now
+    resource_run.error_code = code
+    resource_run.error_message = message
+    resource_run.save(
+        update_fields=("status", "finished_at", "error_code", "error_message", "updated_at")
+    )
+    SourceRun.objects.filter(pk=resource_run.source_run_id).update(
+        status=SourceRun.Status.FAILED,
+        finished_at=now,
+        error_code=code,
+        error_message=message,
+        updated_at=now,
+    )
+    resource = MonitoredResource.objects.select_for_update().get(pk=resource_run.resource_id)
+    resource.last_checked_at = now
+    resource.consecutive_failures += 1
+    resource.health_state = (
+        MonitoredResource.HealthState.UNHEALTHY
+        if resource.consecutive_failures >= settings.MONITOR_UNHEALTHY_AFTER_FAILURES
+        else MonitoredResource.HealthState.DEGRADED
+    )
+    resource.save(
+        update_fields=(
+            "last_checked_at",
+            "consecutive_failures",
+            "health_state",
+            "updated_at",
+        )
+    )
+    record_pipeline_event(
+        event_type="source.resource_run.failed",
+        aggregate_type="resource_run",
+        aggregate_id=resource_run.id,
+        payload={
+            "resource_id": str(resource.id),
+            "error_code": code,
+            "error_message": message,
+            "consecutive_failures": resource.consecutive_failures,
+            "health_state": resource.health_state,
+        },
+    )
+    return resource_run
+
+
+def _current_resource_links(
+    observation: ResourceObservation | None,
+) -> dict[str, ResourceLinkData]:
+    if observation is None:
+        return {}
+    return {
+        link.fingerprint: ResourceLinkData(
+            target_url=link.target_url,
+            fingerprint=link.fingerprint,
+            title=link.title,
+            external_identifier=link.external_identifier,
+            relation=link.relation,
+            disposition=link.disposition,
+            quarantine_reason=link.quarantine_reason,
+            metadata=link.metadata,
+        )
+        for link in observation.link_observations.exclude(
+            state=ResourceLinkObservation.State.REMOVED
+        )
+    }
+
+
+@transaction.atomic
+def record_resource_observation(
+    resource_run: ResourceRun,
+    response: FetchResponse,
+    *,
+    links: tuple[ResourceLinkData, ...] | None = None,
+    request_headers: dict[str, str] | None = None,
+) -> ResourceObservation:
+    resource = MonitoredResource.objects.select_for_update().get(pk=resource_run.resource_id)
+    previous = (
+        ResourceObservation.objects.filter(resource=resource)
+        .select_for_update()
+        .order_by("-checked_at", "-id")
+        .first()
+    )
+    previous_links = _current_resource_links(previous)
+    if response.status_code == 304:
+        if previous is None:
+            raise ValueError("Received HTTP 304 without a previous resource observation.")
+        current_links = previous_links
+        outcome = ResourceObservation.Outcome.NOT_MODIFIED
+        content_sha256 = previous.content_sha256
+        byte_size = previous.byte_size
+    else:
+        current_links = {link.fingerprint: link for link in links or ()}
+        content_sha256 = hashlib.sha256(response.content).hexdigest()
+        byte_size = len(response.content)
+        outcome = (
+            ResourceObservation.Outcome.UNCHANGED
+            if previous is not None and previous.content_sha256 == content_sha256
+            else ResourceObservation.Outcome.CHANGED
+        )
+    link_set_sha256 = hashlib.sha256(
+        "\n".join(sorted(current_links)).encode("utf-8")
+    ).hexdigest()
+    response_headers = {
+        key.lower(): value
+        for key, value in response.headers.items()
+        if key.lower() in MONITOR_RESPONSE_HEADERS
+    }
+    observation = ResourceObservation(
+        resource_run=resource_run,
+        resource=resource,
+        previous_observation=previous,
+        outcome=outcome,
+        requested_url=response.requested_url,
+        final_url=response.final_url,
+        response_status=response.status_code,
+        request_headers=request_headers or {},
+        response_headers=response_headers,
+        redirect_chain=response.redirect_chain,
+        resolved_addresses=response.resolved_addresses,
+        byte_size=byte_size,
+        content_sha256=content_sha256,
+        etag=response_headers.get("etag", previous.etag if previous is not None else ""),
+        last_modified=response_headers.get(
+            "last-modified", previous.last_modified if previous is not None else ""
+        ),
+        link_set_sha256=link_set_sha256,
+        link_count=len(current_links),
+    )
+    observation.full_clean()
+    observation.save()
+
+    link_rows: list[ResourceLinkObservation] = []
+    for fingerprint, link in current_links.items():
+        state = (
+            ResourceLinkObservation.State.RETAINED
+            if fingerprint in previous_links
+            else ResourceLinkObservation.State.ADDED
+        )
+        link_rows.append(
+            ResourceLinkObservation(
+                resource_observation=observation,
+                target_url=link.target_url,
+                fingerprint=fingerprint,
+                title=link.title,
+                external_identifier=link.external_identifier,
+                relation=link.relation,
+                state=state,
+                disposition=link.disposition,
+                quarantine_reason=link.quarantine_reason,
+                metadata=link.metadata,
+            )
+        )
+    for fingerprint, link in previous_links.items():
+        if fingerprint in current_links:
+            continue
+        link_rows.append(
+            ResourceLinkObservation(
+                resource_observation=observation,
+                target_url=link.target_url,
+                fingerprint=fingerprint,
+                title=link.title,
+                external_identifier=link.external_identifier,
+                relation=link.relation,
+                state=ResourceLinkObservation.State.REMOVED,
+                disposition=link.disposition,
+                quarantine_reason=link.quarantine_reason,
+                metadata=link.metadata,
+            )
+        )
+    ResourceLinkObservation.objects.bulk_create(link_rows)
+    resource_run.observed_link_count = len(link_rows)
+    resource_run.quarantined_link_count = sum(
+        link.disposition == ResourceLinkObservation.Disposition.QUARANTINED
+        for link in current_links.values()
+    )
+    resource_run.save(
+        update_fields=("observed_link_count", "quarantined_link_count", "updated_at")
+    )
+    record_pipeline_event(
+        event_type="source.resource.observed",
+        aggregate_type="monitored_resource",
+        aggregate_id=resource.id,
+        payload={
+            "resource_run_id": str(resource_run.id),
+            "resource_observation_id": str(observation.id),
+            "outcome": outcome,
+            "response_status": response.status_code,
+            "content_sha256": content_sha256,
+            "link_set_sha256": link_set_sha256,
+            "link_count": len(current_links),
+        },
+    )
+    return observation

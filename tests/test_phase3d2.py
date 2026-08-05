@@ -1,4 +1,5 @@
 import hashlib
+from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -10,10 +11,20 @@ from aria.collections.models import PublicationCollection
 from aria.discovery.models import (
     MonitoredResource,
     ResourceObservation,
+    ResourceLinkObservation,
     ResourceRun,
     SourceRun,
 )
-from aria.discovery.services import create_source_run, register_monitored_resource
+from aria.discovery.resource_connectors import parse_detail_page
+from aria.discovery.services import (
+    create_resource_run as create_monitored_resource_run,
+    create_source_run,
+    mark_resource_run_completed,
+    record_resource_observation,
+    register_monitored_resource,
+)
+from aria.discovery.tasks import execute_resource_run
+from aria.fetching.client import FetchResponse
 from aria.sources.models import SourceEndpoint
 
 
@@ -48,6 +59,24 @@ class ResourceMonitoringTestCase(TestCase):
             resource=resource,
             source_run=source_run,
             idempotency_key=f"resource-test:{resource.id}",
+        )
+
+    def response(
+        self,
+        resource: MonitoredResource,
+        *,
+        status: int = 200,
+        content: bytes = b"",
+        headers: dict[str, str] | None = None,
+    ) -> FetchResponse:
+        return FetchResponse(
+            requested_url=resource.url,
+            final_url=resource.url,
+            status_code=status,
+            headers=headers or {"Content-Type": "text/html", "ETag": '"detail-v1"'},
+            redirect_chain=[],
+            resolved_addresses=["93.184.216.34"],
+            content=content,
         )
 
     def test_resource_registration_normalizes_and_is_idempotent(self) -> None:
@@ -120,3 +149,121 @@ class ResourceMonitoringTestCase(TestCase):
         detail_url = reverse("monitoredresource-detail", args=[resource.id])
         self.assertEqual(self.client.get(detail_url).status_code, 200)
         self.assertEqual(self.client.post(reverse("monitoredresource-list"), {}).status_code, 405)
+
+    def test_detail_link_snapshots_record_add_retain_remove_and_quarantine(self) -> None:
+        resource, _ = register_monitored_resource(
+            self.endpoint,
+            resource_type=MonitoredResource.ResourceType.DETAIL_PAGE,
+            url="https://example.com/publications/rule/",
+            is_approved=True,
+        )
+        first_content = b"""
+            <div class="betterdocs-entry-content">
+              <a href="/files/a.pdf">A</a>
+              <a href="https://outside.example/b.pdf">Outside</a>
+            </div>
+        """
+        first_links = parse_detail_page(
+            first_content,
+            resource_url=resource.url,
+            allowed_domains=self.endpoint.allowed_domains,
+        )
+        first_run, _ = create_monitored_resource_run(
+            resource,
+            trigger=SourceRun.Trigger.MANUAL,
+        )
+        first = record_resource_observation(
+            first_run,
+            self.response(resource, content=first_content),
+            links=first_links,
+        )
+        mark_resource_run_completed(first_run)
+
+        first_rows = list(first.link_observations.order_by("target_url"))
+        self.assertEqual([row.state for row in first_rows], ["added", "added"])
+        self.assertEqual(
+            [row.disposition for row in first_rows],
+            ["accepted", "quarantined"],
+        )
+        self.assertEqual(first_rows[1].quarantine_reason, "hostname_not_allowlisted")
+
+        second_content = b"""
+            <div class="betterdocs-entry-content">
+              <a href="/files/a.pdf">A retained</a>
+              <a href="/files/c.pdf">C new</a>
+            </div>
+        """
+        second_run, _ = create_monitored_resource_run(
+            resource,
+            trigger=SourceRun.Trigger.MANUAL,
+        )
+        second = record_resource_observation(
+            second_run,
+            self.response(resource, content=second_content, headers={"Content-Type": "text/html"}),
+            links=parse_detail_page(
+                second_content,
+                resource_url=resource.url,
+                allowed_domains=self.endpoint.allowed_domains,
+            ),
+        )
+
+        states = {
+            row.target_url: row.state for row in second.link_observations.order_by("target_url")
+        }
+        self.assertEqual(states["https://example.com/files/a.pdf"], "retained")
+        self.assertEqual(states["https://example.com/files/c.pdf"], "added")
+        self.assertEqual(states["https://outside.example/b.pdf"], "removed")
+
+    @patch("aria.discovery.tasks.get_default_http_client")
+    def test_detail_task_uses_conditional_headers_and_preserves_links_on_304(
+        self,
+        client_factory: Mock,
+    ) -> None:
+        resource, _ = register_monitored_resource(
+            self.endpoint,
+            resource_type=MonitoredResource.ResourceType.DETAIL_PAGE,
+            url="https://example.com/publications/rule/",
+            is_approved=True,
+        )
+        first_content = b"""
+            <div class="betterdocs-entry-content"><a href="/files/a.pdf">A</a></div>
+        """
+        first_run, _ = create_monitored_resource_run(
+            resource,
+            trigger=SourceRun.Trigger.MANUAL,
+        )
+        first_response = self.response(
+            resource,
+            content=first_content,
+            headers={"Content-Type": "text/html", "ETag": '"detail-v1"'},
+        )
+        client_factory.return_value.fetch.return_value = first_response
+        execute_resource_run.run(str(first_run.id))
+
+        second_run, _ = create_monitored_resource_run(
+            resource,
+            trigger=SourceRun.Trigger.MANUAL,
+        )
+        client_factory.return_value.fetch.return_value = self.response(
+            resource,
+            status=304,
+            headers={"ETag": '"detail-v1"'},
+        )
+        execute_resource_run.run(str(second_run.id))
+
+        second_run.refresh_from_db()
+        second = second_run.observation
+        self.assertEqual(second.outcome, ResourceObservation.Outcome.NOT_MODIFIED)
+        self.assertEqual(second.link_count, 1)
+        self.assertEqual(
+            second.link_observations.get().state,
+            ResourceLinkObservation.State.RETAINED,
+        )
+        self.assertEqual(
+            client_factory.return_value.fetch.call_args.kwargs["headers"],
+            {"If-None-Match": '"detail-v1"'},
+        )
+        resource.refresh_from_db()
+        self.endpoint.refresh_from_db()
+        self.assertEqual(resource.health_state, MonitoredResource.HealthState.HEALTHY)
+        self.assertEqual(self.endpoint.health_state, SourceEndpoint.HealthState.UNKNOWN)
