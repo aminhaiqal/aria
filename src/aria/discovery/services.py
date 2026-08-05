@@ -1,6 +1,7 @@
 import hashlib
 import uuid
 from datetime import timedelta
+from urllib.parse import urlsplit, urlunsplit
 
 from django.conf import settings
 from django.db import transaction
@@ -12,6 +13,8 @@ from aria.discovery.models import (
     CandidateObservation,
     DiscoveredCandidate,
     EndpointObservation,
+    MonitoredResource,
+    ResourceObservation,
     SourceRun,
 )
 from aria.events.services import record_audit_event, record_pipeline_event
@@ -30,6 +33,104 @@ MONITOR_RESPONSE_HEADERS = frozenset(
         "retry-after",
     }
 )
+
+
+def normalize_resource_url(url: str) -> str:
+    parsed = urlsplit(url.strip())
+    hostname = (parsed.hostname or "").encode("idna").decode("ascii").lower()
+    return urlunsplit((parsed.scheme.lower(), hostname, parsed.path or "/", parsed.query, ""))
+
+
+def monitored_resource_fingerprint(url: str) -> str:
+    return hashlib.sha256(normalize_resource_url(url).encode("utf-8")).hexdigest()
+
+
+@transaction.atomic
+def register_monitored_resource(
+    endpoint: SourceEndpoint,
+    *,
+    resource_type: str,
+    url: str,
+    title: str = "",
+    is_approved: bool = False,
+    approval_basis: str = "",
+    parent: MonitoredResource | None = None,
+    metadata: dict | None = None,
+    polling_interval_minutes: int | None = None,
+    next_poll_at=None,
+) -> tuple[MonitoredResource, bool]:
+    normalized_url = normalize_resource_url(url)
+    fingerprint = monitored_resource_fingerprint(normalized_url)
+    interval = polling_interval_minutes or endpoint.polling_interval_minutes
+    resource, created = MonitoredResource.objects.get_or_create(
+        endpoint=endpoint,
+        fingerprint=fingerprint,
+        defaults={
+            "parent": parent,
+            "resource_type": resource_type,
+            "url": normalized_url,
+            "title": title[:512],
+            "is_approved": is_approved,
+            "approval_basis": approval_basis[:255],
+            "polling_interval_minutes": interval,
+            "next_poll_at": next_poll_at,
+            "metadata": metadata or {},
+        },
+    )
+    if not created:
+        resource.parent = parent or resource.parent
+        resource.resource_type = resource_type
+        resource.url = normalized_url
+        resource.title = title[:512] or resource.title
+        resource.is_approved = resource.is_approved or is_approved
+        resource.approval_basis = approval_basis[:255] or resource.approval_basis
+        resource.polling_interval_minutes = interval
+        resource.metadata = {**resource.metadata, **(metadata or {})}
+        if resource.next_poll_at is None and next_poll_at is not None:
+            resource.next_poll_at = next_poll_at
+        resource.full_clean()
+        resource.save()
+    else:
+        resource.full_clean()
+    if created:
+        record_pipeline_event(
+            event_type="source.resource.registered",
+            aggregate_type="monitored_resource",
+            aggregate_id=resource.id,
+            payload={
+                "endpoint_id": str(endpoint.id),
+                "resource_type": resource_type,
+                "url": normalized_url,
+                "is_approved": is_approved,
+            },
+        )
+    return resource, created
+
+
+def resource_monitor_cursor(resource: MonitoredResource) -> dict | None:
+    observation = resource.observations.order_by("-checked_at", "-id").first()
+    if observation is None:
+        return None
+    return {
+        "strategy": "resource_http_conditional_v1",
+        "resource_observation_id": str(observation.id),
+        "resource_run_id": str(observation.resource_run_id),
+        "content_sha256": observation.content_sha256,
+        "link_set_sha256": observation.link_set_sha256,
+        "etag": observation.etag,
+        "last_modified": observation.last_modified,
+    }
+
+
+def resource_conditional_headers(cursor: dict | None) -> dict[str, str]:
+    if not cursor or cursor.get("strategy") != "resource_http_conditional_v1":
+        return {}
+    headers: dict[str, str] = {}
+    if cursor.get("etag"):
+        headers["If-None-Match"] = str(cursor["etag"])
+    if cursor.get("last_modified"):
+        headers["If-Modified-Since"] = str(cursor["last_modified"])
+    return headers
 
 
 def endpoint_monitor_cursor(endpoint: SourceEndpoint) -> dict | None:

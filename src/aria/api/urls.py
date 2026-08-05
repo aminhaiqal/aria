@@ -19,12 +19,15 @@ from aria.api.views import (
     GraphEdgeViewSet,
     GraphNodeViewSet,
     KnowledgeSearchViewSet,
+    MonitoredResourceViewSet,
     NormalizedSectionViewSet,
     OCRRunViewSet,
     PublicationCollectionViewSet,
     QualityAssessmentRunViewSet,
     QualityFindingViewSet,
     RawArtifactViewSet,
+    ResourceObservationViewSet,
+    ResourceRunViewSet,
     ReviewedChangePublicationViewSet,
     SourceEndpointViewSet,
     SourceRunViewSet,
@@ -39,6 +42,9 @@ router.register("source-endpoints", SourceEndpointViewSet)
 router.register("source-runs", SourceRunViewSet)
 router.register("endpoint-observations", EndpointObservationViewSet)
 router.register("candidates", DiscoveredCandidateViewSet)
+router.register("monitored-resources", MonitoredResourceViewSet)
+router.register("resource-runs", ResourceRunViewSet)
+router.register("resource-observations", ResourceObservationViewSet)
 router.register("fetch-attempts", FetchAttemptViewSet)
 router.register("artifacts", RawArtifactViewSet)
 router.register("artifact-observations", ArtifactObservationViewSet)

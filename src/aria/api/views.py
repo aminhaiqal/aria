@@ -27,12 +27,15 @@ from aria.api.serializers import (
     FetchAttemptSerializer,
     GraphEdgeSerializer,
     GraphNodeSerializer,
+    MonitoredResourceSerializer,
     NormalizedSectionSerializer,
     OCRRunSerializer,
     PublicationCollectionSerializer,
     QualityAssessmentRunSerializer,
     QualityFindingSerializer,
     RawArtifactSerializer,
+    ResourceObservationSerializer,
+    ResourceRunSerializer,
     ReviewedChangePublicationSerializer,
     SourceEndpointSerializer,
     SourceRunSerializer,
@@ -52,7 +55,14 @@ from aria.comparisons.models import (
     StructuralAnchor,
     VersionLineageAssessment,
 )
-from aria.discovery.models import DiscoveredCandidate, EndpointObservation, SourceRun
+from aria.discovery.models import (
+    DiscoveredCandidate,
+    EndpointObservation,
+    MonitoredResource,
+    ResourceObservation,
+    ResourceRun,
+    SourceRun,
+)
 from aria.documents.models import DocumentIdentity, DocumentVersion, NormalizedSection
 from aria.extraction.models import ExtractedDocument, ExtractionRun
 from aria.fetching.models import FetchAttempt
@@ -106,6 +116,23 @@ class EndpointObservationViewSet(ReadOnlyModelViewSet):
 class DiscoveredCandidateViewSet(ReadOnlyModelViewSet):
     queryset = DiscoveredCandidate.objects.select_related("endpoint", "latest_source_run")
     serializer_class = DiscoveredCandidateSerializer
+
+
+class MonitoredResourceViewSet(ReadOnlyModelViewSet):
+    queryset = MonitoredResource.objects.select_related("endpoint", "parent")
+    serializer_class = MonitoredResourceSerializer
+
+
+class ResourceRunViewSet(ReadOnlyModelViewSet):
+    queryset = ResourceRun.objects.select_related("resource", "source_run")
+    serializer_class = ResourceRunSerializer
+
+
+class ResourceObservationViewSet(ReadOnlyModelViewSet):
+    queryset = ResourceObservation.objects.select_related(
+        "resource_run", "resource", "previous_observation"
+    ).prefetch_related("link_observations")
+    serializer_class = ResourceObservationSerializer
 
 
 class FetchAttemptViewSet(ReadOnlyModelViewSet):

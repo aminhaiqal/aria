@@ -12,7 +12,15 @@ from aria.comparisons.models import (
     StructuralAnchor,
     VersionLineageAssessment,
 )
-from aria.discovery.models import DiscoveredCandidate, EndpointObservation, SourceRun
+from aria.discovery.models import (
+    DiscoveredCandidate,
+    EndpointObservation,
+    MonitoredResource,
+    ResourceLinkObservation,
+    ResourceObservation,
+    ResourceRun,
+    SourceRun,
+)
 from aria.documents.models import DocumentIdentity, DocumentVersion, NormalizedSection
 from aria.extraction.models import ExtractedDocument, ExtractionRun
 from aria.fetching.models import FetchAttempt
@@ -172,6 +180,106 @@ class DiscoveredCandidateSerializer(serializers.ModelSerializer):
             "pipeline_state",
             "first_discovered_at",
             "last_discovered_at",
+        )
+
+
+class MonitoredResourceSerializer(serializers.ModelSerializer):
+    endpoint_name = serializers.CharField(source="endpoint.name", read_only=True)
+
+    class Meta:
+        model = MonitoredResource
+        fields = (
+            "id",
+            "endpoint",
+            "endpoint_name",
+            "parent",
+            "resource_type",
+            "url",
+            "fingerprint",
+            "title",
+            "is_approved",
+            "approval_basis",
+            "is_enabled",
+            "polling_interval_minutes",
+            "next_poll_at",
+            "last_checked_at",
+            "last_changed_at",
+            "last_successful_run_at",
+            "consecutive_failures",
+            "health_state",
+            "metadata",
+            "created_at",
+            "updated_at",
+        )
+
+
+class ResourceRunSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ResourceRun
+        fields = (
+            "id",
+            "resource",
+            "source_run",
+            "status",
+            "cursor_before",
+            "cursor_after",
+            "started_at",
+            "finished_at",
+            "observed_link_count",
+            "accepted_candidate_count",
+            "quarantined_link_count",
+            "error_code",
+            "error_message",
+            "created_at",
+            "updated_at",
+        )
+
+
+class ResourceLinkObservationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ResourceLinkObservation
+        fields = (
+            "id",
+            "resource_observation",
+            "target_url",
+            "fingerprint",
+            "title",
+            "external_identifier",
+            "relation",
+            "state",
+            "disposition",
+            "quarantine_reason",
+            "metadata",
+            "created_at",
+        )
+
+
+class ResourceObservationSerializer(serializers.ModelSerializer):
+    link_observations = ResourceLinkObservationSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = ResourceObservation
+        fields = (
+            "id",
+            "resource_run",
+            "resource",
+            "previous_observation",
+            "outcome",
+            "requested_url",
+            "final_url",
+            "response_status",
+            "request_headers",
+            "response_headers",
+            "redirect_chain",
+            "resolved_addresses",
+            "byte_size",
+            "content_sha256",
+            "etag",
+            "last_modified",
+            "link_set_sha256",
+            "link_count",
+            "checked_at",
+            "link_observations",
         )
 
 
