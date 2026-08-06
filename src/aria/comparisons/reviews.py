@@ -39,4 +39,7 @@ def record_comparison_review(
             "previous_review_id": str(previous.id) if previous else None,
         },
     )
+    from aria.orchestration.services import queue_summary_after_completed_review
+
+    transaction.on_commit(lambda: queue_summary_after_completed_review(locked_item.comparison))
     return review

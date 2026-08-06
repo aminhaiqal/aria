@@ -26,6 +26,7 @@ from aria.extraction.models import ExtractedDocument, ExtractionRun
 from aria.fetching.models import FetchAttempt
 from aria.knowledge.models import GraphEdge, GraphNode, SectionEmbedding
 from aria.ocr.models import OCRRun
+from aria.orchestration.models import ChangeOrchestration, OrchestrationStepAttempt
 from aria.quality.models import (
     DocumentQualityAssessment,
     QualityAssessmentRun,
@@ -800,4 +801,59 @@ class ReviewedChangePublicationSerializer(serializers.ModelSerializer):
             "confirmation_review",
             "pipeline_event",
             "created_at",
+        )
+
+
+class OrchestrationStepAttemptSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OrchestrationStepAttempt
+        fields = (
+            "id",
+            "orchestration",
+            "stage",
+            "attempt_number",
+            "outcome",
+            "input_hash",
+            "output",
+            "error_code",
+            "error_message",
+            "started_at",
+            "finished_at",
+        )
+
+
+class ChangeOrchestrationSerializer(serializers.ModelSerializer):
+    artifact_sha256 = serializers.CharField(source="source_artifact.sha256", read_only=True)
+    source_url = serializers.CharField(
+        source="artifact_observation.final_url",
+        read_only=True,
+    )
+    step_attempts = OrchestrationStepAttemptSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = ChangeOrchestration
+        fields = (
+            "id",
+            "artifact_observation",
+            "source_artifact",
+            "artifact_sha256",
+            "source_url",
+            "idempotency_key",
+            "status",
+            "current_stage",
+            "extraction_run",
+            "document_version",
+            "quality_run",
+            "lineage_assessment",
+            "comparison",
+            "summary",
+            "started_at",
+            "heartbeat_at",
+            "finished_at",
+            "retry_count",
+            "error_code",
+            "error_message",
+            "step_attempts",
+            "created_at",
+            "updated_at",
         )

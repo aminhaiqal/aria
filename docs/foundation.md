@@ -4,7 +4,8 @@
 
 This foundation implements Phase 1, the Phase 2 JPDP retrieval slice, Phase 3A deterministic
 extraction and evidence projection, Phase 3B quality and linked-file remediation, Phase 3C
-evidence-backed version comparison, Phase 3D.0–3D.2 continuous official-source monitoring,
+evidence-backed version comparison, Phase 3D.0–3D.3 continuous official-source monitoring and
+downstream orchestration,
 Phase F self-hosted OCR completion, and Phase G hybrid semantic retrieval. It provides durable
 registry, workflow, retrieval, immutable evidence, document versioning, OCR lineage, graph, search,
 comparison, review, monitoring, and extraction-quality boundaries.
@@ -25,9 +26,9 @@ Browser / operator
        +---- discovery worker queue
        +---- HTTP fetch queue ---- immutable artifact storage
        +---- browser queue (reserved)
-       +---- extraction queue ---- versions + evidence graph + search indexes
+       +---- extraction queue ---- durable change orchestration
        |                                  |
-       |                                  +---- offline quality assessment
+       |                                  +---- extraction -> quality gate -> graph/vectors
        +---- diff queue ---------- lineage + anchors + deterministic comparisons + GPT summaries
        +---- dedicated OCR worker ---- immutable searchable PDF + text sidecar
        +---- normalization, diff queues (reserved)
@@ -51,6 +52,7 @@ language packs. This bounds resource use and keeps OCR system packages out of th
 - `knowledge`: structural graph nodes/edges, provider-versioned vectors, and retrieval evaluation
 - `comparisons`: version lineage, structural anchors, deterministic deltas, review, and summaries
 - `quality`: versioned corpus assessments and append-only, provenance-backed findings
+- `orchestration`: durable changed-artifact workflows, stage attempts, gates, and recovery
 - `events`: transactional pipeline history, delivery outbox, and append-only audit history
 - `api`: administrator-only read API
 - `health`: unauthenticated liveness and dependency readiness probes
@@ -86,8 +88,8 @@ language packs. This bounds resource use and keeps OCR system packages out of th
     provider adds semantic retrieval without replacing local vectors.
 13. Quality runs hash both their ruleset configuration and the complete immutable collection
     corpus. An unchanged replay reuses the completed run; changed evidence creates a new run.
-14. Quality assessment is diagnostic. It never mutates source artifacts, extracted text,
-    document versions, graph projections, or review state.
+14. Quality assessment never mutates source artifacts, extracted text, document versions, or
+    review state. New changed-artifact workflows require its gate before graph/vector promotion.
 15. OCR is a transformation, not a fetch. The official PDF remains the evidence artifact; its
     searchable PDF and text sidecar are separately hashed under `derived/ocr/sha256/` and linked by
     append-only `ArtifactDerivative` records.
@@ -110,6 +112,15 @@ language packs. This bounds resource use and keeps OCR system packages out of th
 23. Resource scheduling is staggered, globally bounded, bounded per endpoint, and overlap-safe.
     An official-domain link outside configured scope is registered disabled for review; an unsafe
     or ambiguous link is quarantined and never becomes a fetch candidate.
+24. Only `ArtifactObservation.content_changed=true` creates a change orchestration. Each workflow
+    has one SHA-256 idempotency key and append-only per-stage attempts; equivalent normalized text
+    terminates without quality, graph, lineage, or comparison work.
+25. A genuine new version must pass quality and provenance gates before deterministic comparison.
+    Material comparison items stop at human review. GPT summaries can be queued only after every
+    non-unchanged item has a current decision and at least one is confirmed.
+26. Recovery atomically marks pending or stale work as queued, so repeated beat passes cannot
+    duplicate dispatch. Failed work requires an explicit retry; OCR-ready work resumes from its
+    derivative evidence without extracting the official source again.
 
 ## Self-hosting and Cloudflare
 
@@ -125,9 +136,7 @@ the default. A deployment can activate OpenAI for better semantic retrieval or s
 
 ## Next slice
 
-1. Add Phase 3D.3 orchestration from genuinely changed artifacts into extraction, anchoring, and
-   eligible comparison without bypassing review.
-2. Build the Phase 3D.5 self-hosted operator console for monitoring and review.
-3. Add a bounded browser retrieval fallback for JavaScript-only official pages.
-4. Add an operator-selected delivery adapter for reviewed outbox events.
-5. Measure change-detection precision when JPDP publishes the first distinct temporal artifact pair.
+1. Build the Phase 3D.5 self-hosted operator console for monitoring and review.
+2. Add a bounded browser retrieval fallback for JavaScript-only official pages.
+3. Add an operator-selected delivery adapter for reviewed outbox events.
+4. Measure change-detection precision when JPDP publishes the first distinct temporal artifact pair.

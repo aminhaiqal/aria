@@ -202,9 +202,11 @@ def complete_fetch(
         },
     )
     if content_changed:
-        from aria.extraction.tasks import extract_raw_artifact
+        from aria.orchestration.services import ensure_change_orchestration
+        from aria.orchestration.tasks import process_change_orchestration
 
-        transaction.on_commit(lambda: extract_raw_artifact.delay(str(raw_artifact.id)))
+        orchestration, _ = ensure_change_orchestration(observation)
+        transaction.on_commit(lambda: process_change_orchestration.delay(str(orchestration.id)))
     return observation
 
 

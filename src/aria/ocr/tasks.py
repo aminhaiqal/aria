@@ -12,6 +12,6 @@ from aria.ocr.services import RetryableOCRError, process_ocr_run
     retry_jitter=True,
     retry_kwargs={"max_retries": 3},
 )
-def process_ocr(self, ocr_run_id: str) -> str:
+def process_ocr(self, ocr_run_id: str, *, project_knowledge: bool = True) -> str:
     run = OCRRun.objects.select_related("source_artifact").get(pk=ocr_run_id)
-    return str(process_ocr_run(run).id)
+    return str(process_ocr_run(run, project_knowledge=project_knowledge).id)

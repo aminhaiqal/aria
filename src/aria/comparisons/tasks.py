@@ -28,5 +28,14 @@ def compare_eligible_versions() -> dict:
 )
 def summarize_comparison(self, comparison_id: str) -> dict:
     comparison = DocumentComparison.objects.get(pk=comparison_id)
-    summary, created = generate_comparison_summary(comparison)
+    try:
+        summary, created = generate_comparison_summary(comparison)
+    except Exception as error:
+        from aria.orchestration.services import mark_summary_orchestrations_failed
+
+        mark_summary_orchestrations_failed(comparison, error)
+        raise
+    from aria.orchestration.services import complete_summary_orchestrations
+
+    complete_summary_orchestrations(summary)
     return {"summary_id": str(summary.id), "created": created}

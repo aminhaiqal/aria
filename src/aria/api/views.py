@@ -13,6 +13,7 @@ from aria.api.serializers import (
     ArtifactDerivativeSerializer,
     ArtifactObservationSerializer,
     AuthoritySerializer,
+    ChangeOrchestrationSerializer,
     ComparisonItemSerializer,
     ComparisonReviewSerializer,
     ComparisonSummarySerializer,
@@ -75,6 +76,7 @@ from aria.knowledge.embeddings import (
 )
 from aria.knowledge.models import GraphEdge, GraphNode
 from aria.ocr.models import OCRRun
+from aria.orchestration.models import ChangeOrchestration
 from aria.quality.models import (
     DocumentQualityAssessment,
     QualityAssessmentRun,
@@ -305,6 +307,20 @@ class ReviewedChangePublicationViewSet(ReadOnlyModelViewSet):
         "comparison_item", "confirmation_review", "pipeline_event"
     )
     serializer_class = ReviewedChangePublicationSerializer
+
+
+class ChangeOrchestrationViewSet(ReadOnlyModelViewSet):
+    queryset = ChangeOrchestration.objects.select_related(
+        "artifact_observation",
+        "source_artifact",
+        "extraction_run",
+        "document_version",
+        "quality_run",
+        "lineage_assessment",
+        "comparison",
+        "summary",
+    ).prefetch_related("step_attempts")
+    serializer_class = ChangeOrchestrationSerializer
 
 
 class KnowledgeSearchViewSet(GenericViewSet):

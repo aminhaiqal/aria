@@ -91,6 +91,10 @@ confirmed item exactly once, preserves its deterministic change type, and requir
 [OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data) before using hosted
 summaries for non-public material.
 
+Phase 3D.3 can queue this summary automatically only after every non-unchanged comparison item has
+a current human decision and at least one item is confirmed. A failed summary remains isolated from
+the deterministic comparison and can be retried explicitly; it never publishes a change event.
+
 ## Operations
 
 ```bash

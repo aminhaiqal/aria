@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.db import transaction
 
 from aria.comparisons.models import (
     ComparisonItem,
@@ -103,6 +104,11 @@ class ComparisonReviewAdmin(admin.ModelAdmin):
                 if obj.previous_review_id
                 else None,
             },
+        )
+        from aria.orchestration.services import queue_summary_after_completed_review
+
+        transaction.on_commit(
+            lambda: queue_summary_after_completed_review(obj.comparison_item.comparison)
         )
 
 

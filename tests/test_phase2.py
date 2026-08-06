@@ -32,6 +32,7 @@ from aria.fetching.client import (
 )
 from aria.fetching.models import FetchAttempt
 from aria.fetching.services import begin_fetch_attempt, complete_fetch, complete_not_modified
+from aria.orchestration.models import ChangeOrchestration
 from aria.sources.models import ConnectorConfiguration, SourceEndpoint
 
 PUBLIC_IP = "93.184.216.34"
@@ -260,7 +261,9 @@ class PhaseTwoTestCase(TestCase):
 
         with TemporaryDirectory() as temporary_directory:
             store = FilesystemArtifactStore(Path(temporary_directory))
-            with patch("aria.extraction.tasks.extract_raw_artifact.delay") as extract_delay:
+            with patch(
+                "aria.orchestration.tasks.process_change_orchestration.delay"
+            ) as orchestration_delay:
                 first_attempt = begin_fetch_attempt(candidate, first_run, request_headers={})
                 with self.captureOnCommitCallbacks(execute=True):
                     first_observation = complete_fetch(first_attempt, response, store=store)
@@ -279,7 +282,8 @@ class PhaseTwoTestCase(TestCase):
             self.assertEqual(first_observation.raw_artifact_id, second_observation.raw_artifact_id)
             self.assertTrue(first_observation.content_changed)
             self.assertFalse(second_observation.content_changed)
-            extract_delay.assert_called_once_with(str(artifact.id))
+            orchestration = ChangeOrchestration.objects.get(artifact_observation=first_observation)
+            orchestration_delay.assert_called_once_with(str(orchestration.id))
             candidate.refresh_from_db()
             self.assertEqual(candidate.pipeline_state, DiscoveredCandidate.PipelineState.VERSIONED)
             self.assertTrue(
@@ -302,7 +306,9 @@ class PhaseTwoTestCase(TestCase):
             content=b"%PDF-1.7\nfirst",
         )
         with TemporaryDirectory() as temporary_directory:
-            with patch("aria.extraction.tasks.extract_raw_artifact.delay") as extract_delay:
+            with patch(
+                "aria.orchestration.tasks.process_change_orchestration.delay"
+            ) as orchestration_delay:
                 first_attempt = begin_fetch_attempt(candidate, first_run, request_headers={})
                 with self.captureOnCommitCallbacks(execute=True):
                     first_observation = complete_fetch(
@@ -336,7 +342,8 @@ class PhaseTwoTestCase(TestCase):
 
         self.assertEqual(first_observation.raw_artifact_id, second_observation.raw_artifact_id)
         self.assertFalse(second_observation.content_changed)
-        extract_delay.assert_called_once_with(str(first_observation.raw_artifact_id))
+        orchestration = ChangeOrchestration.objects.get(artifact_observation=first_observation)
+        orchestration_delay.assert_called_once_with(str(orchestration.id))
         candidate.refresh_from_db()
         self.assertEqual(candidate.pipeline_state, DiscoveredCandidate.PipelineState.VERSIONED)
         second_attempt.refresh_from_db()

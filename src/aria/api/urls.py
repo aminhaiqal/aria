@@ -4,6 +4,7 @@ from aria.api.views import (
     ArtifactDerivativeViewSet,
     ArtifactObservationViewSet,
     AuthorityViewSet,
+    ChangeOrchestrationViewSet,
     ComparisonItemViewSet,
     ComparisonReviewViewSet,
     ComparisonSummaryViewSet,
@@ -68,5 +69,6 @@ router.register("comparison-items", ComparisonItemViewSet)
 router.register("comparison-reviews", ComparisonReviewViewSet)
 router.register("comparison-summaries", ComparisonSummaryViewSet)
 router.register("reviewed-change-publications", ReviewedChangePublicationViewSet)
+router.register("change-orchestrations", ChangeOrchestrationViewSet)
 
 urlpatterns = router.urls

@@ -26,6 +26,8 @@ publications before any AI interpretation is introduced.
 - Provenance-gated bilingual structural anchors and deterministic immutable-version comparisons
 - Append-only human review, optional structured GPT summaries, and reviewed-change outbox events
 - Deterministic, corpus-aware extraction quality runs with provenance-backed findings
+- Durable changed-artifact orchestration with per-stage attempts, quality/lineage gates, recovery,
+  review waits, and post-review GPT-summary dispatch
 - Immutable OCR derivatives with source/output hashes, toolchain records, and page metrics
 - A dedicated self-hosted OCRmyPDF/Tesseract worker with Malay and English language data
 - Explicit pipeline states from discovery through publication and failure handling
@@ -50,10 +52,11 @@ artifact.
 - Phase 3D.0 durable source monitoring contract: implemented
 - Phase 3D.1 scheduled conditional JPDP retrieval: implemented
 - Phase 3D.2 independent detail-page/RSS monitoring and safe reconciliation: implemented
+- Phase 3D.3 evidence-gated downstream change orchestration: implemented
 - Phase 3F bounded self-hosted OCR completion: implemented
 - Phase 3G measured hybrid semantic retrieval: implemented
 - Phase 2 source breadth: the approved JPDP RSS path is implemented; browser fallback remains open
-- Next implementation slice: Phase 3D.3 downstream change orchestration, then the operator console
+- Next implementation slice: Phase 3D.5 self-hosted operator console
 
 ## Local setup
 
@@ -99,6 +102,8 @@ make anchors         # project current bilingual legal anchors
 make compare         # compare every eligible temporal version pair deterministically
 make summarize COMPARISON_ID=<uuid> # summarize confirmed deltas with structured GPT output
 make publish-reviewed COMPARISON_ID=<uuid> # create idempotent reviewed-change outbox events
+make audit-orchestrations # report changed-observation coverage and orchestration state
+make retry-orchestration ORCHESTRATION_ID=<uuid> # explicitly retry failed/ready work
 make verify-storage  # write/read/delete one temporary R2 probe
 make superuser       # create an admin user
 make down             # stop services without deleting data
@@ -134,7 +139,8 @@ See [Foundation architecture](docs/foundation.md), [Phase 2 retrieval](docs/retr
 [Phase 3A extraction and evidence graph](docs/knowledge-graph.md),
 [Phase 3B extraction quality](docs/quality.md),
 [Phase 3C version comparison](docs/version-comparison.md),
-[Phase 3D source monitoring](docs/monitoring.md), and
+[Phase 3D source monitoring](docs/monitoring.md),
+[Phase 3D.3 change orchestration](docs/orchestration.md), and
 [Phase F self-hosted OCR](docs/ocr.md) for design decisions and operating instructions.
 [Phase G hybrid embeddings](docs/embeddings.md) documents the OpenAI embedding boundary and
 measured retrieval results.

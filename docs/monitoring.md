@@ -188,6 +188,10 @@ The controlled post-deployment pilot then completed without failed resource runs
 
 ## Next slices
 
-Phase 3D.3 should automate identity-safe orchestration from genuinely changed artifacts into
-extraction, anchor projection, and eligible comparison. Phase 3D.5 then adds the self-hosted
-operator console. Neither slice may bypass deterministic comparison or human review.
+Phase 3D.3 now automates identity-safe orchestration from genuinely changed artifacts through
+extraction, quality, graph/vector projection, lineage, anchors, and eligible comparison. Equal
+normalized content stops early; material deltas wait for human review; GPT summaries are
+post-review only. See [Phase 3D.3 change orchestration](orchestration.md).
+
+Phase 3D.5 next adds the self-hosted operator console. It must preserve the same deterministic
+comparison, review, and explicit-publication boundaries.

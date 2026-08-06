@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "aria.knowledge",
     "aria.comparisons",
     "aria.quality",
+    "aria.orchestration",
     "aria.events",
     "aria.health",
     "aria.api",
@@ -172,6 +173,18 @@ OPENAI_SUMMARY_MAX_ITEMS = int(os.getenv("ARIA_OPENAI_SUMMARY_MAX_ITEMS", "50"))
 OPENAI_SUMMARY_MAX_CHARS_PER_ANCHOR = int(
     os.getenv("ARIA_OPENAI_SUMMARY_MAX_CHARS_PER_ANCHOR", "12000")
 )
+ORCHESTRATION_AUTO_GPT_SUMMARIES = env_bool(
+    "ARIA_AUTO_GPT_SUMMARIES",
+    bool(OPENAI_API_KEY),
+)
+ORCHESTRATION_STALE_AFTER_MINUTES = max(
+    5,
+    int(os.getenv("ARIA_ORCHESTRATION_STALE_AFTER_MINUTES", "30")),
+)
+ORCHESTRATION_RECOVERY_BATCH_SIZE = max(
+    1,
+    int(os.getenv("ARIA_ORCHESTRATION_RECOVERY_BATCH_SIZE", "5")),
+)
 PDF_OCR_MIN_CHARACTERS_PER_PAGE = int(os.getenv("ARIA_PDF_OCR_MIN_CHARACTERS_PER_PAGE", "40"))
 OCR_PROFILE_NAME = os.getenv("ARIA_OCR_PROFILE_NAME", "jpdp-msa-eng")
 OCR_PROFILE_VERSION = os.getenv("ARIA_OCR_PROFILE_VERSION", "1")
@@ -208,6 +221,7 @@ CELERY_TASK_ROUTES = {
     "aria.discovery.tasks.*": {"queue": "discovery", "routing_key": "discovery"},
     "aria.fetching.tasks.*": {"queue": "http_fetch", "routing_key": "http_fetch"},
     "aria.extraction.tasks.*": {"queue": "extraction", "routing_key": "extraction"},
+    "aria.orchestration.tasks.*": {"queue": "extraction", "routing_key": "extraction"},
     "aria.ocr.tasks.*": {"queue": "ocr", "routing_key": "ocr"},
     "aria.knowledge.tasks.*": {"queue": "normalization", "routing_key": "normalization"},
     "aria.comparisons.tasks.*": {"queue": "diff", "routing_key": "diff"},
@@ -221,6 +235,10 @@ CELERY_BEAT_SCHEDULE = {
     "schedule-due-monitored-resources": {
         "task": "aria.discovery.tasks.schedule_due_resources",
         "schedule": crontab(minute="*"),
+    },
+    "recover-change-orchestrations": {
+        "task": "aria.orchestration.tasks.recover_change_orchestrations",
+        "schedule": crontab(minute="*/5"),
     },
 }
 

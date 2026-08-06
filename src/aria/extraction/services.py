@@ -274,6 +274,7 @@ def _project_observations(
     run: ExtractionRun,
     raw_artifact: RawArtifact,
     extracted_document: ExtractedDocument,
+    project_knowledge: bool = True,
 ) -> int:
     projected = 0
     now = timezone.now()
@@ -292,7 +293,8 @@ def _project_observations(
             extracted_document=extracted_document,
             observation=observation,
         )
-        project_document_version(version)
+        if project_knowledge:
+            project_document_version(version)
         if evidence_created:
             projected += 1
             record_pipeline_event(
@@ -330,7 +332,11 @@ def _mark_failed(run: ExtractionRun, *, retryable: bool, error: Exception) -> No
     )
 
 
-def _claim_run(run: ExtractionRun) -> tuple[ExtractionRun, bool]:
+def _claim_run(
+    run: ExtractionRun,
+    *,
+    project_knowledge: bool = True,
+) -> tuple[ExtractionRun, bool]:
     now = timezone.now()
     with transaction.atomic():
         locked_run = ExtractionRun.objects.select_for_update().get(pk=run.pk)
@@ -348,6 +354,7 @@ def _claim_run(run: ExtractionRun) -> tuple[ExtractionRun, bool]:
                     run=locked_run,
                     raw_artifact=locked_run.raw_artifact,
                     extracted_document=locked_run.extracted_document,
+                    project_knowledge=project_knowledge,
                 )
             except Exception as error:
                 raise RetryableExtractionError(str(error)) from error
@@ -379,7 +386,11 @@ def _claim_run(run: ExtractionRun) -> tuple[ExtractionRun, bool]:
         return locked_run, True
 
 
-def extract_artifact(raw_artifact: RawArtifact) -> ExtractionRun:
+def extract_artifact(
+    raw_artifact: RawArtifact,
+    *,
+    project_knowledge: bool = True,
+) -> ExtractionRun:
     extractor = get_extractor(raw_artifact.detected_content_type)
     config_hash = configuration_hash(extractor.configuration)
     run, _ = ExtractionRun.objects.get_or_create(
@@ -388,7 +399,7 @@ def extract_artifact(raw_artifact: RawArtifact) -> ExtractionRun:
         extractor_version=extractor.version,
         configuration_hash=config_hash,
     )
-    run, claimed = _claim_run(run)
+    run, claimed = _claim_run(run, project_knowledge=project_knowledge)
     if not claimed:
         return run
     try:
@@ -433,6 +444,7 @@ def extract_artifact(raw_artifact: RawArtifact) -> ExtractionRun:
                     run=locked_run,
                     raw_artifact=raw_artifact,
                     extracted_document=document,
+                    project_knowledge=project_knowledge,
                 )
                 locked_run.status = ExtractionRun.Status.SUCCEEDED
             locked_run.finished_at = now
@@ -443,6 +455,7 @@ def extract_artifact(raw_artifact: RawArtifact) -> ExtractionRun:
         raise RetryableExtractionError(str(error)) from error
     except ExtractionError as error:
         _mark_failed(run, retryable=False, error=error)
+        run.refresh_from_db()
     except Exception as error:
         _mark_failed(run, retryable=True, error=error)
         raise RetryableExtractionError(str(error)) from error

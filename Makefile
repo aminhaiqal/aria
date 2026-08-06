@@ -1,4 +1,4 @@
-.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser poll-jpdp poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings quality audit-lineage classify-lineage anchors compare summarize publish-reviewed verify-storage
+.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser poll-jpdp poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage
 
 bootstrap:
 	@test -f .env || cp .env.example .env
@@ -81,6 +81,13 @@ summarize:
 publish-reviewed:
 	@test -n "$(COMPARISON_ID)" || (echo "Set COMPARISON_ID=<uuid>" && exit 1)
 	docker compose exec api python manage.py publish_reviewed_changes --comparison $(COMPARISON_ID)
+
+audit-orchestrations:
+	docker compose exec api python manage.py audit_orchestrations
+
+retry-orchestration:
+	@test -n "$(ORCHESTRATION_ID)" || (echo "Set ORCHESTRATION_ID=<uuid>" && exit 1)
+	docker compose exec api python manage.py retry_orchestration $(ORCHESTRATION_ID)
 
 verify-storage:
 	docker compose exec api python manage.py verify_object_storage

@@ -145,13 +145,18 @@ def process_ocr_run(
     *,
     executor: OCRExecutor | None = None,
     dispatch_extraction: bool = True,
+    project_knowledge: bool = True,
 ) -> OCRRun:
     run, claimed = _claim_run(run)
     if not claimed:
         if run.status == OCRRun.Status.SUCCEEDED and dispatch_extraction:
             from aria.extraction.tasks import extract_raw_artifact
 
-            extract_raw_artifact.delay(str(run.searchable_pdf_derivative.derived_artifact_id))
+            artifact_id = str(run.searchable_pdf_derivative.derived_artifact_id)
+            if project_knowledge:
+                extract_raw_artifact.delay(artifact_id)
+            else:
+                extract_raw_artifact.delay(artifact_id, project_knowledge=False)
         return run
 
     try:
@@ -253,7 +258,11 @@ def process_ocr_run(
         if dispatch_extraction:
             from aria.extraction.tasks import extract_raw_artifact
 
-            extract_raw_artifact.delay(str(searchable_pdf.id))
+            artifact_id = str(searchable_pdf.id)
+            if project_knowledge:
+                extract_raw_artifact.delay(artifact_id)
+            else:
+                extract_raw_artifact.delay(artifact_id, project_knowledge=False)
     except (ArtifactStorageError, RetryableOCRExecutionError) as error:
         _mark_failed(run, error, retryable=True)
         raise RetryableOCRError(str(error)) from error
