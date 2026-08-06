@@ -7,7 +7,8 @@ class ReaderSecurityHeadersMiddleware:
         if request.path.startswith(("/reader/", "/api/reader/")):
             response["Content-Security-Policy"] = (
                 "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
-                "img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self'"
+                "img-src 'self' data:; object-src 'none'; script-src 'self'; "
+                "style-src 'self' 'unsafe-inline'"
             )
             response["Referrer-Policy"] = "same-origin"
             response["Permissions-Policy"] = "camera=(), geolocation=(), microphone=()"

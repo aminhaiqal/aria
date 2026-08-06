@@ -6,17 +6,17 @@ This foundation implements Phase 1, the Phase 2 JPDP retrieval slice, Phase 3A d
 extraction and evidence projection, Phase 3B quality and linked-file remediation, Phase 3C
 evidence-backed version comparison, Phase 3D.0–3D.5 continuous official-source monitoring,
 downstream orchestration and operator review, Phase F self-hosted OCR completion, Phase G hybrid
-semantic retrieval, and the Phase 4A authenticated reader preview. It provides durable
+semantic retrieval, and the Phase 4A/4B authenticated React reader. It provides durable
 registry, workflow, retrieval, immutable evidence, document versioning, OCR lineage, graph, search,
 comparison, review, monitoring, and extraction-quality boundaries.
 
 ## Runtime layout
 
 ```text
-Reader / operator
+React reader / operator
        |
        v
- Django reader + console + APIs ---- PostgreSQL + pgvector
+ Django auth + reader APIs + console ---- PostgreSQL + pgvector
        |                       |
        |                       +---- pipeline events + outbox + audit
        |                       +---- local + optional OpenAI vectors
@@ -129,6 +129,9 @@ language packs. This bounds resource use and keeps OCR system packages out of th
 28. Browser execution is explicit per endpoint and isolated from general workers. Every request is
     allowlisted, public-DNS validated, IP-pinned, read-only, resource-bounded, and represented by
     append-only evidence; original responses and rendered DOM derivatives are both preserved.
+29. The React reader is compiled from locked TypeScript, Vite, Tailwind, and repository-owned
+    shadcn source. Django serves hashed assets on the same origin, retains the session/CSRF boundary,
+    and can switch atomically to the retained server-rendered templates.
 
 ## Self-hosting and Cloudflare
 
@@ -144,6 +147,7 @@ the default. A deployment can activate OpenAI for better semantic retrieval or s
 
 ## Next slice
 
-1. Onboard and evaluate the first explicitly approved JavaScript-only official source.
-2. Add an operator-selected delivery adapter for reviewed outbox events.
-3. Measure change-detection precision when JPDP publishes the first distinct temporal artifact pair.
+1. Harden the Cloudflare Access and Tunnel private-preview deployment.
+2. Collect task-based reader feedback and measured search interaction telemetry without recording
+   query content by default.
+3. Add an operator-selected delivery adapter for reviewed outbox events.

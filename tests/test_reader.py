@@ -34,6 +34,7 @@ from aria.sources.models import SourceEndpoint, SourcePackSnapshot
 @override_settings(
     EMBEDDING_PROVIDER="local_hash",
     READER_EMBEDDING_PROVIDER="local_hash",
+    READER_FRONTEND="server",
     LOCAL_EMBEDDING_MODEL="aria-token-hash-v1",
     EMBEDDING_DIMENSIONS=384,
     READER_MAX_QUERY_CHARACTERS=500,
@@ -275,6 +276,13 @@ class ReaderInterfaceTestCase(TestCase):
         self.assertEqual(
             self.client.get(endpoint, {"q": "x", "date_from": "07/08/2026"}).status_code,
             400,
+        )
+        options_response = self.client.get(reverse("reader-api:options"))
+        self.assertEqual(options_response.status_code, 200)
+        self.assertEqual(options_response.json()["authorities"][0]["slug"], self.authority.slug)
+        self.assertEqual(
+            options_response.json()["collections"][0]["id"],
+            str(self.collection.id),
         )
 
     def test_hybrid_search_falls_back_to_full_text_without_hiding_it(self) -> None:
@@ -523,3 +531,95 @@ class ReaderInterfaceTestCase(TestCase):
         self.assertEqual(report["status"], "passed")
         self.assertTrue(all(gate["passed"] for gate in report["sources"][0]["gates"]))
         self.assertEqual(report["sources"][0]["artifact_changes"]["unchanged"], 1)
+
+
+@override_settings(READER_FRONTEND="react")
+class ReaderReactShellTestCase(TestCase):
+    def setUp(self) -> None:
+        self.temporary_directory = TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.dist = Path(self.temporary_directory.name)
+        manifest_directory = self.dist / ".vite"
+        asset_directory = self.dist / "assets"
+        manifest_directory.mkdir(parents=True)
+        asset_directory.mkdir(parents=True)
+        (manifest_directory / "manifest.json").write_text(
+            """{
+              "index.html": {
+                "file": "assets/reader-test.js",
+                "css": ["assets/reader-test.css"]
+              }
+            }""",
+            encoding="utf-8",
+        )
+        (asset_directory / "reader-test.js").write_text(
+            "document.documentElement.dataset.readerLoaded = 'true';",
+            encoding="utf-8",
+        )
+        (asset_directory / "reader-test.css").write_text(
+            ":root { color-scheme: light dark; }",
+            encoding="utf-8",
+        )
+        self.reader = get_user_model().objects.create_user(
+            username="react-reader",
+            password="reader-pass",
+        )
+
+    def test_react_shell_is_private_same_origin_and_uses_hashed_build_contract(self) -> None:
+        response = self.client.get(reverse("reader:search"))
+        self.assertRedirects(
+            response,
+            f"{reverse('reader:login')}?next={reverse('reader:search')}",
+        )
+        self.client.force_login(self.reader)
+
+        with override_settings(READER_FRONTEND_DIST=self.dist):
+            response = self.client.get(reverse("reader:search"))
+            script_response = self.client.get(
+                reverse(
+                    "reader:app-asset",
+                    kwargs={"asset_path": "assets/reader-test.js"},
+                )
+            )
+            manifest_response = self.client.get(
+                reverse(
+                    "reader:app-asset",
+                    kwargs={"asset_path": ".vite/manifest.json"},
+                )
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="aria-reader-root"')
+        self.assertContains(response, "assets/app/assets/reader-test.js")
+        self.assertContains(response, 'data-user-name="react-reader"')
+        self.assertEqual(response["Cache-Control"], "private, no-store")
+        self.assertIn("script-src 'self'", response["Content-Security-Policy"])
+        self.assertEqual(script_response.status_code, 200)
+        self.assertEqual(manifest_response.status_code, 404)
+        self.assertEqual(script_response["Cache-Control"], "public, max-age=31536000, immutable")
+        self.assertEqual(
+            b"".join(script_response.streaming_content),
+            b"document.documentElement.dataset.readerLoaded = 'true';",
+        )
+
+    def test_document_route_bootstraps_identity_without_reading_it_in_html_view(self) -> None:
+        self.client.force_login(self.reader)
+        identity_id = "11111111-1111-4111-8111-111111111111"
+
+        with override_settings(READER_FRONTEND_DIST=self.dist):
+            response = self.client.get(
+                reverse("reader:document-detail", kwargs={"identity_id": identity_id})
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'data-document-id="{identity_id}"')
+
+    def test_missing_frontend_bundle_fails_closed_with_recovery_command(self) -> None:
+        self.client.force_login(self.reader)
+        missing_dist = self.dist / "missing"
+
+        with override_settings(READER_FRONTEND_DIST=missing_dist):
+            response = self.client.get(reverse("reader:search"))
+
+        self.assertEqual(response.status_code, 503)
+        self.assertContains(response, "make frontend-build", status_code=503)

@@ -1,4 +1,4 @@
-.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser list-source-packs plan-source-pack apply-source-pack pilot-source audit-static promote-static source-confidence source-soak poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings evaluate-reader quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage
+.PHONY: bootstrap build up down logs migrate makemigrations test check frontend-build frontend-test frontend-format reader-e2e shell superuser list-source-packs plan-source-pack apply-source-pack pilot-source audit-static promote-static source-confidence source-soak poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings evaluate-reader quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage
 
 bootstrap:
 	@test -f .env || cp .env.example .env
@@ -27,6 +27,22 @@ test:
 
 check:
 	docker compose run --rm api python manage.py check --deploy
+
+frontend-build:
+	docker compose build frontend-assets
+	docker compose run --rm frontend-assets
+
+frontend-test:
+	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$(CURDIR)/frontend/reader:/workspace" -w /workspace node:22-bookworm-slim npm ci
+	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$(CURDIR)/frontend/reader:/workspace" -w /workspace node:22-bookworm-slim npm run lint
+	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$(CURDIR)/frontend/reader:/workspace" -w /workspace node:22-bookworm-slim npm run test:coverage
+	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$(CURDIR)/frontend/reader:/workspace" -w /workspace node:22-bookworm-slim npm run build
+
+frontend-format:
+	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$(CURDIR)/frontend/reader:/workspace" -w /workspace node:22-bookworm-slim npm run format
+
+reader-e2e:
+	docker compose run --rm browser-worker python manage.py test tests.test_reader_browser
 
 shell:
 	docker compose exec api python manage.py shell

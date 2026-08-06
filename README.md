@@ -38,8 +38,9 @@ publications before any AI interpretation is introduced.
 - Guarded disabled-source pilots and stale-safe admission for deterministic static listings
 - A consolidated source-confidence view spanning schedules, admission, R2, extraction, graph, and
   embedding coverage
-- An authenticated reader preview with bounded multi-source hybrid search, source filters, exact
-  passage links, immutable evidence downloads, quality/version context, and labelled GPT summaries
+- An authenticated, self-hosted React/TypeScript/Vite reader built from repository-owned shadcn
+  components, with responsive search, source filters, exact passage links, immutable evidence
+  downloads, quality/version context, and labelled GPT summaries
 - A separate active-user reader API and versioned JPDP/AGC/Parliament retrieval benchmark
 - Immutable OCR derivatives with source/output hashes, toolchain records, and page metrics
 - A dedicated self-hosted OCRmyPDF/Tesseract worker with Malay and English language data
@@ -74,6 +75,7 @@ outputs are explicit derivatives and never replace or mutate the official source
 - Phase 3F bounded self-hosted OCR completion: implemented
 - Phase 3G measured hybrid semantic retrieval: implemented
 - Phase 4A authenticated reader search and evidence interface: implemented
+- Phase 4B self-hosted React, TypeScript, Vite, and shadcn reader: implemented
 - Phase 2 source breadth: JPDP, AGC Updated Principal Acts, and Parliament Dewan Rakyat bills are
   operational with complete R2, extraction, graph, local-vector, and OpenAI-vector coverage
 - Operational acceptance still pending: observe the first autonomous AGC and Parliament daily
@@ -112,6 +114,9 @@ values before using this outside local development.
 make bootstrap       # create .env if absent, build, and start
 make logs            # follow API and worker logs
 make test            # run the Django test suite in Compose
+make frontend-test   # install deterministically, lint, test with coverage, and build the reader
+make frontend-build  # rebuild and publish the hashed reader bundle into the Compose volume
+make reader-e2e      # test login, shadcn interaction, CSP, and logout in Chromium
 make makemigrations  # generate model migrations
 make migrate         # apply migrations
 make list-source-packs # list validated repository source contracts
@@ -192,5 +197,5 @@ See [Foundation architecture](docs/foundation.md), [Phase 2 retrieval](docs/retr
 [Phase 3D.9 source admission](docs/source-admission.md),
 [Phase F self-hosted OCR](docs/ocr.md), and
 [Phase G hybrid embeddings](docs/embeddings.md), and
-[Phase 4A reader interface](docs/reader-interface.md) for design decisions and operating
+[Phase 4 reader interface](docs/reader-interface.md) for design decisions and operating
 instructions.

@@ -1,4 +1,6 @@
 import hashlib
+import json
+import mimetypes
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlencode
@@ -9,6 +11,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
 from django.db.models import Q
 from django.http import FileResponse, Http404, HttpResponse
+from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET
@@ -52,6 +55,66 @@ def reader_asset(request, asset_name):
     return response
 
 
+@require_GET
+def reader_app_asset(request, asset_path):
+    root = settings.READER_FRONTEND_DIST.resolve()
+    asset_parts = Path(asset_path).parts
+    if not asset_parts or asset_parts[0] != "assets" or ".." in asset_parts:
+        raise Http404
+    path = (root / asset_path).resolve()
+    if not path.is_relative_to(root) or not path.is_file():
+        raise Http404
+    content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    response = FileResponse(path.open("rb"), content_type=content_type)
+    response["Cache-Control"] = "public, max-age=31536000, immutable"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+def _reader_frontend_assets() -> dict:
+    manifest_path = settings.READER_FRONTEND_DIST / ".vite" / "manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        entry = manifest.get("index.html") or manifest["src/main.tsx"]
+        script = entry["file"]
+        styles = entry.get("css", [])
+    except (FileNotFoundError, KeyError, TypeError, json.JSONDecodeError) as error:
+        raise RuntimeError("The React reader bundle is missing or invalid.") from error
+    return {
+        "script": reverse("reader:app-asset", kwargs={"asset_path": script}),
+        "styles": [
+            reverse("reader:app-asset", kwargs={"asset_path": stylesheet})
+            for stylesheet in styles
+        ],
+    }
+
+
+def _render_react_reader(request, *, page_title: str, document_id: UUID | None = None):
+    try:
+        assets = _reader_frontend_assets()
+    except RuntimeError as error:
+        return HttpResponse(
+            f"{error} Run `make frontend-build` and reload.",
+            status=503,
+            content_type="text/plain; charset=utf-8",
+        )
+    return render(
+        request,
+        "reader/app.html",
+        {
+            "page_title": page_title,
+            "reader_assets": assets,
+            "reader_csrf_token": get_token(request),
+            "reader_document_id": str(document_id) if document_id else "",
+            "reader_api_search_url": reverse("reader-api:search"),
+            "reader_api_options_url": reverse("reader-api:options"),
+            "reader_login_url": reverse("reader:login"),
+            "reader_logout_url": reverse("reader:logout"),
+            "reader_search_url": reverse("reader:search"),
+        },
+    )
+
+
 def _page_query(request, page: int) -> str:
     query = request.GET.copy()
     query["page"] = str(page)
@@ -61,6 +124,8 @@ def _page_query(request, page: int) -> str:
 @reader_required
 @require_GET
 def search(request):
+    if settings.READER_FRONTEND == "react":
+        return _render_react_reader(request, page_title="Search official material")
     has_query = bool(request.GET.get("q", "").strip())
     form = ReaderSearchForm(request.GET if has_query else None)
     result = None
@@ -106,6 +171,12 @@ def search(request):
 @reader_required
 @require_GET
 def document_detail(request, identity_id: UUID):
+    if settings.READER_FRONTEND == "react":
+        return _render_react_reader(
+            request,
+            page_title="Official document",
+            document_id=identity_id,
+        )
     try:
         document = reader_document_payload(identity_id)
     except DocumentIdentity.DoesNotExist as error:

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Evidence-backed search across official Malaysian legal and regulatory publications.">
+  <meta name="csrf-token" content="{{ reader_csrf_token }}">
+  <title>{{ page_title }} · ARIA</title>
+  {% for stylesheet in reader_assets.styles %}<link rel="stylesheet" href="{{ stylesheet }}">{% endfor %}
+</head>
+<body>
+  <div
+    id="aria-reader-root"
+    data-document-id="{{ reader_document_id }}"
+    data-search-api="{{ reader_api_search_url }}"
+    data-options-api="{{ reader_api_options_url }}"
+    data-search-url="{{ reader_search_url }}"
+    data-login-url="{{ reader_login_url }}"
+    data-logout-url="{{ reader_logout_url }}"
+    data-user-name="{{ request.user.get_full_name|default:request.user.username }}"
+    data-user-staff="{{ request.user.is_staff|yesno:'true,false' }}"
+  ></div>
+  <noscript>ARIA's interactive reader requires JavaScript. Set ARIA_READER_FRONTEND=server to use the server-rendered fallback.</noscript>
+  <script type="module" src="{{ reader_assets.script }}"></script>
+</body>
+</html>

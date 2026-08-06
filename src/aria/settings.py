@@ -259,6 +259,12 @@ ORCHESTRATION_AUTO_GPT_SUMMARIES = env_bool(
     bool(OPENAI_API_KEY),
 )
 READER_EMBEDDING_PROVIDER = os.getenv("ARIA_READER_EMBEDDING_PROVIDER", EMBEDDING_PROVIDER)
+READER_FRONTEND = os.getenv("ARIA_READER_FRONTEND", "react").strip().lower()
+if READER_FRONTEND not in {"react", "server"}:
+    raise ImproperlyConfigured("ARIA_READER_FRONTEND must be react or server.")
+READER_FRONTEND_DIST = Path(
+    os.getenv("ARIA_READER_FRONTEND_DIST", str(BASE_DIR / "frontend" / "reader" / "dist"))
+)
 READER_MAX_QUERY_CHARACTERS = min(
     1000,
     max(50, int(os.getenv("ARIA_READER_MAX_QUERY_CHARACTERS", "500"))),

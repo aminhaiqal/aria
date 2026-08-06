@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 from rest_framework.views import APIView
 
+from aria.collections.models import PublicationCollection
 from aria.documents.models import DocumentIdentity
 from aria.reader.services import (
     ReaderQueryError,
@@ -27,6 +28,51 @@ class ReaderSearchThrottle(UserRateThrottle):
 
 class ReaderDocumentThrottle(UserRateThrottle):
     scope = "reader_document"
+
+
+class ReaderOptionsAPIView(APIView):
+    permission_classes = (IsActiveAuthenticated,)
+    throttle_classes = (ReaderDocumentThrottle,)
+
+    def get(self, request):
+        collections = list(
+            PublicationCollection.objects.filter(
+                is_enabled=True,
+                is_evidence_eligible=True,
+                authority__is_enabled=True,
+            )
+            .select_related("authority")
+            .order_by("authority__name", "name", "id")
+        )
+        authorities = []
+        seen_authorities = set()
+        for collection in collections:
+            authority = collection.authority
+            if authority.id in seen_authorities:
+                continue
+            seen_authorities.add(authority.id)
+            authorities.append(
+                {
+                    "id": str(authority.id),
+                    "name": authority.name,
+                    "slug": authority.slug,
+                    "trust_classification": authority.trust_classification,
+                }
+            )
+        return Response(
+            {
+                "authorities": authorities,
+                "collections": [
+                    {
+                        "id": str(collection.id),
+                        "name": collection.name,
+                        "document_family": collection.document_family,
+                        "authority_slug": collection.authority.slug,
+                    }
+                    for collection in collections
+                ],
+            }
+        )
 
 
 def _positive_integer(value: str, *, name: str, default: int) -> int:

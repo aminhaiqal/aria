@@ -15,11 +15,26 @@ x-app: &app
   volumes:
     - .:/app
     - artifact-data:/var/lib/aria/artifacts
+    - reader-ui:/app/frontend/reader/dist:ro
   restart: unless-stopped
   networks:
     - backend
 
 services:
+  frontend-assets:
+    build:
+      context: .
+      target: reader-ui
+    command:
+      - node
+      - -e
+      - const fs=require('node:fs'); for (const name of fs.readdirSync('/reader-ui')) fs.rmSync('/reader-ui/'+name,{recursive:true,force:true}); fs.cpSync('/reader/dist','/reader-ui',{recursive:true})
+    volumes:
+      - reader-ui:/reader-ui
+    restart: "no"
+    networks:
+      - backend
+
   postgres:
     image: pgvector/pgvector:0.8.2-pg17-bookworm
     environment:
@@ -81,6 +96,8 @@ services:
       timeout: 5s
       retries: 12
     depends_on:
+      frontend-assets:
+        condition: service_completed_successfully
       migrate:
         condition: service_completed_successfully
 
@@ -129,6 +146,7 @@ services:
     volumes:
       - .:/app:ro
       - artifact-data:/var/lib/aria/artifacts
+      - reader-ui:/app/frontend/reader/dist:ro
     stop_grace_period: 1m
     depends_on:
       migrate:
@@ -168,6 +186,7 @@ volumes:
   postgres-data:
   redis-data:
   artifact-data:
+  reader-ui:
 
 networks:
   backend:

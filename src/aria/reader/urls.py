@@ -12,6 +12,7 @@ urlpatterns = [
         auth_views.LogoutView.as_view(next_page="reader:login"),
         name="logout",
     ),
+    path("assets/app/<path:asset_path>", views.reader_app_asset, name="app-asset"),
     path("assets/<str:asset_name>", views.reader_asset, name="asset"),
     path("", views.search, name="search"),
     path("documents/<uuid:identity_id>/", views.document_detail, name="document-detail"),

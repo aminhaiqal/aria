@@ -1,3 +1,12 @@
+FROM node:22-bookworm-slim AS reader-ui
+
+WORKDIR /reader
+
+COPY frontend/reader/package.json frontend/reader/package-lock.json ./
+RUN npm ci
+COPY frontend/reader ./
+RUN npm run build
+
 FROM python:3.13-slim-bookworm AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -9,12 +18,13 @@ WORKDIR /app
 
 RUN addgroup --system aria \
     && adduser --system --ingroup aria aria \
-    && mkdir -p /var/lib/aria/artifacts \
+    && mkdir -p /var/lib/aria/artifacts /var/lib/aria/reader-ui \
     && chown -R aria:aria /var/lib/aria
 
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 COPY manage.py ./manage.py
+COPY --from=reader-ui /reader/dist /app/frontend/reader/dist
 RUN pip install --upgrade pip && pip install --editable .
 
 USER aria

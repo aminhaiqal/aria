@@ -1,11 +1,13 @@
-# Phase 4A authenticated reader interface
+# Phase 4 authenticated reader interface
 
 ## Scope
 
-Phase 4A makes ARIA usable without exposing its operator controls. `/reader/` is a server-rendered,
-self-hosted search and evidence interface backed by the current immutable document versions in
-PostgreSQL. It does not create a second index, copy evidence into a hosted search service, or grant
-reader accounts access to source polling, reviews, summaries, publication, or repair actions.
+Phase 4A made ARIA usable without exposing its operator controls. Phase 4B moves the authenticated
+search and document experience to a self-hosted React and TypeScript application built by Vite from
+repository-owned shadcn components. Django remains the authentication, authorization, API, CSRF,
+and evidence-download boundary. The frontend does not create a second index, copy evidence into a
+hosted search service, or grant reader accounts access to source polling, reviews, summaries,
+publication, or repair actions.
 
 The private preview provides:
 
@@ -31,9 +33,11 @@ the UUID of another raw capture is insufficient.
 
 Reader HTML and API responses receive a restrictive Content Security Policy, same-origin referrer
 policy, disabled camera/geolocation/microphone permissions, `noindex`, and private no-store cache
-headers. CSS is served from an exact local allowlist. Forms use Django sessions and CSRF, and reader
-API requests use active authenticated sessions or Basic authentication. Search and document API
-views have separate per-user throttle scopes.
+headers. Scripts, fonts, and styles are compiled locally and served from hashed same-origin paths;
+remote scripts and `eval` are not allowed. The style policy permits inline declarations because
+Radix positions accessible popovers with runtime style values. Forms use Django sessions and CSRF,
+and reader API requests use active authenticated sessions or Basic authentication. Search and
+document API views have separate per-user throttle scopes.
 
 Create the first account and open the reader:
 
@@ -44,6 +48,36 @@ open http://127.0.0.1:8000/reader/
 
 For a non-staff preview account, use Django Admin or `python manage.py shell` to create an active
 user without assigning `is_staff`.
+
+## Frontend architecture
+
+The TypeScript workspace is `frontend/reader/`. Vite emits a hashed manifest, JavaScript, CSS, and
+locally bundled Geist font files. The Docker `reader-ui` build stage creates that exact production
+bundle; the one-shot `frontend-assets` service publishes it into the read-only `reader-ui` volume
+mounted by Django and the browser-test worker. No Node process runs in production.
+
+The React application uses Django-rendered bootstrap attributes for same-origin routes, the current
+active user, and a CSRF token. It then reads only the versioned reader APIs. Search URL parameters
+remain bookmarkable, document and passage URLs remain stable, and external links accept only HTTP
+or HTTPS schemes. Django continues to verify artifact byte count and SHA-256 before every download.
+
+The original templates remain a rollback path. Set this and restart the API:
+
+```dotenv
+ARIA_READER_FRONTEND=server
+```
+
+The normal default is `ARIA_READER_FRONTEND=react`. Rebuild or validate the frontend with:
+
+```bash
+make frontend-build
+make frontend-test
+make reader-e2e
+```
+
+`frontend-test` runs ESLint, four Vitest tests, axe-core accessibility scans, enforced coverage
+floors, TypeScript compilation, and a production Vite build. `reader-e2e` runs the actual Django
+login, React mount, shadcn select, CSP console-error gate, and logout flow in isolated Chromium.
 
 ## Retrieval contract
 
@@ -73,6 +107,7 @@ The separate read-only contract is:
 
 ```text
 GET /api/reader/v1/search/?q=...&mode=hybrid&embedding_provider=openai
+GET /api/reader/v1/options/
 GET /api/reader/v1/documents/<identity-uuid>/
 GET /reader/artifacts/<artifact-uuid>/content/
 ```
@@ -100,7 +135,8 @@ On 2026-08-07 all three expected documents ranked first: MRR `1.0`, hit@1 `1.0`,
 hit@5 `1.0`. This is a small regression benchmark, not a universal statement about legal-search
 quality. The test suite separately covers authentication, reader/operator permission separation,
 input bounds, filter validation, semantic fallback, XSS escaping, evidence-only downloads, security
-headers, exact document rendering, and autonomous source acceptance.
+headers, exact document rendering, React bundle integrity, filter metadata, accessibility, browser
+interaction, and autonomous source acceptance.
 
 ## Autonomous-source acceptance
 
