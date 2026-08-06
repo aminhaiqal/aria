@@ -1,0 +1,98 @@
+{% extends "reader/base.html" %}
+{% block content %}
+<nav class="breadcrumb" aria-label="Breadcrumb"><a href="{% url 'reader:search' %}">Search</a><span>/</span><span>{{ document.authority.name }}</span></nav>
+<section class="document-hero">
+  <div>
+    <span class="authority-label">{{ document.authority.name }} · {{ document.collection.name }}</span>
+    <h1>{{ document.identity.title }}</h1>
+    <p>Current ARIA version archived {{ document.version.created_at|date:"j F Y, H:i T" }}. This timestamp describes ARIA's evidence record, not a legal commencement date.</p>
+    <div class="document-actions">
+      <a class="primary-button" href="{{ document.identity.canonical_url }}" target="_blank" rel="noopener noreferrer">Open official source ↗</a>
+      {% if document.evidence %}<a class="secondary-button" href="{% url 'reader:artifact-content' document.evidence.0.artifact_id %}">Download archived evidence</a>{% endif %}
+    </div>
+  </div>
+  <aside class="document-trust">
+    <span class="trust-badge">{{ document.authority.trust_classification|title }}</span>
+    <dl>
+      <div><dt>Sections</dt><dd>{{ document.section_count }}</dd></div>
+      <div><dt>Versions</dt><dd>{{ document.versions|length }}</dd></div>
+      <div><dt>Content hash</dt><dd class="mono">{{ document.version.normalized_content_sha256|slice:":16" }}…</dd></div>
+    </dl>
+  </aside>
+</section>
+
+<div class="document-layout">
+  <div class="document-content">
+    {% if document.gpt_summary %}
+    <section class="gpt-summary" aria-labelledby="gpt-summary-title">
+      <header><span class="gpt-label">GPT-generated change summary</span><small>{{ document.gpt_summary.model }} · {{ document.gpt_summary.prompt_version }}</small></header>
+      <h2 id="gpt-summary-title">{{ document.gpt_summary.output.title }}</h2>
+      <p>{{ document.gpt_summary.output.overview }}</p>
+      {% if document.gpt_summary.output.changes %}
+      <ul>{% for change in document.gpt_summary.output.changes %}<li><strong>{{ change.change_type|title }}</strong> — {{ change.explanation }}</li>{% endfor %}</ul>
+      {% endif %}
+      {% if document.gpt_summary.output.caveats %}<div class="summary-caveats"><strong>Caveats</strong><ul>{% for caveat in document.gpt_summary.output.caveats %}<li>{{ caveat }}</li>{% endfor %}</ul></div>{% endif %}
+      <p class="summary-boundary">This summary uses only human-confirmed textual changes. Legal effect was not assessed.</p>
+    </section>
+    {% endif %}
+
+    <section class="section-reader" aria-labelledby="document-text-title">
+      <header class="content-heading"><span class="kicker">Normalized official text</span><h2 id="document-text-title">Document passages</h2><p>Every passage retains its source artifact, page, locator, and text hash.</p></header>
+      {% if document.sections_truncated %}<div class="notice notice-warning">This preview reached its configured section limit. Use the reader API or archived evidence for the complete document.</div>{% endif %}
+      {% for section in document.sections %}
+      <article class="document-section" id="section-{{ section.id }}">
+        <header>
+          <div><span>Section {{ section.ordinal }}{% if section.page_number %} · Page {{ section.page_number }}{% endif %}</span>{% if section.heading %}<h3>{{ section.heading }}</h3>{% endif %}</div>
+          <a href="#section-{{ section.id }}" aria-label="Link to this passage">#</a>
+        </header>
+        <div class="official-text">{{ section.text }}</div>
+        <footer><span class="mono">Text {{ section.text_sha256|slice:":16" }}…</span><span class="mono">Artifact {{ section.artifact_id|slice:":12" }}…</span></footer>
+      </article>
+      {% empty %}<div class="empty-results"><strong>No normalized sections</strong><p>The document remains available through its archived artifact.</p></div>{% endfor %}
+    </section>
+  </div>
+
+  <aside class="evidence-sidebar">
+    <section class="evidence-panel">
+      <span class="kicker">Evidence chain</span>
+      <h2>Archived artifacts</h2>
+      {% for evidence in document.evidence %}
+      <article class="evidence-record">
+        <strong>{{ evidence.content_type }}</strong>
+        <dl>
+          <div><dt>SHA-256</dt><dd class="mono">{{ evidence.sha256 }}</dd></div>
+          <div><dt>Size</dt><dd>{{ evidence.byte_size|filesizeformat }}</dd></div>
+          <div><dt>Retrieved</dt><dd>{{ evidence.retrieved_at|date:"j M Y, H:i T"|default:"Not recorded" }}</dd></div>
+          <div><dt>Extractor</dt><dd>{{ evidence.extraction.name }} {{ evidence.extraction.version }}</dd></div>
+        </dl>
+        <a href="{% url 'reader:artifact-content' evidence.artifact_id %}">Download and verify</a>
+        {% if evidence.observed_url %}<a href="{{ evidence.observed_url }}" target="_blank" rel="noopener noreferrer">Observed official URL ↗</a>{% endif %}
+      </article>
+      {% empty %}<p>No reader-eligible evidence record is available.</p>{% endfor %}
+    </section>
+
+    <section class="evidence-panel">
+      <span class="kicker">Extraction quality</span>
+      {% if document.quality %}
+      <h2>{{ document.quality.outcome|cut:"_"|title }} · {{ document.quality.score }}/100</h2>
+      {% for finding in document.quality.findings %}<div class="quality-finding"><strong>{{ finding.code }}</strong><p>{{ finding.message }}</p></div>{% empty %}<p>No quality findings were recorded.</p>{% endfor %}
+      {% else %}<h2>Not assessed</h2><p>No document-level quality assessment is attached to this version.</p>{% endif %}
+    </section>
+
+    {% if document.comparison %}
+    <section class="evidence-panel">
+      <span class="kicker">Version comparison</span>
+      <h2>Compared with the previous version</h2>
+      <dl class="comparison-counts">{% for label, count in document.comparison.counts.items %}<div><dt>{{ label|cut:"_"|title }}</dt><dd>{{ count }}</dd></div>{% endfor %}</dl>
+      <p>These are structural text classifications, not findings about legal effect.</p>
+    </section>
+    {% endif %}
+
+    <section class="evidence-panel">
+      <span class="kicker">Version history</span>
+      <h2>{{ document.versions|length }} archived version{{ document.versions|length|pluralize }}</h2>
+      <ol class="version-list">{% for version in document.versions %}<li class="{% if version.is_current %}is-current{% endif %}"><span>{{ version.created_at|date:"j M Y, H:i" }}</span><code>{{ version.normalized_content_sha256|slice:":14" }}…</code>{% if version.is_current %}<strong>Current</strong>{% endif %}</li>{% endfor %}</ol>
+    </section>
+  </aside>
+</div>
+{% endblock %}

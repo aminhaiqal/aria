@@ -73,6 +73,13 @@ source without writing a new assessment. The reported percentage is the mean com
 artifact preservation, extraction, graph projection, local embeddings, and the configured
 embedding provider. It is operational evidence coverage, not legal or predictive confidence.
 
+Phase 4A adds `make source-soak` and displays the same read-only acceptance state on the confidence
+page. The gate observes the first post-admission scheduled run for both the legacy AGC browser
+source and durably promoted sources such as Parliament. It checks scheduled completion, candidate
+and artifact observation coverage, bounded fetch outcomes, next-poll advancement, and the exact
+run's downstream reliability assessment. A missing future run is `pending`; it becomes `failed`
+only after the configured freshness grace. Manual runs never satisfy this gate.
+
 ## Change rehearsal and verification
 
 The isolated rehearsal exercises two safety boundaries: byte-level changes that normalize to the

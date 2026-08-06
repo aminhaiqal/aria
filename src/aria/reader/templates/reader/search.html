@@ -1,0 +1,93 @@
+{% extends "reader/base.html" %}
+{% block content %}
+<section class="search-hero {% if result %}is-compact{% endif %}">
+  <span class="kicker">Malaysian official material</span>
+  <h1>Find the passage. Verify the evidence.</h1>
+  <p>Search the latest archived versions from JPDP, the Attorney General's Chambers, and Parliament of Malaysia.</p>
+  <form method="get" class="search-form" role="search">
+    {% if form.non_field_errors %}<div class="form-errors form-wide">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="query-control">
+      <label class="visually-hidden" for="id_q">Search official material</label>
+      {{ form.q }}
+      <button type="submit" class="primary-button">Search evidence</button>
+    </div>
+    {% if form.q.errors %}<div class="field-errors">{{ form.q.errors }}</div>{% endif %}
+    <details class="search-filters" {% if form.authority.value or form.collection.value or form.date_from.value or form.date_to.value %}open{% endif %}>
+      <summary>Search options</summary>
+      <div class="filter-grid">
+        <label>Method {{ form.mode }}</label>
+        <label>Semantic provider {{ form.embedding_provider }}</label>
+        <label>Authority {{ form.authority }}</label>
+        <label>Collection {{ form.collection }}</label>
+        <label>ARIA version from {{ form.date_from }}</label>
+        <label>ARIA version to {{ form.date_to }}</label>
+      </div>
+      {% if form.errors %}<div class="field-errors">{{ form.errors }}</div>{% endif %}
+    </details>
+  </form>
+  <p class="search-boundary">ARIA ranks textual similarity. It does not determine legal relevance, legal effect, or applicability.</p>
+</section>
+
+{% if result %}
+<section class="results-shell" aria-live="polite">
+  <header class="results-header">
+    <div>
+      <span class="kicker">Bounded retrieval</span>
+      <h2>{{ result.bounded_result_count }} document{{ result.bounded_result_count|pluralize }} matched</h2>
+      <p>Showing page {{ result.page }} using {{ result.mode|cut:"_" }} ranking.</p>
+    </div>
+    {% if result.embedding %}
+    <div class="provider-note {% if result.embedding.query_sent_to_provider %}is-hosted{% endif %}">
+      <strong>{{ result.embedding.provider }}</strong>
+      {% if result.embedding.query_sent_to_provider %}<span>The query text was sent to OpenAI for its vector.</span>{% else %}<span>The query vector was created locally.</span>{% endif %}
+    </div>
+    {% endif %}
+  </header>
+  {% for warning in result.warnings %}<div class="notice notice-warning">{{ warning }}</div>{% endfor %}
+  <div class="result-list">
+    {% for document in result.results %}
+    <article class="result-card">
+      <header>
+        <div>
+          <span class="authority-label">{{ document.authority.name }}</span>
+          <h3><a href="{% url 'reader:document-detail' document.identity_id %}">{{ document.title }}</a></h3>
+          <p>{{ document.collection.name }} · {{ document.version_created_at|date:"j M Y, H:i T" }}</p>
+        </div>
+        <span class="trust-badge">{{ document.authority.trust_classification|title }}</span>
+      </header>
+      <div class="passage-list">
+        {% for passage in document.passages %}
+        <a class="passage" href="{% url 'reader:document-detail' document.identity_id %}#section-{{ passage.section_id }}">
+          <span class="passage-heading">{% if passage.heading %}{{ passage.heading }}{% else %}Passage {{ passage.ordinal }}{% endif %}{% if passage.page_number %} · page {{ passage.page_number }}{% endif %}</span>
+          <span class="passage-text">{{ passage.excerpt }}</span>
+          <span class="passage-proof">Evidence {{ passage.artifact.sha256|slice:":16" }}…</span>
+        </a>
+        {% endfor %}
+      </div>
+      <footer>
+        <a href="{% url 'reader:document-detail' document.identity_id %}">Inspect document and evidence</a>
+        <a href="{{ document.canonical_url }}" target="_blank" rel="noopener noreferrer">Open official source ↗</a>
+      </footer>
+    </article>
+    {% empty %}
+    <div class="empty-results"><strong>No matching evidence found</strong><p>Try fewer words, exact-text mode, or remove a source filter.</p></div>
+    {% endfor %}
+  </div>
+  {% if result.has_previous or result.has_next %}
+  <nav class="pagination" aria-label="Search results pages">
+    {% if result.has_previous %}<a href="?{{ previous_query }}">← Previous</a>{% else %}<span></span>{% endif %}
+    <span>Page {{ result.page }}</span>
+    {% if result.has_next %}<a href="?{{ next_query }}">Next →</a>{% else %}<span></span>{% endif %}
+  </nav>
+  {% endif %}
+</section>
+{% elif has_query and not form.errors %}
+<section class="empty-results"><strong>No matching evidence found</strong><p>Try fewer words or a different search method.</p></section>
+{% else %}
+<section class="source-ribbon" aria-label="Available official sources">
+  <div><strong>JPDP</strong><span>Personal data protection</span></div>
+  <div><strong>AGC</strong><span>Updated principal Acts</span></div>
+  <div><strong>Parliament</strong><span>Dewan Rakyat bills</span></div>
+</section>
+{% endif %}
+{% endblock %}

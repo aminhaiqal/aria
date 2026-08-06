@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="Evidence-backed search across official Malaysian legal and regulatory publications.">
+  <title>{{ page_title|default:"Reader" }} · ARIA</title>
+  <link rel="stylesheet" href="{% url 'reader:asset' 'reader.css' %}">
+</head>
+<body class="{% block body_class %}reader-body{% endblock %}">
+  {% block body %}
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="reader-brand" href="{% url 'reader:search' %}" aria-label="ARIA reader home">
+        <span class="brand-mark" aria-hidden="true">A</span>
+        <span><strong>ARIA</strong><small>Official evidence reader</small></span>
+      </a>
+      <nav class="reader-nav" aria-label="Reader navigation">
+        <a href="{% url 'reader:search' %}">Search</a>
+        <a href="{% url 'reader-api:search' %}?q=personal+data&mode=full_text">API</a>
+        {% if request.user.is_staff %}<a href="{% url 'console:dashboard' %}">Operator console</a>{% endif %}
+      </nav>
+      <div class="reader-user">
+        <span>{{ request.user.get_full_name|default:request.user.username }}</span>
+        <form method="post" action="{% url 'reader:logout' %}">
+          {% csrf_token %}
+          <button type="submit" class="text-button">Sign out</button>
+        </form>
+      </div>
+    </div>
+  </header>
+  <main class="reader-main">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="site-footer">
+    <span>ARIA · Self-hosted evidence interface</span>
+    <span>Search ranking and generated summaries are not legal advice.</span>
+  </footer>
+  {% endblock %}
+</body>
+</html>

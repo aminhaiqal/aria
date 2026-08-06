@@ -56,6 +56,7 @@ from aria.quality.models import DocumentQualityAssessment
 from aria.reliability.confidence import collect_source_confidence_report
 from aria.reliability.models import SourceReliabilityAssessment
 from aria.reliability.repair import build_source_repair_plan
+from aria.reliability.soak import collect_autonomous_cycle_acceptance
 from aria.sources.models import SourceEndpoint
 
 staff_required = user_passes_test(
@@ -233,6 +234,7 @@ def source_confidence(request):
                 eyebrow="Evidence coverage",
             ),
             "rows": collect_source_confidence_report(),
+            "soak": collect_autonomous_cycle_acceptance(),
         },
     )
 

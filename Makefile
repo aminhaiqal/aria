@@ -1,4 +1,4 @@
-.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser list-source-packs plan-source-pack apply-source-pack pilot-source audit-static promote-static source-confidence poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage
+.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser list-source-packs plan-source-pack apply-source-pack pilot-source audit-static promote-static source-confidence source-soak poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings evaluate-reader quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage
 
 bootstrap:
 	@test -f .env || cp .env.example .env
@@ -60,6 +60,9 @@ promote-static:
 source-confidence:
 	docker compose exec -T api python manage.py source_confidence_report
 
+source-soak:
+	docker compose exec -T api python manage.py source_soak_report
+
 poll-jpdp:
 	docker compose exec api python manage.py poll_jpdp
 
@@ -108,6 +111,9 @@ embed-openai:
 
 evaluate-embeddings:
 	docker compose exec api python manage.py evaluate_embeddings
+
+evaluate-reader:
+	docker compose exec -T api python manage.py evaluate_reader_search --require-hit-at-3 1.0
 
 quality:
 	docker compose exec api python manage.py assess_extraction_quality

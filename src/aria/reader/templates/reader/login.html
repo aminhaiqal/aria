@@ -1,0 +1,35 @@
+{% extends "reader/base.html" %}
+{% block body_class %}reader-login-body{% endblock %}
+{% block body %}
+<main class="login-shell">
+  <section class="login-panel" aria-labelledby="login-title">
+    <a class="reader-brand" href="{% url 'reader:login' %}">
+      <span class="brand-mark" aria-hidden="true">A</span>
+      <span><strong>ARIA</strong><small>Official evidence reader</small></span>
+    </a>
+    <div class="login-copy">
+      <span class="kicker">Private preview</span>
+      <h1 id="login-title">Read the source, not just the answer.</h1>
+      <p>Search official Malaysian legal and regulatory material with a traceable evidence chain.</p>
+    </div>
+    <form method="post" class="login-form">
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+      <label for="id_username">Username</label>
+      <input type="text" name="username" id="id_username" value="{{ form.username.value|default:'' }}" autocomplete="username" autofocus required>
+      <label for="id_password">Password</label>
+      <input type="password" name="password" id="id_password" autocomplete="current-password" required>
+      {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+      <button type="submit" class="primary-button">Enter ARIA reader</button>
+    </form>
+    <p class="login-boundary"><span aria-hidden="true"></span> Active ARIA accounts only</p>
+  </section>
+  <aside class="login-evidence" aria-label="Evidence principles">
+    <div class="evidence-orbit evidence-orbit-one"></div>
+    <div class="evidence-orbit evidence-orbit-two"></div>
+    <div class="floating-proof proof-source"><small>Official sources</small><strong>JPDP · AGC · Parliament</strong><span>Authority identified on every result</span></div>
+    <div class="floating-proof proof-hash"><small>Immutable evidence</small><strong>SHA-256 verified</strong><span>Archived independently in R2</span></div>
+    <div class="floating-proof proof-boundary"><small>Clear boundary</small><strong>Evidence, not legal advice</strong><span>Generated text is always labelled</span></div>
+  </aside>
+</main>
+{% endblock %}

@@ -26,6 +26,11 @@ ALLOWED_HOSTS = env_list("ARIA_ALLOWED_HOSTS", "localhost,127.0.0.1")
 CSRF_TRUSTED_ORIGINS = env_list("ARIA_CSRF_TRUSTED_ORIGINS")
 if env_bool("ARIA_TRUST_X_FORWARDED_PROTO", False):
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SECURE_SSL_REDIRECT = env_bool("ARIA_SSL_REDIRECT", False)
+SECURE_REDIRECT_EXEMPT = [r"^health/"]
+SECURE_HSTS_SECONDS = max(0, int(os.getenv("ARIA_SECURE_HSTS_SECONDS", "0")))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("ARIA_SECURE_HSTS_INCLUDE_SUBDOMAINS", False)
+SECURE_HSTS_PRELOAD = env_bool("ARIA_SECURE_HSTS_PRELOAD", False)
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -51,6 +56,7 @@ INSTALLED_APPS = [
     "aria.orchestration",
     "aria.browser",
     "aria.reliability",
+    "aria.reader",
     "aria.console",
     "aria.events",
     "aria.health",
@@ -65,6 +71,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "aria.reader.middleware.ReaderSecurityHeadersMiddleware",
 ]
 
 ROOT_URLCONF = "aria.urls"
@@ -133,6 +140,10 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAdminUser"],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
+    "DEFAULT_THROTTLE_RATES": {
+        "reader_search": os.getenv("ARIA_READER_SEARCH_RATE", "60/min"),
+        "reader_document": os.getenv("ARIA_READER_DOCUMENT_RATE", "120/min"),
+    },
 }
 
 REDIS_URL = os.getenv("ARIA_REDIS_URL", "redis://localhost:6379/0")
@@ -246,6 +257,24 @@ OPENAI_SUMMARY_MAX_CHARS_PER_ANCHOR = int(
 ORCHESTRATION_AUTO_GPT_SUMMARIES = env_bool(
     "ARIA_AUTO_GPT_SUMMARIES",
     bool(OPENAI_API_KEY),
+)
+READER_EMBEDDING_PROVIDER = os.getenv("ARIA_READER_EMBEDDING_PROVIDER", EMBEDDING_PROVIDER)
+READER_MAX_QUERY_CHARACTERS = min(
+    1000,
+    max(50, int(os.getenv("ARIA_READER_MAX_QUERY_CHARACTERS", "500"))),
+)
+READER_PAGE_SIZE = min(20, max(5, int(os.getenv("ARIA_READER_PAGE_SIZE", "10"))))
+READER_MAX_PAGE_SIZE = 20
+READER_MAX_SEARCH_PAGES = 10
+READER_MAX_SEARCH_RESULTS = READER_MAX_PAGE_SIZE * READER_MAX_SEARCH_PAGES
+READER_SEARCH_CANDIDATE_LIMIT = min(
+    500,
+    max(50, int(os.getenv("ARIA_READER_SEARCH_CANDIDATE_LIMIT", "300"))),
+)
+READER_MAX_PASSAGES_PER_DOCUMENT = 3
+READER_MAX_DOCUMENT_SECTIONS = min(
+    5000,
+    max(100, int(os.getenv("ARIA_READER_MAX_DOCUMENT_SECTIONS", "2000"))),
 )
 ORCHESTRATION_STALE_AFTER_MINUTES = max(
     5,

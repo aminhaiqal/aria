@@ -23,7 +23,7 @@ The console includes:
 - a source-confidence view spanning lifecycle state and end-to-end evidence coverage for every
   official endpoint.
 
-This is an operator surface, not the later reader-facing regulatory search product.
+This remains an operator surface, separate from the Phase 4A reader at `/reader/`.
 
 ## Access and Cloudflare boundary
 
@@ -44,12 +44,18 @@ ARIA_DEBUG=false
 ARIA_ALLOWED_HOSTS=aria.example.com,localhost,127.0.0.1,api
 ARIA_CSRF_TRUSTED_ORIGINS=https://aria.example.com
 ARIA_TRUST_X_FORWARDED_PROTO=true
+ARIA_SSL_REDIRECT=true
 ARIA_SECURE_COOKIES=true
+ARIA_SECURE_HSTS_SECONDS=31536000
+ARIA_SECURE_HSTS_INCLUDE_SUBDOMAINS=false
+ARIA_SECURE_HSTS_PRELOAD=false
 ```
 
 Point the tunnel origin to `http://127.0.0.1:${ARIA_WEB_PORT}`. Trust forwarded protocol headers
-only when the application is reachable exclusively through the controlled proxy. Cloudflare Access
-may be added as a second perimeter, but Django staff authentication remains authoritative.
+only when the application is reachable exclusively through the controlled proxy. Health endpoints
+remain exempt from Django's HTTPS redirect for internal Compose probes. Enable subdomain HSTS or
+preload only after reviewing every hostname in the domain. Cloudflare Access may be added as a
+second perimeter, but Django staff authentication remains authoritative.
 
 ## Mutation contract
 
@@ -100,7 +106,8 @@ docker compose ps
 docker compose exec -T api python manage.py check --deploy
 ```
 
-The root route redirects to `/console/`. Existing Admin, health, and API routes remain unchanged.
+The root route now redirects to the authenticated `/reader/` preview. The operator surface remains
+at `/console/`; existing Admin, health, and administrator API routes remain unchanged.
 Static console assets are vendored and served through an exact two-file allowlist, so the login page
 does not depend on a CDN or internet access.
 

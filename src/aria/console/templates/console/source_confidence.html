@@ -3,6 +3,11 @@
 <section class="page-heading">
   <div><span class="eyebrow">All official sources</span><h1>Evidence confidence</h1><p>A read-only view of admission, scheduling, preservation, extraction, knowledge graph, and embedding coverage.</p></div>
 </section>
+<section class="attention-strip">
+  <div><span class="attention-mark">{% if soak.status == 'passed' %}✓{% elif soak.status == 'failed' %}!{% else %}…{% endif %}</span><div><strong>Autonomous post-promotion soak: {{ soak.status }}</strong><p>{{ soak.passed_count }} passed · {{ soak.pending_count }} pending · {{ soak.failed_count }} failed across {{ soak.source_count }} promoted sources.</p></div></div>
+  <span>Assessed {{ soak.assessed_at }}</span>
+</section>
+{% for source in soak.sources %}{% if source.status != 'passed' %}<section class="attention-strip"><div><span class="attention-mark">{% if source.status == 'failed' %}!{% else %}…{% endif %}</span><div><strong>{{ source.endpoint_name }} · {{ source.status }}</strong><p>{{ source.detail }} First poll due {{ source.first_poll_due_at }}.</p></div></div></section>{% endif %}{% endfor %}
 <section class="panel">
   <header class="panel-head"><div><span class="eyebrow">Deterministic evidence</span><h2>{{ rows|length }} source{{ rows|length|pluralize }}</h2></div></header>
   <div class="table-wrap"><table>

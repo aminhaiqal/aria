@@ -5,18 +5,18 @@
 This foundation implements Phase 1, the Phase 2 JPDP retrieval slice, Phase 3A deterministic
 extraction and evidence projection, Phase 3B quality and linked-file remediation, Phase 3C
 evidence-backed version comparison, Phase 3D.0–3D.5 continuous official-source monitoring,
-downstream orchestration and operator review, Phase F self-hosted OCR completion, and Phase G
-hybrid semantic retrieval. It provides durable
+downstream orchestration and operator review, Phase F self-hosted OCR completion, Phase G hybrid
+semantic retrieval, and the Phase 4A authenticated reader preview. It provides durable
 registry, workflow, retrieval, immutable evidence, document versioning, OCR lineage, graph, search,
 comparison, review, monitoring, and extraction-quality boundaries.
 
 ## Runtime layout
 
 ```text
-Browser / operator
+Reader / operator
        |
        v
- Django console + API ---- PostgreSQL + pgvector
+ Django reader + console + APIs ---- PostgreSQL + pgvector
        |                       |
        |                       +---- pipeline events + outbox + audit
        |                       +---- local + optional OpenAI vectors
@@ -54,6 +54,7 @@ language packs. This bounds resource use and keeps OCR system packages out of th
 - `quality`: versioned corpus assessments and append-only, provenance-backed findings
 - `orchestration`: durable changed-artifact workflows, stage attempts, gates, and recovery
 - `console`: staff-only monitoring, review, recovery, summary, publication, and audit surface
+- `reader`: active-user search, exact passages, evidence downloads, and reader-only API contract
 - `events`: transactional pipeline history, delivery outbox, and append-only audit history
 - `api`: administrator-only read API
 - `health`: unauthenticated liveness and dependency readiness probes

@@ -38,6 +38,9 @@ publications before any AI interpretation is introduced.
 - Guarded disabled-source pilots and stale-safe admission for deterministic static listings
 - A consolidated source-confidence view spanning schedules, admission, R2, extraction, graph, and
   embedding coverage
+- An authenticated reader preview with bounded multi-source hybrid search, source filters, exact
+  passage links, immutable evidence downloads, quality/version context, and labelled GPT summaries
+- A separate active-user reader API and versioned JPDP/AGC/Parliament retrieval benchmark
 - Immutable OCR derivatives with source/output hashes, toolchain records, and page metrics
 - A dedicated self-hosted OCRmyPDF/Tesseract worker with Malay and English language data
 - Explicit pipeline states from discovery through publication and failure handling
@@ -70,10 +73,13 @@ outputs are explicit derivatives and never replace or mutate the official source
 - Phase 3D.10 guarded static-source admission and multi-source confidence: implemented
 - Phase 3F bounded self-hosted OCR completion: implemented
 - Phase 3G measured hybrid semantic retrieval: implemented
+- Phase 4A authenticated reader search and evidence interface: implemented
 - Phase 2 source breadth: JPDP, AGC Updated Principal Acts, and Parliament Dewan Rakyat bills are
   operational with complete R2, extraction, graph, local-vector, and OpenAI-vector coverage
-- Next implementation slice: observe the first autonomous AGC and Parliament daily cycles, then
-  begin the reader-facing search and evidence interface
+- Operational acceptance still pending: observe the first autonomous AGC and Parliament daily
+  cycles through the durable soak gate; manual pilot success is not presented as autonomous proof
+- Next implementation slice: harden the Cloudflare private-preview deployment and collect reader
+  feedback without weakening the evidence boundary
 
 ## Local setup
 
@@ -87,15 +93,18 @@ docker compose exec api python manage.py createsuperuser
 
 Open:
 
+- Reader interface: <http://127.0.0.1:8000/reader/>
 - Operator console: <http://127.0.0.1:8000/console/>
 - Admin: <http://127.0.0.1:8000/admin/>
 - Liveness: <http://127.0.0.1:8000/health/live/>
 - Readiness: <http://127.0.0.1:8000/health/ready/>
 - Read-only API: <http://127.0.0.1:8000/api/v1/>
+- Reader API: <http://127.0.0.1:8000/api/reader/v1/>
 
-The API requires an administrator session or Basic authentication. PostgreSQL and Redis are only
-reachable on the private Compose network. Change all `change-me` values before using this outside
-local development.
+The registry API requires an administrator session or Basic authentication. The reader and its
+separate API accept any active Django account, while the operator console remains staff-only.
+PostgreSQL and Redis are reachable only on the private Compose network. Change all `change-me`
+values before using this outside local development.
 
 ## Common commands
 
@@ -112,6 +121,7 @@ make pilot-source SOURCE=<slug> # run one disabled, unscheduled static-source pi
 make audit-static SOURCE=<slug> # record immutable static-source admission gates
 make promote-static ASSESSMENT_ID=<uuid> # enable only the exact current ready evidence
 make source-confidence # report admission and end-to-end coverage for every source
+make source-soak      # report first autonomous AGC/Parliament cycle acceptance
 make poll-jpdp       # queue one bounded manual JPDP monitoring cycle
 make seed-agc        # register/update the disabled AGC JavaScript pilot
 make pilot-agc       # queue one manual AGC run without enabling its schedule
@@ -128,6 +138,7 @@ make plan-ocr        # list the deterministic OCR input set and current statuses
 make ocr             # process OCR synchronously inside the isolated OCR container
 make embed-openai    # populate missing OpenAI vectors for the current JPDP corpus
 make evaluate-embeddings # compare local and OpenAI vector retrieval on the JPDP benchmark
+make evaluate-reader  # require hit@3 across JPDP, AGC, and Parliament reader cases
 make quality         # assess the current JPDP extraction corpus without network access
 make audit-lineage   # read-only audit of version provenance and representation lineage
 make classify-lineage # persist append-only lineage assessments
@@ -180,4 +191,6 @@ See [Foundation architecture](docs/foundation.md), [Phase 2 retrieval](docs/retr
 [Phase 3D.8 source reliability](docs/reliability.md),
 [Phase 3D.9 source admission](docs/source-admission.md),
 [Phase F self-hosted OCR](docs/ocr.md), and
-[Phase G hybrid embeddings](docs/embeddings.md) for design decisions and operating instructions.
+[Phase G hybrid embeddings](docs/embeddings.md), and
+[Phase 4A reader interface](docs/reader-interface.md) for design decisions and operating
+instructions.
