@@ -1,17 +1,23 @@
+import hashlib
 import select
 import socket
 import socketserver
 import threading
 from collections.abc import Iterable
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from aria.browser.contracts import CapturedNetworkExchange
-from aria.fetching.client import Resolver, UnsafeTargetError, system_resolver, validate_target_url
+from aria.fetching.client import (
+    Resolver,
+    UnsafeTargetError,
+    hostname_is_allowed,
+    system_resolver,
+    validate_target_url,
+)
 
 ALLOWED_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
-ALLOWED_RESOURCE_TYPES = frozenset(
-    {"document", "stylesheet", "script", "xhr", "fetch", "other"}
-)
+ALLOWED_RESOURCE_TYPES = frozenset({"document", "stylesheet", "script", "xhr", "fetch", "other"})
 
 
 @dataclass(frozen=True)
@@ -27,13 +33,22 @@ class BrowserNetworkPolicy:
         self,
         *,
         allowed_domains: Iterable[str],
+        dependency_domains: Iterable[str] = (),
+        read_only_post_paths: Iterable[str] = (),
         max_requests: int,
         max_redirects: int,
+        max_request_body_bytes: int = 65536,
         resolver: Resolver = system_resolver,
     ):
-        self.allowed_domains = tuple(allowed_domains)
+        self.primary_domains = tuple(allowed_domains)
+        self.dependency_domains = tuple(dependency_domains)
+        self.allowed_domains = tuple(
+            dict.fromkeys((*self.primary_domains, *self.dependency_domains))
+        )
+        self.read_only_post_paths = frozenset(read_only_post_paths)
         self.max_requests = max_requests
         self.max_redirects = max_redirects
+        self.max_request_body_bytes = max_request_body_bytes
         self.resolver = resolver
         self.exchanges: list[CapturedNetworkExchange] = []
         self.fatal_reason = ""
@@ -49,11 +64,7 @@ class BrowserNetworkPolicy:
     @property
     def resolved_addresses(self) -> list[str]:
         return sorted(
-            {
-                address
-                for exchange in self.exchanges
-                for address in exchange.resolved_addresses
-            }
+            {address for exchange in self.exchanges for address in exchange.resolved_addresses}
         )
 
     def inspect_request(
@@ -63,9 +74,12 @@ class BrowserNetworkPolicy:
         method: str,
         resource_type: str,
         redirect_count: int = 0,
+        request_body: bytes | None = None,
     ) -> BrowserRequestDecision:
         sequence = len(self.exchanges) + 1
         normalized_method = method.upper()
+        request_body_bytes = len(request_body or b"")
+        request_body_sha256 = hashlib.sha256(request_body).hexdigest() if request_body else ""
         reason = ""
         addresses: list[str] = []
         if sequence > self.max_requests:
@@ -74,8 +88,6 @@ class BrowserNetworkPolicy:
         elif redirect_count > self.max_redirects:
             reason = "redirect_limit_exceeded"
             self.fatal_reason = reason
-        elif normalized_method not in ALLOWED_METHODS:
-            reason = "unsafe_http_method"
         elif resource_type not in ALLOWED_RESOURCE_TYPES:
             reason = "blocked_resource_type"
         else:
@@ -93,6 +105,27 @@ class BrowserNetworkPolicy:
                 reason = str(error)[:255]
                 if resource_type == "document":
                     self.fatal_reason = self.fatal_reason or reason
+            parsed = urlsplit(url)
+            if (
+                not reason
+                and parsed.hostname
+                and not hostname_is_allowed(parsed.hostname, self.primary_domains)
+                and resource_type not in {"script", "stylesheet"}
+            ):
+                reason = "dependency_resource_type"
+            if not reason and normalized_method not in ALLOWED_METHODS:
+                is_approved_post = (
+                    normalized_method == "POST"
+                    and parsed.hostname is not None
+                    and hostname_is_allowed(parsed.hostname, self.primary_domains)
+                    and parsed.path in self.read_only_post_paths
+                    and not parsed.query
+                    and not parsed.fragment
+                )
+                if not is_approved_post:
+                    reason = "unsafe_http_method"
+                elif request_body_bytes > self.max_request_body_bytes:
+                    reason = "request_body_limit_exceeded"
 
         self.exchanges.append(
             CapturedNetworkExchange(
@@ -102,6 +135,8 @@ class BrowserNetworkPolicy:
                 resource_type=resource_type,
                 disposition="blocked" if reason else "allowed",
                 block_reason=reason,
+                request_body_sha256=request_body_sha256,
+                request_body_bytes=request_body_bytes,
                 resolved_addresses=addresses,
             )
         )

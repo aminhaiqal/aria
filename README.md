@@ -57,10 +57,12 @@ outputs are explicit derivatives and never replace or mutate the official source
 - Phase 3D.3 evidence-gated downstream change orchestration: implemented
 - Phase 3D.5 self-hosted operator console: implemented
 - Phase 3D.6 bounded self-hosted browser retrieval: implemented
+- Phase 3D.7 controlled AGC JavaScript-source admission: complete and promoted to daily polling
 - Phase 3F bounded self-hosted OCR completion: implemented
 - Phase 3G measured hybrid semantic retrieval: implemented
-- Phase 2 source breadth: the approved JPDP RSS path and opt-in browser fallback are implemented
-- Next implementation slice: onboard and evaluate the first explicitly approved JavaScript source
+- Phase 2 source breadth: JPDP and the admitted AGC Updated Principal Acts source are operational
+- Next implementation slice: observe AGC's first scheduled cycle and add source-level freshness
+  alerts before onboarding another official corpus
 
 ## Local setup
 
@@ -93,6 +95,10 @@ make test            # run the Django test suite in Compose
 make makemigrations  # generate model migrations
 make migrate         # apply migrations
 make poll-jpdp       # queue one bounded manual JPDP monitoring cycle
+make seed-agc        # register/update the disabled AGC JavaScript pilot
+make pilot-agc       # queue one manual AGC run without enabling its schedule
+make audit-agc       # record and print the AGC admission gates
+make promote-agc     # enable daily AGC polling only after every gate passes
 make poll-resource RESOURCE_ID=<uuid> # queue one approved detail/feed resource check
 make extract         # replay every archived artifact through extraction locally
 make route-linked    # route and queue official files linked by archived JPDP pages
@@ -148,5 +154,6 @@ See [Foundation architecture](docs/foundation.md), [Phase 2 retrieval](docs/retr
 [Phase 3D.3 change orchestration](docs/orchestration.md),
 [Phase 3D.5 operator console](docs/operator-console.md),
 [Phase 3D.6 browser retrieval](docs/browser-retrieval.md),
+[Phase 3D.7 AGC browser pilot](docs/browser-retrieval.md#phase-3d7-first-official-source-pilot),
 [Phase F self-hosted OCR](docs/ocr.md), and
 [Phase G hybrid embeddings](docs/embeddings.md) for design decisions and operating instructions.

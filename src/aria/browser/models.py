@@ -144,6 +144,12 @@ class BrowserNetworkExchange(AppendOnlyModel):
     block_reason = models.CharField(max_length=255, blank=True)
     response_status = models.PositiveSmallIntegerField(null=True, blank=True)
     content_type = models.CharField(max_length=255, blank=True)
+    request_body_bytes = models.PositiveIntegerField(default=0)
+    request_body_sha256 = models.CharField(
+        max_length=64,
+        blank=True,
+        validators=[RegexValidator(r"^$|^[0-9a-f]{64}$")],
+    )
     byte_size = models.PositiveBigIntegerField(default=0)
     body_sha256 = models.CharField(
         max_length=64,
@@ -173,6 +179,10 @@ class BrowserNetworkExchange(AppendOnlyModel):
         ]
 
     def clean(self) -> None:
+        if bool(self.request_body_sha256) != bool(self.request_body_bytes):
+            raise ValidationError(
+                "Network request body size and hash evidence must be recorded together."
+            )
         if self.body_artifact_id:
             if self.body_sha256 != self.body_artifact.sha256:
                 raise ValidationError("Network exchange body hash must match its artifact.")

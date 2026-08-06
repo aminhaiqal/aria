@@ -1,5 +1,7 @@
 import hashlib
 import json
+import re
+from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.db import transaction
@@ -36,10 +38,45 @@ def active_connector_configuration(endpoint: SourceEndpoint) -> dict:
 
 
 def browser_configuration(endpoint: SourceEndpoint, connector_configuration: dict) -> dict:
+    dependency_domains = connector_configuration.get("browser_dependency_domains", [])
+    if not isinstance(dependency_domains, list) or len(dependency_domains) > 8:
+        raise ValueError("browser_dependency_domains must be a list of at most 8 domains.")
+    normalized_dependency_domains = []
+    for value in dependency_domains:
+        domain = str(value).strip().rstrip(".").lower()
+        if not re.fullmatch(
+            r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+            r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?",
+            domain,
+        ):
+            raise ValueError(f"Invalid browser dependency domain: {value!r}.")
+        normalized_dependency_domains.append(domain)
+
+    post_paths = connector_configuration.get("browser_read_only_post_paths", [])
+    if not isinstance(post_paths, list) or len(post_paths) > 8:
+        raise ValueError("browser_read_only_post_paths must be a list of at most 8 paths.")
+    normalized_post_paths = []
+    for value in post_paths:
+        path = str(value).strip()
+        parsed = urlsplit(path)
+        if (
+            not path.startswith("/")
+            or path.startswith("//")
+            or parsed.scheme
+            or parsed.netloc
+            or parsed.query
+            or parsed.fragment
+            or parsed.path != path
+        ):
+            raise ValueError(f"Invalid browser read-only POST path: {value!r}.")
+        normalized_post_paths.append(path)
+
     return {
         "profile": settings.BROWSER_CAPTURE_PROFILE,
         "profile_version": settings.BROWSER_PROFILE_VERSION,
         "allowed_domains": sorted(endpoint.allowed_domains),
+        "dependency_domains": sorted(set(normalized_dependency_domains)),
+        "read_only_post_paths": sorted(set(normalized_post_paths)),
         "navigation_timeout_seconds": settings.BROWSER_NAVIGATION_TIMEOUT_SECONDS,
         "render_wait_milliseconds": min(
             settings.BROWSER_MAX_RENDER_WAIT_MILLISECONDS,
@@ -59,6 +96,7 @@ def browser_configuration(endpoint: SourceEndpoint, connector_configuration: dic
         "max_response_bytes": settings.BROWSER_MAX_RESPONSE_BYTES,
         "max_dom_bytes": settings.BROWSER_MAX_DOM_BYTES,
         "max_capture_body_bytes": settings.BROWSER_MAX_CAPTURE_BODY_BYTES,
+        "max_request_body_bytes": settings.BROWSER_MAX_REQUEST_BODY_BYTES,
         "playwright_version": settings.BROWSER_PLAYWRIGHT_VERSION,
     }
 
@@ -169,6 +207,8 @@ def complete_browser_capture(
             block_reason=exchange.block_reason,
             response_status=exchange.response_status,
             content_type=exchange.content_type,
+            request_body_bytes=exchange.request_body_bytes,
+            request_body_sha256=exchange.request_body_sha256,
             byte_size=byte_size,
             body_sha256=body_sha256,
             body_artifact=body_artifact,
@@ -274,6 +314,8 @@ def capture_source_run(
         result = browser_runner.render(
             endpoint.discovery_url,
             allowed_domains=endpoint.allowed_domains,
+            dependency_domains=configuration["dependency_domains"],
+            read_only_post_paths=configuration["read_only_post_paths"],
             ready_selector=configuration["ready_selector"],
             render_wait_milliseconds=configuration["render_wait_milliseconds"],
         )

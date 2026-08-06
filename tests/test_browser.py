@@ -1,25 +1,34 @@
+import hashlib
 import tempfile
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from aria.artifacts.models import ArtifactDerivative, RawArtifact
+from aria.artifacts.models import ArtifactDerivative, ArtifactObservation, RawArtifact
 from aria.artifacts.storage import FilesystemArtifactStore
 from aria.authorities.models import Authority
+from aria.browser.admission import evaluate_browser_admission
 from aria.browser.connector import ConfiguredJavaScriptListingConnector
 from aria.browser.contracts import BrowserRenderResult, CapturedNetworkExchange
 from aria.browser.models import BrowserCapture, BrowserNetworkExchange
 from aria.browser.network import BrowserNetworkPolicy, _ProxyBudget
-from aria.browser.services import capture_source_run
+from aria.browser.runtime import PlaywrightBrowserRunner
+from aria.browser.services import browser_configuration, capture_source_run
 from aria.collections.models import PublicationCollection
-from aria.discovery.models import SourceRun
+from aria.discovery.models import CandidateObservation, DiscoveredCandidate, SourceRun
 from aria.events.models import PipelineEvent
+from aria.extraction.models import ExtractionRun
 from aria.fetching.client import UnsafeTargetError
+from aria.fetching.models import FetchAttempt
+from aria.knowledge.models import GraphNode
 from aria.sources.models import ConnectorConfiguration, SourceEndpoint
 
 
@@ -116,9 +125,7 @@ class BrowserEvidenceModelTestCase(BrowserFixture):
 
         self.endpoint.connector_type = SourceEndpoint.ConnectorType.HTML_LISTING
         self.endpoint.requires_javascript = False
-        self.endpoint.save(
-            update_fields=("connector_type", "requires_javascript", "updated_at")
-        )
+        self.endpoint.save(update_fields=("connector_type", "requires_javascript", "updated_at"))
         with self.assertRaisesMessage(ValidationError, "JavaScript-enabled"):
             capture.full_clean()
 
@@ -159,6 +166,25 @@ class BrowserEvidenceModelTestCase(BrowserFixture):
             disposition=BrowserNetworkExchange.Disposition.BLOCKED,
         )
         with self.assertRaisesMessage(ValidationError, "require a reason"):
+            exchange.full_clean()
+
+    def test_request_body_evidence_is_hash_only_and_consistent(self) -> None:
+        exchange = BrowserNetworkExchange(
+            capture=self.create_capture(),
+            attempt_number=1,
+            sequence=1,
+            requested_url="https://example.com/api/listing",
+            method="POST",
+            resource_type="xhr",
+            disposition=BrowserNetworkExchange.Disposition.ALLOWED,
+            request_body_bytes=6,
+            request_body_sha256=hashlib.sha256(b"draw=1").hexdigest(),
+            response_status=200,
+        )
+        exchange.full_clean()
+
+        exchange.request_body_sha256 = ""
+        with self.assertRaisesMessage(ValidationError, "recorded together"):
             exchange.full_clean()
 
 
@@ -282,6 +308,71 @@ class BrowserNetworkPolicyTestCase(TestCase):
         self.assertEqual(over_limit.reason, "request_limit_exceeded")
         self.assertEqual(policy.blocked_request_count, 4)
 
+    def test_policy_allows_only_an_exact_bounded_official_read_only_post(self) -> None:
+        policy = BrowserNetworkPolicy(
+            allowed_domains=["example.com"],
+            dependency_domains=["cdn.example.net"],
+            read_only_post_paths=["/api/listing"],
+            max_requests=8,
+            max_redirects=2,
+            max_request_body_bytes=16,
+            resolver=lambda _hostname, _port: [self.public_ip],
+        )
+        body = b"draw=1"
+        approved = policy.inspect_request(
+            url="https://example.com/api/listing",
+            method="POST",
+            resource_type="xhr",
+            request_body=body,
+        )
+        dependency = policy.inspect_request(
+            url="https://cdn.example.net/table.js",
+            method="GET",
+            resource_type="script",
+        )
+        dependency_xhr = policy.inspect_request(
+            url="https://cdn.example.net/api/listing",
+            method="GET",
+            resource_type="xhr",
+        )
+        tracking = policy.inspect_request(
+            url="https://example.com/api/hit-counter",
+            method="POST",
+            resource_type="xhr",
+            request_body=body,
+        )
+        dependency_post = policy.inspect_request(
+            url="https://cdn.example.net/api/listing",
+            method="POST",
+            resource_type="xhr",
+            request_body=body,
+        )
+        queried = policy.inspect_request(
+            url="https://example.com/api/listing?mutate=1",
+            method="POST",
+            resource_type="xhr",
+            request_body=body,
+        )
+        oversized = policy.inspect_request(
+            url="https://example.com/api/listing",
+            method="POST",
+            resource_type="xhr",
+            request_body=b"x" * 17,
+        )
+
+        self.assertTrue(approved.allowed)
+        self.assertTrue(dependency.allowed)
+        self.assertEqual(dependency_xhr.reason, "dependency_resource_type")
+        self.assertEqual(tracking.reason, "unsafe_http_method")
+        self.assertEqual(dependency_post.reason, "dependency_resource_type")
+        self.assertEqual(queried.reason, "unsafe_http_method")
+        self.assertEqual(oversized.reason, "request_body_limit_exceeded")
+        self.assertEqual(policy.exchanges[0].request_body_bytes, len(body))
+        self.assertEqual(
+            policy.exchanges[0].request_body_sha256,
+            hashlib.sha256(body).hexdigest(),
+        )
+
     def test_pinned_proxy_revalidates_dns_and_enforces_shared_byte_budget(self) -> None:
         budget = _ProxyBudget(
             allowed_domains=("example.com",),
@@ -305,9 +396,11 @@ class BrowserNetworkPolicyTestCase(TestCase):
 
 class StubBrowserRunner:
     calls = 0
+    last_kwargs = None
 
-    def render(self, url, **_kwargs):
+    def render(self, url, **kwargs):
         self.calls += 1
+        self.last_kwargs = kwargs
         return BrowserRenderResult(
             requested_url=url,
             final_url=url,
@@ -317,8 +410,7 @@ class StubBrowserRunner:
             resolved_addresses=["93.184.216.34"],
             original_content=b"<html><main>Loading</main></html>",
             rendered_content=(
-                b'<html><main><a class="publication" href="/gazette.pdf">'
-                b"Gazette</a></main></html>"
+                b'<html><main><a class="publication" href="/gazette.pdf">Gazette</a></main></html>'
             ),
             network_exchanges=(
                 CapturedNetworkExchange(
@@ -363,6 +455,8 @@ class BrowserCaptureServiceTestCase(BrowserFixture):
         )
         exchange = capture.network_exchanges.get()
         self.assertEqual(exchange.body_sha256, exchange.body_artifact.sha256)
+        self.assertEqual(runner.last_kwargs["dependency_domains"], [])
+        self.assertEqual(runner.last_kwargs["read_only_post_paths"], [])
         self.assertEqual(runner.calls, 1)
 
         staff = get_user_model().objects.create_user(
@@ -410,3 +504,270 @@ class BrowserCaptureServiceTestCase(BrowserFixture):
                 aggregate_id=capture.id,
             ).exists()
         )
+
+    def test_browser_source_network_configuration_is_strictly_validated(self) -> None:
+        configuration = browser_configuration(
+            self.endpoint,
+            {
+                "browser_dependency_domains": ["CDN.Example.NET."],
+                "browser_read_only_post_paths": ["/api/listing"],
+            },
+        )
+        self.assertEqual(configuration["dependency_domains"], ["cdn.example.net"])
+        self.assertEqual(configuration["read_only_post_paths"], ["/api/listing"])
+
+        for invalid in (
+            {"browser_dependency_domains": ["https://cdn.example.net/script.js"]},
+            {"browser_read_only_post_paths": ["https://example.com/api/listing"]},
+            {"browser_read_only_post_paths": ["/api/listing?mutate=1"]},
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                browser_configuration(self.endpoint, invalid)
+
+
+class BrowserRuntimeCleanupTestCase(TestCase):
+    def test_cleanup_closes_context_and_browser_even_when_unroute_fails(self) -> None:
+        calls = []
+
+        class Context:
+            def unroute_all(self, **kwargs):
+                calls.append(("unroute", kwargs))
+                raise RuntimeError("route callback already stopped")
+
+            def close(self):
+                calls.append(("context", {}))
+
+        class Browser:
+            def close(self):
+                calls.append(("browser", {}))
+
+        PlaywrightBrowserRunner._close_resources(Context(), Browser())
+
+        self.assertEqual(
+            calls,
+            [
+                ("unroute", {"behavior": "ignoreErrors"}),
+                ("context", {}),
+                ("browser", {}),
+            ],
+        )
+
+
+class BrowserAdmissionGateTestCase(BrowserFixture):
+    def test_two_repeatable_captures_require_safe_network_and_downstream_lineage(self) -> None:
+        self.endpoint.is_enabled = False
+        self.endpoint.next_poll_at = None
+        self.endpoint.health_state = SourceEndpoint.HealthState.DISABLED
+        self.endpoint.save(
+            update_fields=("is_enabled", "next_poll_at", "health_state", "updated_at")
+        )
+        configuration = {
+            **self.connector_configuration.configuration,
+            "include_path_prefixes": ["/"],
+        }
+        self.connector_configuration.configuration = configuration
+        self.connector_configuration.save(update_fields=("configuration", "updated_at"))
+
+        self.source_run.status = SourceRun.Status.COMPLETED
+        self.source_run.finished_at = timezone.now()
+        self.source_run.save(update_fields=("status", "finished_at", "updated_at"))
+        second_run = SourceRun.objects.create(
+            endpoint=self.endpoint,
+            trigger=SourceRun.Trigger.MANUAL,
+            status=SourceRun.Status.COMPLETED,
+            idempotency_key="browser-source-run-second",
+            connector_configuration_version=1,
+            started_at=timezone.now(),
+            finished_at=timezone.now(),
+        )
+        captures = [self.create_capture()]
+        captures[0].configuration = {
+            "read_only_post_paths": ["/api/listing"],
+            "max_request_body_bytes": 64,
+        }
+        captures[0].save(update_fields=("configuration", "updated_at"))
+        captures.append(
+            BrowserCapture.objects.create(
+                source_run=second_run,
+                endpoint=self.endpoint,
+                status=BrowserCapture.Status.COMPLETED,
+                profile="bounded-chromium-v1",
+                configuration={
+                    "read_only_post_paths": ["/api/listing"],
+                    "max_request_body_bytes": 64,
+                },
+                configuration_hash="4" * 64,
+                requested_url=self.endpoint.discovery_url,
+                final_url=self.endpoint.discovery_url,
+                response_status=200,
+                original_artifact=self.original,
+                rendered_artifact=self.rendered,
+                rendered_derivative=self.derivative,
+                attempt_count=1,
+                request_count=2,
+                response_bytes=30,
+                started_at=timezone.now(),
+                finished_at=timezone.now(),
+            )
+        )
+        body = b"draw=1"
+        for capture in captures:
+            BrowserNetworkExchange.objects.create(
+                capture=capture,
+                attempt_number=1,
+                sequence=1,
+                requested_url="https://example.com/api/listing",
+                method="POST",
+                resource_type="xhr",
+                disposition=BrowserNetworkExchange.Disposition.ALLOWED,
+                response_status=200,
+                request_body_bytes=len(body),
+                request_body_sha256=hashlib.sha256(body).hexdigest(),
+            )
+
+        candidate = DiscoveredCandidate.objects.create(
+            endpoint=self.endpoint,
+            latest_source_run=second_run,
+            discovered_url="https://example.com/gazette.pdf",
+            canonical_url="https://example.com/gazette.pdf",
+            fingerprint="5" * 64,
+            metadata_hints={"title": "Gazette"},
+            first_discovered_at=timezone.now(),
+            last_discovered_at=timezone.now(),
+        )
+        for source_run in (self.source_run, second_run):
+            CandidateObservation.objects.create(source_run=source_run, candidate=candidate)
+        fetch_attempt = FetchAttempt.objects.create(
+            candidate=candidate,
+            source_run=second_run,
+            attempt_number=1,
+            status=FetchAttempt.Status.SUCCEEDED,
+            requested_url=candidate.canonical_url,
+            final_url=candidate.canonical_url,
+            response_status=200,
+            bytes_received=self.rendered.byte_size,
+            started_at=timezone.now(),
+            finished_at=timezone.now(),
+        )
+        ArtifactObservation.objects.create(
+            raw_artifact=self.rendered,
+            fetch_attempt=fetch_attempt,
+            candidate=candidate,
+            source_run=second_run,
+            requested_url=candidate.canonical_url,
+            final_url=candidate.canonical_url,
+            response_status=200,
+            connector_configuration_version=1,
+        )
+        ExtractionRun.objects.create(
+            raw_artifact=self.rendered,
+            extractor_name="test",
+            extractor_version="1",
+            configuration_hash="6" * 64,
+            status=ExtractionRun.Status.SUCCEEDED,
+            started_at=timezone.now(),
+            finished_at=timezone.now(),
+        )
+        GraphNode.objects.create(
+            node_type=GraphNode.NodeType.ARTIFACT,
+            canonical_key=f"artifact:sha256:{self.rendered.sha256}",
+            label="test artifact",
+            source_type="raw_artifact",
+            source_id=self.rendered.id,
+        )
+
+        with patch("aria.browser.admission.get_artifact_store") as artifact_store:
+            artifact_store.return_value.read.return_value = b"<html><main>Loading</main></html>"
+            report = evaluate_browser_admission(self.endpoint)
+            call_command(
+                "promote_browser_source",
+                str(self.endpoint.id),
+                confirm=True,
+                stdout=StringIO(),
+            )
+
+        self.assertTrue(report.ready_for_promotion)
+        self.assertTrue(all(gate.passed for gate in report.gates))
+        self.endpoint.refresh_from_db()
+        self.assertTrue(self.endpoint.is_enabled)
+        self.assertIsNotNone(self.endpoint.next_poll_at)
+        self.assertTrue(
+            PipelineEvent.objects.filter(
+                event_type="browser.source.promoted",
+                aggregate_id=self.endpoint.id,
+            ).exists()
+        )
+        with patch("aria.browser.admission.get_artifact_store") as artifact_store:
+            artifact_store.return_value.read.return_value = b"<html><main>Loading</main></html>"
+            self.assertTrue(evaluate_browser_admission(self.endpoint).ready_for_promotion)
+
+    def test_incomplete_audit_is_recorded_without_promoting_source(self) -> None:
+        self.endpoint.is_enabled = False
+        self.endpoint.next_poll_at = None
+        self.endpoint.save(update_fields=("is_enabled", "next_poll_at", "updated_at"))
+        output = StringIO()
+
+        call_command(
+            "audit_browser_admission",
+            str(self.endpoint.id),
+            allow_incomplete=True,
+            stdout=output,
+        )
+
+        self.assertIn('"ready_for_promotion": false', output.getvalue())
+        self.endpoint.refresh_from_db()
+        self.assertFalse(self.endpoint.is_enabled)
+        self.assertTrue(
+            PipelineEvent.objects.filter(
+                event_type="browser.admission.evaluated",
+                aggregate_id=self.endpoint.id,
+            ).exists()
+        )
+        with self.assertRaisesMessage(CommandError, "Admission gates failed"):
+            call_command(
+                "promote_browser_source",
+                str(self.endpoint.id),
+                confirm=True,
+                stdout=StringIO(),
+            )
+        self.endpoint.refresh_from_db()
+        self.assertFalse(self.endpoint.is_enabled)
+
+
+class AGCBrowserPilotRegistryTestCase(TestCase):
+    def test_seed_registers_narrow_disabled_source_and_preserves_promotion(self) -> None:
+        call_command("seed_agc", stdout=StringIO())
+
+        endpoint = SourceEndpoint.objects.get(name="AGC updated principal Acts")
+        configuration = endpoint.connector_configurations.get(version=1).configuration
+        self.assertFalse(endpoint.is_enabled)
+        self.assertEqual(endpoint.health_state, SourceEndpoint.HealthState.DISABLED)
+        self.assertIsNone(endpoint.next_poll_at)
+        self.assertEqual(endpoint.allowed_domains, ["lom.agc.gov.my"])
+        self.assertEqual(
+            configuration["browser_read_only_post_paths"],
+            ["/json-updated-2024.php"],
+        )
+        self.assertEqual(
+            configuration["browser_dependency_domains"],
+            ["cdn.datatables.net", "cdnjs.cloudflare.com"],
+        )
+
+        endpoint.is_enabled = True
+        endpoint.health_state = SourceEndpoint.HealthState.HEALTHY
+        endpoint.save(update_fields=("is_enabled", "health_state", "updated_at"))
+        call_command("seed_agc", stdout=StringIO())
+        endpoint.refresh_from_db()
+        self.assertTrue(endpoint.is_enabled)
+        self.assertEqual(endpoint.health_state, SourceEndpoint.HealthState.HEALTHY)
+        self.assertIsNotNone(endpoint.next_poll_at)
+
+    def test_run_option_queues_one_manual_pilot_without_enabling_schedule(self) -> None:
+        with patch("aria.sources.management.commands.seed_agc.execute_source_run.delay") as delay:
+            call_command("seed_agc", run=True, stdout=StringIO())
+
+        endpoint = SourceEndpoint.objects.get(name="AGC updated principal Acts")
+        source_run = SourceRun.objects.get(endpoint=endpoint)
+        self.assertFalse(endpoint.is_enabled)
+        self.assertEqual(source_run.trigger, SourceRun.Trigger.MANUAL)
+        delay.assert_called_once_with(str(source_run.id))

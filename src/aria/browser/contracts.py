@@ -12,6 +12,8 @@ class CapturedNetworkExchange:
     response_status: int | None = None
     content_type: str = ""
     body: bytes | None = None
+    request_body_sha256: str = ""
+    request_body_bytes: int = 0
     resolved_addresses: list[str] = field(default_factory=list)
 
 

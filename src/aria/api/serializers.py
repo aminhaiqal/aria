@@ -324,6 +324,8 @@ class BrowserNetworkExchangeSerializer(serializers.ModelSerializer):
             "block_reason",
             "response_status",
             "content_type",
+            "request_body_bytes",
+            "request_body_sha256",
             "byte_size",
             "body_sha256",
             "body_artifact",

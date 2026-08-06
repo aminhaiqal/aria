@@ -1,7 +1,7 @@
 import hashlib
 from collections.abc import Callable
 from pathlib import PurePosixPath
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup
 
@@ -120,6 +120,8 @@ class ConfiguredHTMLListingConnector:
                     if PurePosixPath(parsed.path).suffix.lower() not in document_extensions:
                         continue
                 title = " ".join(link.get_text(" ", strip=True).split())
+                if not title:
+                    title = unquote(PurePosixPath(parsed.path).name)
                 candidates_by_url.setdefault(
                     canonical_url,
                     CandidateData(

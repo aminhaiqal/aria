@@ -22,10 +22,13 @@ the pinned runtime rather than independently.
 Every browser request passes through both a context-wide route policy and a local CONNECT proxy.
 The policy:
 
-- permits only HTTPS on port 443 and only the endpoint's explicit domain allowlist;
+- permits only HTTPS on port 443 and only the endpoint's explicit official domains plus any
+  source-reviewed script/style dependency domains;
 - resolves every target and rejects non-public, invalid, or empty DNS results;
 - re-resolves and pins the proxy connection to a validated public IP to constrain DNS rebinding;
-- permits only `GET`, `HEAD`, and `OPTIONS` and blocks side-effecting methods;
+- permits `GET`, `HEAD`, and `OPTIONS` by default; a JavaScript source may additionally declare at
+  most eight exact, query-free paths for bounded read-only `POST` requests on its primary official
+  domain;
 - blocks media, fonts, WebSockets, downloads, popups, service workers, and non-proxied WebRTC;
 - caps navigation time, render wait, redirects, requests, encrypted response bytes, captured body
   bytes, and rendered DOM bytes.
@@ -44,8 +47,9 @@ capture records:
 - the rendered DOM as a second `RawArtifact` and an append-only `browser_rendered_dom` derivative;
 - the pinned Playwright/Chromium toolchain and canonical configuration hash;
 - request, blocked-request, and transport-byte totals;
-- append-only `BrowserNetworkExchange` rows, including bounded document/XHR/fetch response bodies
-  when eligible.
+- append-only `BrowserNetworkExchange` rows, including bounded document, script, stylesheet,
+  XHR, and fetch response bodies when eligible, and hash/byte-size evidence for request bodies
+  without retaining their raw data.
 
 Browser artifacts use the existing filesystem or Cloudflare R2 artifact backend. They are stored
 under the collection's `sources/<authority>/<collection>/browser/` namespace before candidate
@@ -74,7 +78,9 @@ keys are optional:
   "document_extensions": [".pdf", ".docx"],
   "max_candidates": 20,
   "ready_selector": "main[data-loaded='true']",
-  "render_wait_milliseconds": 750
+  "render_wait_milliseconds": 750,
+  "browser_dependency_domains": ["cdn.datatables.net"],
+  "browser_read_only_post_paths": ["/api/publications"]
 }
 ```
 
@@ -105,6 +111,46 @@ lineage, rendered candidate parsing, safe replay, and dedicated-queue handoff:
 docker compose exec -T api python manage.py test tests.test_browser
 ```
 
-The next operational slice is not to enable browser retrieval globally. It is to select one
-explicitly approved JavaScript-only official source, encode its narrow allowlist/selectors, run a
-bounded pilot, and evaluate captured evidence and candidate precision before scheduling it.
+## Phase 3D.7 first official source pilot
+
+The first pilot is the Attorney General's Chambers of Malaysia (AGC) Federal Legislation portal's
+[Updated Principal Acts](https://lom.agc.gov.my/principal.php?type=updated) listing. The original
+HTML contains the table structure but no publication rows. Its official JavaScript uses
+DataTables to load rows from `POST /json-updated-2024.php`; the source also imports DataTables
+assets from `cdn.datatables.net` and `cdnjs.cloudflare.com`.
+
+`seed_agc` registers this exact source with:
+
+- candidate scope restricted to official HTTPS PDFs below
+  `/ilims/upload/portal/akta/outputaktap/`;
+- two network-only CDN dependency hosts, which are never added to the publication candidate
+  allowlist;
+- one exact, query-free read-only POST path on `lom.agc.gov.my` with a 64 KiB request-body cap;
+- a maximum of 20 candidates per capture; and
+- `is_enabled=false`, `next_poll_at=null`, so the scheduler cannot run it during admission.
+
+Run the controlled workflow with:
+
+```bash
+make seed-agc
+make pilot-agc
+make pilot-agc
+make audit-agc
+make promote-agc
+```
+
+The admission audit is durable through a `browser.admission.evaluated` pipeline event and never
+enables the endpoint. Promotion requires every gate to pass: two completed captures, immutable
+original/rendered evidence, bounded approved network behavior, no qualifying links in either raw
+HTML response, official-path PDF precision, identical candidate URL sets, and artifact →
+successful extraction → knowledge-graph lineage for every candidate in the latest run.
+
+If the official listing changes between the two captures, repeatability correctly fails. Review
+the change and take two new close-together captures rather than weakening the gate. After all
+checks pass, `promote_browser_source --confirm` re-runs the gates inside a database transaction,
+records audit and pipeline events, and schedules the first daily check. It cannot bypass a failed
+gate.
+
+The initial admission completed on 2026-08-06 with two matching 20-candidate captures and 20/20
+artifact, extraction, and knowledge-graph lineage checks. The source was promoted through the
+guarded command and now polls daily; reseeding preserves that promoted state.

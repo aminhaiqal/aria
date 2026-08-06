@@ -47,6 +47,7 @@ class BrowserNetworkExchangeAdmin(ReadOnlyBrowserAdmin):
         "resource_type",
         "disposition",
         "response_status",
+        "request_body_bytes",
         "byte_size",
     )
     list_filter = ("disposition", "resource_type", "method", "response_status")

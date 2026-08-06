@@ -186,6 +186,13 @@ BROWSER_MAX_CAPTURE_BODY_BYTES = min(
         int(os.getenv("ARIA_BROWSER_MAX_CAPTURE_BODY_BYTES", str(2 * 1024 * 1024))),
     ),
 )
+BROWSER_MAX_REQUEST_BODY_BYTES = min(
+    64 * 1024,
+    max(
+        1024,
+        int(os.getenv("ARIA_BROWSER_MAX_REQUEST_BODY_BYTES", str(64 * 1024))),
+    ),
+)
 BROWSER_MAX_REDIRECTS = min(
     10,
     max(0, int(os.getenv("ARIA_BROWSER_MAX_REDIRECTS", "5"))),

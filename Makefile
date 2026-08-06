@@ -1,4 +1,4 @@
-.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser poll-jpdp poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage
+.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser poll-jpdp seed-agc pilot-agc audit-agc promote-agc poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage
 
 bootstrap:
 	@test -f .env || cp .env.example .env
@@ -36,6 +36,18 @@ superuser:
 
 poll-jpdp:
 	docker compose exec api python manage.py poll_jpdp
+
+seed-agc:
+	docker compose exec api python manage.py seed_agc
+
+pilot-agc:
+	docker compose exec api python manage.py seed_agc --run
+
+audit-agc:
+	docker compose exec api python manage.py audit_browser_admission --allow-incomplete
+
+promote-agc:
+	docker compose exec api python manage.py promote_browser_source --confirm
 
 poll-resource:
 	@test -n "$(RESOURCE_ID)" || (echo "Set RESOURCE_ID=<uuid>" && exit 1)
