@@ -7,17 +7,22 @@
 
 <section class="metric-grid" aria-label="System metrics">
   <article class="metric-card"><span class="metric-icon tone-positive">◎</span><div><small>Healthy sources</small><strong>{{ healthy_sources }}<span>/{{ enabled_sources }}</span></strong><p>Enabled endpoints reporting healthy</p></div></article>
-  <article class="metric-card"><span class="metric-icon tone-warning">!</span><div><small>Resources at risk</small><strong>{{ unhealthy_resources }}</strong><p>Degraded or unhealthy monitored resources</p></div></article>
+  <article class="metric-card"><span class="metric-icon tone-warning">!</span><div><small>Sources at risk</small><strong>{{ reliability_alerts }}</strong><p>Latest end-to-end reliability warnings</p></div></article>
   <article class="metric-card"><span class="metric-icon tone-info">⌁</span><div><small>Active workflows</small><strong>{{ active_workflows }}</strong><p>Queued, running, OCR, or summary work</p></div></article>
   <article class="metric-card"><span class="metric-icon tone-purple">◫</span><div><small>Human review</small><strong>{{ review_queue }}</strong><p>Comparisons waiting for decisions</p></div></article>
 </section>
 
-{% if failed_workflows or pending_outbox %}
+{% if failed_workflows or pending_outbox or reliability_alerts %}
 <section class="attention-strip">
-  <div><span class="attention-mark">!</span><div><strong>Operator attention</strong><p>{{ failed_workflows }} failed workflow{{ failed_workflows|pluralize }} and {{ pending_outbox }} pending outbox event{{ pending_outbox|pluralize }}.</p></div></div>
+  <div><span class="attention-mark">!</span><div><strong>Operator attention</strong><p>{{ reliability_alerts }} source reliability alert{{ reliability_alerts|pluralize }}, {{ failed_workflows }} failed workflow{{ failed_workflows|pluralize }}, and {{ pending_outbox }} pending outbox event{{ pending_outbox|pluralize }}.</p></div></div>
   <a href="{% url 'console:orchestration-list' %}?status=failed">Inspect failures →</a>
 </section>
 {% endif %}
+
+<section class="panel">
+  <header class="panel-head"><div><span class="eyebrow">Reliability</span><h2>Latest source assessments</h2></div><a href="{% url 'console:source-list' %}">Inspect sources</a></header>
+  <div class="run-grid">{% for assessment in recent_reliability %}<article class="run-card"><span class="badge badge-{{ assessment.status|status_tone }}">{{ assessment.get_status_display }}</span><h3>{{ assessment.endpoint.name }}</h3><p>{{ assessment.candidate_count }} candidates · {{ assessment.graph_ready_count }}/{{ assessment.candidate_count }} graph-ready</p><small>{{ assessment.configured_embedding_count }}/{{ assessment.section_count }} {{ assessment.configured_embedding_provider }} embeddings · {{ assessment.assessed_at|timesince }} ago</small></article>{% empty %}<div class="empty-state"><span>No reliability assessments recorded.</span></div>{% endfor %}</div>
+</section>
 
 <div class="content-grid content-grid-main">
   <section class="panel">

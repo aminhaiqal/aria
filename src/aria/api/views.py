@@ -41,6 +41,7 @@ from aria.api.serializers import (
     ResourceRunSerializer,
     ReviewedChangePublicationSerializer,
     SourceEndpointSerializer,
+    SourceReliabilityAssessmentSerializer,
     SourceRunSerializer,
     StructuralAnchorSerializer,
     VersionLineageAssessmentSerializer,
@@ -85,6 +86,7 @@ from aria.quality.models import (
     QualityAssessmentRun,
     QualityFinding,
 )
+from aria.reliability.models import SourceReliabilityAssessment
 from aria.sources.models import SourceEndpoint
 
 
@@ -109,6 +111,13 @@ class SourceEndpointViewSet(ReadOnlyModelViewSet):
 class SourceRunViewSet(ReadOnlyModelViewSet):
     queryset = SourceRun.objects.select_related("endpoint")
     serializer_class = SourceRunSerializer
+
+
+class SourceReliabilityAssessmentViewSet(ReadOnlyModelViewSet):
+    queryset = SourceReliabilityAssessment.objects.select_related(
+        "endpoint", "source_run", "previous_assessment"
+    )
+    serializer_class = SourceReliabilityAssessmentSerializer
 
 
 class EndpointObservationViewSet(ReadOnlyModelViewSet):

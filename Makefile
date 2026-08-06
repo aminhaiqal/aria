@@ -1,4 +1,4 @@
-.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser poll-jpdp seed-agc pilot-agc audit-agc promote-agc poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage
+.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage
 
 bootstrap:
 	@test -f .env || cp .env.example .env
@@ -48,6 +48,18 @@ audit-agc:
 
 promote-agc:
 	docker compose exec api python manage.py promote_browser_source --confirm
+
+assess-sources:
+	docker compose exec api python manage.py assess_source_reliability --all
+
+repair-source:
+	docker compose exec api python manage.py repair_source_pipeline
+
+repair-source-apply:
+	docker compose exec api python manage.py repair_source_pipeline --apply --confirm
+
+rehearse-change:
+	docker compose exec -T api python manage.py test tests.test_phase3d3.Phase3D3OrchestrationTestCase.test_raw_byte_change_with_same_normalized_text_stops_before_quality_and_diff tests.test_phase3d3.Phase3D3OrchestrationTestCase.test_completed_reviews_queue_summary_and_completion_closes_orchestration
 
 poll-resource:
 	@test -n "$(RESOURCE_ID)" || (echo "Set RESOURCE_ID=<uuid>" && exit 1)

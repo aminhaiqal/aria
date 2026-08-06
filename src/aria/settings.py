@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "aria.quality",
     "aria.orchestration",
     "aria.browser",
+    "aria.reliability",
     "aria.console",
     "aria.events",
     "aria.health",
@@ -214,6 +215,14 @@ MONITOR_MAX_ENABLED_RESOURCES_PER_ENDPOINT = max(
     1,
     int(os.getenv("ARIA_MONITOR_MAX_ENABLED_RESOURCES_PER_ENDPOINT", "50")),
 )
+SOURCE_FRESHNESS_GRACE_MINUTES = max(
+    5,
+    int(os.getenv("ARIA_SOURCE_FRESHNESS_GRACE_MINUTES", "60")),
+)
+SOURCE_PIPELINE_GRACE_MINUTES = max(
+    5,
+    int(os.getenv("ARIA_SOURCE_PIPELINE_GRACE_MINUTES", "30")),
+)
 EMBEDDING_PROVIDER = os.getenv("ARIA_EMBEDDING_PROVIDER", "local_hash")
 LOCAL_EMBEDDING_MODEL = os.getenv(
     "ARIA_LOCAL_EMBEDDING_MODEL",
@@ -279,6 +288,7 @@ CELERY_TASK_QUEUES = tuple(
 )
 CELERY_TASK_ROUTES = {
     "aria.browser.tasks.*": {"queue": "browser_fetch", "routing_key": "browser_fetch"},
+    "aria.reliability.tasks.*": {"queue": "discovery", "routing_key": "discovery"},
     "aria.discovery.tasks.*": {"queue": "discovery", "routing_key": "discovery"},
     "aria.fetching.tasks.*": {"queue": "http_fetch", "routing_key": "http_fetch"},
     "aria.extraction.tasks.*": {"queue": "extraction", "routing_key": "extraction"},
@@ -300,6 +310,10 @@ CELERY_BEAT_SCHEDULE = {
     "recover-change-orchestrations": {
         "task": "aria.orchestration.tasks.recover_change_orchestrations",
         "schedule": crontab(minute="*/5"),
+    },
+    "assess-source-reliability": {
+        "task": "aria.reliability.tasks.assess_enabled_sources",
+        "schedule": crontab(minute="*/15"),
     },
 }
 

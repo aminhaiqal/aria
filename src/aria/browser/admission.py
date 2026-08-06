@@ -85,7 +85,7 @@ def _original_candidate_count(capture: BrowserCapture, configuration: dict) -> i
     return len(urls)
 
 
-def _capture_has_bounded_network(capture: BrowserCapture) -> bool:
+def capture_has_bounded_network(capture: BrowserCapture) -> bool:
     allowed_post_count = 0
     approved_paths = frozenset(capture.configuration.get("read_only_post_paths", []))
     max_body_bytes = int(capture.configuration.get("max_request_body_bytes", 0))
@@ -112,7 +112,7 @@ def _capture_has_bounded_network(capture: BrowserCapture) -> bool:
         ):
             return False
         allowed_post_count += 1
-    return allowed_post_count > 0
+    return allowed_post_count > 0 if approved_paths else True
 
 
 def _candidate_has_downstream_lineage(candidate) -> bool:
@@ -174,7 +174,7 @@ def evaluate_browser_admission(
         for capture in captures
     )
     bounded_network = enough_captures and all(
-        _capture_has_bounded_network(capture) for capture in captures
+        capture_has_bounded_network(capture) for capture in captures
     )
     candidate_precision = enough_captures and all(
         urls and all(_url_qualifies(url, endpoint, configuration) for url in urls)

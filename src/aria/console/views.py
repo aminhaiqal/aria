@@ -8,7 +8,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth.views import LoginView
 from django.core.paginator import Paginator
-from django.db.models import Count, Q
+from django.db.models import Count, OuterRef, Q, Subquery
 from django.http import FileResponse, Http404, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -37,6 +37,7 @@ from aria.events.models import AuditEvent, OutboxEvent, PipelineEvent
 from aria.orchestration.models import ChangeOrchestration
 from aria.orchestration.services import comparison_review_state
 from aria.quality.models import DocumentQualityAssessment
+from aria.reliability.models import SourceReliabilityAssessment
 from aria.sources.models import SourceEndpoint
 
 staff_required = user_passes_test(
@@ -95,6 +96,19 @@ def dashboard(request):
         ChangeOrchestration.Status.WAITING_OCR,
         ChangeOrchestration.Status.SUMMARY_PENDING,
     )
+    latest_reliability = list(
+        SourceReliabilityAssessment.objects.select_related("endpoint")
+        .order_by("endpoint_id", "-assessed_at", "-id")
+        .distinct("endpoint_id")
+    )
+    reliability_alerts = sum(
+        assessment.status
+        in {
+            SourceReliabilityAssessment.Status.WARNING,
+            SourceReliabilityAssessment.Status.CRITICAL,
+        }
+        for assessment in latest_reliability
+    )
     context = {
         **_base_context(title="Operational overview", section="dashboard"),
         "healthy_sources": SourceEndpoint.objects.filter(
@@ -109,6 +123,7 @@ def dashboard(request):
                 MonitoredResource.HealthState.UNHEALTHY,
             ),
         ).count(),
+        "reliability_alerts": reliability_alerts,
         "active_workflows": ChangeOrchestration.objects.filter(
             status__in=active_work_statuses
         ).count(),
@@ -129,6 +144,11 @@ def dashboard(request):
         )[:8],
         "recent_source_runs": SourceRun.objects.select_related("endpoint")[:8],
         "recent_events": PipelineEvent.objects.all()[:8],
+        "recent_reliability": sorted(
+            latest_reliability,
+            key=lambda assessment: assessment.assessed_at,
+            reverse=True,
+        )[:6],
     }
     return render(request, "console/dashboard.html", context)
 
@@ -137,12 +157,17 @@ def dashboard(request):
 def source_list(request):
     health = request.GET.get("health", "")
     query = request.GET.get("q", "").strip()
+    latest_reliability = SourceReliabilityAssessment.objects.filter(
+        endpoint_id=OuterRef("pk")
+    ).order_by("-assessed_at", "-id")
     endpoints = (
         SourceEndpoint.objects.select_related(
             "collection",
             "collection__authority",
         )
         .annotate(
+            reliability_status=Subquery(latest_reliability.values("status")[:1]),
+            reliability_assessed_at=Subquery(latest_reliability.values("assessed_at")[:1]),
             resource_count=Count("monitored_resources", distinct=True),
             active_run_count=Count(
                 "source_runs",
@@ -198,6 +223,10 @@ def source_detail(request, endpoint_id):
         "original_artifact",
         "rendered_artifact",
     )[:10]
+    reliability_assessments = endpoint.reliability_assessments.select_related(
+        "source_run", "previous_assessment"
+    )[:10]
+    latest_reliability = reliability_assessments[0] if reliability_assessments else None
     return render(
         request,
         "console/source_detail.html",
@@ -208,6 +237,8 @@ def source_detail(request, endpoint_id):
             "runs": runs,
             "observations": observations,
             "browser_captures": browser_captures,
+            "latest_reliability": latest_reliability,
+            "reliability_assessments": reliability_assessments,
             "endpoint_poll_blocked": endpoint_poll_blocked,
         },
     )

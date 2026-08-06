@@ -33,6 +33,7 @@ from aria.api.views import (
     ResourceRunViewSet,
     ReviewedChangePublicationViewSet,
     SourceEndpointViewSet,
+    SourceReliabilityAssessmentViewSet,
     SourceRunViewSet,
     StructuralAnchorViewSet,
     VersionLineageAssessmentViewSet,
@@ -43,6 +44,7 @@ router.register("authorities", AuthorityViewSet)
 router.register("collections", PublicationCollectionViewSet)
 router.register("source-endpoints", SourceEndpointViewSet)
 router.register("source-runs", SourceRunViewSet)
+router.register("source-reliability", SourceReliabilityAssessmentViewSet)
 router.register("endpoint-observations", EndpointObservationViewSet)
 router.register("candidates", DiscoveredCandidateViewSet)
 router.register("monitored-resources", MonitoredResourceViewSet)

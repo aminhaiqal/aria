@@ -21,6 +21,7 @@ def status_tone(value):
         return "positive"
     if value in {
         "failed",
+        "critical",
         "unhealthy",
         "permanent_failure",
         "lineage_rejected",
@@ -40,7 +41,14 @@ def status_tone(value):
         "changed",
     }:
         return "warning"
-    if value in {"running", "queued", "pending", "summary_pending", "retryable_failure"}:
+    if value in {
+        "running",
+        "queued",
+        "pending",
+        "processing",
+        "summary_pending",
+        "retryable_failure",
+    }:
         return "info"
     return "neutral"
 

@@ -33,6 +33,7 @@ from aria.quality.models import (
     QualityAssessmentRun,
     QualityFinding,
 )
+from aria.reliability.models import SourceReliabilityAssessment
 from aria.sources.models import ConnectorConfiguration, SourceEndpoint
 
 
@@ -139,6 +140,40 @@ class SourceRunSerializer(serializers.ModelSerializer):
             "error_message",
             "created_at",
             "updated_at",
+        )
+
+
+class SourceReliabilityAssessmentSerializer(serializers.ModelSerializer):
+    endpoint_name = serializers.CharField(source="endpoint.name", read_only=True)
+
+    class Meta:
+        model = SourceReliabilityAssessment
+        fields = (
+            "id",
+            "endpoint",
+            "endpoint_name",
+            "source_run",
+            "previous_assessment",
+            "status",
+            "assessment_signature",
+            "freshness_deadline",
+            "candidate_set_sha256",
+            "previous_candidate_set_sha256",
+            "candidate_set_changed",
+            "candidate_count",
+            "artifact_ready_count",
+            "extraction_ready_count",
+            "graph_ready_count",
+            "document_version_count",
+            "section_count",
+            "local_embedding_count",
+            "configured_embedding_count",
+            "configured_embedding_provider",
+            "configured_embedding_model",
+            "browser_capture_ready",
+            "network_policy_ready",
+            "findings",
+            "assessed_at",
         )
 
 
