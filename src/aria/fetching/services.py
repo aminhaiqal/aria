@@ -14,6 +14,7 @@ from aria.discovery.models import DiscoveredCandidate, SourceRun
 from aria.events.services import record_pipeline_event
 from aria.fetching.client import FetchResponse, UnexpectedContentTypeError
 from aria.fetching.models import FetchAttempt
+from aria.sources.models import ConnectorConfiguration
 
 DOCUMENT_CONTENT_TYPES = {
     ".csv": {"application/csv", "text/csv"},
@@ -74,6 +75,23 @@ def expected_content_types(candidate: DiscoveredCandidate) -> set[str]:
         for content_type in candidate.endpoint.expected_content_types
         if str(content_type).strip()
     }
+
+
+def candidate_session_bootstrap_url(
+    candidate: DiscoveredCandidate,
+    connector_configuration_version: int,
+) -> str:
+    configuration = (
+        ConnectorConfiguration.objects.filter(
+            endpoint=candidate.endpoint,
+            version=connector_configuration_version,
+        )
+        .values_list("configuration", flat=True)
+        .first()
+    )
+    if configuration and configuration.get("bootstrap_candidate_session") is True:
+        return candidate.endpoint.discovery_url
+    return ""
 
 
 def artifact_namespace(candidate: DiscoveredCandidate) -> str:

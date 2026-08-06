@@ -32,23 +32,28 @@ from aria.console.forms import (
     AdmissionPromotionForm,
     ComparisonReviewForm,
     PublicationConfirmationForm,
+    StaticAdmissionAssessmentForm,
 )
 from aria.console.operations import (
     ConsoleOperationError,
     promote_source_admission,
+    promote_static_source_admission,
     publish_reviewed_comparison,
     queue_admission_capture,
     queue_comparison_summary,
     queue_endpoint_poll,
     queue_orchestration_retry,
     queue_resource_poll,
+    queue_static_source_pilot,
     record_admission_assessment,
+    record_static_admission_assessment,
 )
 from aria.discovery.models import MonitoredResource, ResourceRun, SourceRun
 from aria.events.models import AuditEvent, OutboxEvent, PipelineEvent
 from aria.orchestration.models import ChangeOrchestration
 from aria.orchestration.services import comparison_review_state
 from aria.quality.models import DocumentQualityAssessment
+from aria.reliability.confidence import collect_source_confidence_report
 from aria.reliability.models import SourceReliabilityAssessment
 from aria.reliability.repair import build_source_repair_plan
 from aria.sources.models import SourceEndpoint
@@ -212,6 +217,22 @@ def source_list(request):
             "selected_health": health,
             "query": query,
             "health_choices": SourceEndpoint.HealthState.choices,
+        },
+    )
+
+
+@staff_required
+def source_confidence(request):
+    return render(
+        request,
+        "console/source_confidence.html",
+        {
+            **_base_context(
+                title="Source confidence",
+                section="confidence",
+                eyebrow="Evidence coverage",
+            ),
+            "rows": collect_source_confidence_report(),
         },
     )
 
@@ -388,6 +409,14 @@ def source_detail(request, endpoint_id):
         "source_run", "previous_assessment"
     )[:10]
     latest_reliability = reliability_assessments[0] if reliability_assessments else None
+    source_pack_snapshot = endpoint.source_pack_snapshots.first()
+    latest_static_assessment = (
+        endpoint.admission_assessments.filter(
+            admission_profile=SourceAdmissionAssessment.Profile.STATIC_LISTING
+        )
+        .select_related("source_pack_snapshot")
+        .first()
+    )
     return render(
         request,
         "console/source_detail.html",
@@ -401,6 +430,16 @@ def source_detail(request, endpoint_id):
             "latest_reliability": latest_reliability,
             "reliability_assessments": reliability_assessments,
             "endpoint_poll_blocked": endpoint_poll_blocked,
+            "source_pack_snapshot": source_pack_snapshot,
+            "latest_static_assessment": latest_static_assessment,
+            "static_assessment_form": StaticAdmissionAssessmentForm(initial={"required_runs": 2}),
+            "static_promotion_form": AdmissionPromotionForm(
+                initial={
+                    "assessment_id": (
+                        latest_static_assessment.id if latest_static_assessment else None
+                    )
+                }
+            ),
         },
     )
 
@@ -415,6 +454,71 @@ def source_poll(request, endpoint_id):
         messages.error(request, str(error))
     else:
         messages.success(request, f"Source check queued as run {run.id}.")
+    return redirect("console:source-detail", endpoint_id=endpoint.id)
+
+
+@staff_required
+@require_POST
+def static_source_pilot(request, endpoint_id):
+    endpoint = get_object_or_404(SourceEndpoint, pk=endpoint_id)
+    try:
+        run = queue_static_source_pilot(endpoint, user=request.user)
+    except ConsoleOperationError as error:
+        messages.error(request, str(error))
+    else:
+        messages.success(request, f"Disabled source pilot queued as run {run.id}.")
+    return redirect("console:source-detail", endpoint_id=endpoint.id)
+
+
+@staff_required
+@require_POST
+def static_source_assess(request, endpoint_id):
+    endpoint = get_object_or_404(SourceEndpoint, pk=endpoint_id)
+    form = StaticAdmissionAssessmentForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Choose a valid run requirement.")
+    else:
+        try:
+            assessment, created = record_static_admission_assessment(
+                endpoint,
+                required_runs=form.cleaned_data["required_runs"],
+                user=request.user,
+            )
+        except ConsoleOperationError as error:
+            messages.error(request, str(error))
+        else:
+            action = "recorded" if created else "unchanged"
+            messages.success(request, f"Static admission {action}: {assessment.status}.")
+    return redirect("console:source-detail", endpoint_id=endpoint.id)
+
+
+@staff_required
+@require_POST
+def static_source_promote(request, endpoint_id):
+    endpoint = get_object_or_404(SourceEndpoint, pk=endpoint_id)
+    form = AdmissionPromotionForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Promotion requires the exact PROMOTE confirmation.")
+    else:
+        assessment = get_object_or_404(
+            SourceAdmissionAssessment,
+            pk=form.cleaned_data["assessment_id"],
+            endpoint=endpoint,
+            admission_profile=SourceAdmissionAssessment.Profile.STATIC_LISTING,
+        )
+        try:
+            promotion = promote_static_source_admission(
+                endpoint,
+                assessment,
+                user=request.user,
+            )
+        except ConsoleOperationError as error:
+            messages.error(request, str(error))
+        else:
+            messages.success(
+                request,
+                f"Static source promoted; next bounded poll is {promotion.next_poll_at}.",
+            )
     return redirect("console:source-detail", endpoint_id=endpoint.id)
 
 

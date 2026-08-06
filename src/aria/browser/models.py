@@ -203,6 +203,10 @@ class BrowserNetworkExchange(AppendOnlyModel):
 
 
 class SourceAdmissionAssessment(AppendOnlyModel):
+    class Profile(models.TextChoices):
+        BROWSER_LISTING = "browser_listing", "Browser listing"
+        STATIC_LISTING = "static_listing", "Static listing"
+
     class Status(models.TextChoices):
         INCOMPLETE = "incomplete", "Incomplete"
         READY = "ready", "Ready for promotion"
@@ -219,14 +223,21 @@ class SourceAdmissionAssessment(AppendOnlyModel):
         null=True,
         blank=True,
     )
+    admission_profile = models.CharField(
+        max_length=24,
+        choices=Profile.choices,
+        default=Profile.BROWSER_LISTING,
+        db_index=True,
+    )
     status = models.CharField(max_length=16, choices=Status.choices, db_index=True)
     report_signature = models.CharField(
         max_length=64,
         unique=True,
         validators=[RegexValidator(r"^[0-9a-f]{64}$")],
     )
-    required_captures = models.PositiveSmallIntegerField(default=2)
+    required_evidence_count = models.PositiveSmallIntegerField(default=2)
     evaluated_capture_ids = models.JSONField(default=list, blank=True)
+    evaluated_source_run_ids = models.JSONField(default=list, blank=True)
     candidate_set_sha256 = models.CharField(
         max_length=64,
         blank=True,
@@ -244,10 +255,19 @@ class SourceAdmissionAssessment(AppendOnlyModel):
         if self.source_pack_snapshot_id:
             if self.source_pack_snapshot.endpoint_id != self.endpoint_id:
                 raise ValidationError("Admission source pack must belong to its endpoint.")
-        if not 2 <= self.required_captures <= 5:
-            raise ValidationError("Admission assessments require two to five captures.")
+        if not 2 <= self.required_evidence_count <= 5:
+            raise ValidationError("Admission assessments require two to five evidence runs.")
         if not isinstance(self.evaluated_capture_ids, list):
             raise ValidationError("Admission capture evidence must be a list.")
+        if not isinstance(self.evaluated_source_run_ids, list):
+            raise ValidationError("Admission source-run evidence must be a list.")
+        if (
+            self.admission_profile == self.Profile.BROWSER_LISTING
+            and self.evaluated_source_run_ids
+        ):
+            raise ValidationError("Browser admission cannot contain static source-run evidence.")
+        if self.admission_profile == self.Profile.STATIC_LISTING and self.evaluated_capture_ids:
+            raise ValidationError("Static admission cannot contain browser-capture evidence.")
         if not isinstance(self.gates, list) or any(
             not isinstance(gate, dict) or not {"name", "passed", "detail"}.issubset(gate)
             for gate in self.gates

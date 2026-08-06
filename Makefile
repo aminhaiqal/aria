@@ -1,4 +1,4 @@
-.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser list-source-packs plan-source-pack apply-source-pack poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage
+.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser list-source-packs plan-source-pack apply-source-pack pilot-source audit-static promote-static source-confidence poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage
 
 bootstrap:
 	@test -f .env || cp .env.example .env
@@ -44,6 +44,21 @@ plan-source-pack:
 apply-source-pack:
 	@test -n "$(PACK)" || (echo "Set PACK=<source-pack-slug>" && exit 1)
 	docker compose exec -T api python manage.py sync_source_pack $(PACK) --apply --confirm
+
+pilot-source:
+	@test -n "$(SOURCE)" || (echo "Set SOURCE=<source-pack-slug-or-endpoint-uuid>" && exit 1)
+	docker compose exec -T api python manage.py run_source_pilot $(SOURCE) --confirm RUN
+
+audit-static:
+	@test -n "$(SOURCE)" || (echo "Set SOURCE=<source-pack-slug-or-endpoint-uuid>" && exit 1)
+	docker compose exec -T api python manage.py audit_static_admission $(SOURCE)
+
+promote-static:
+	@test -n "$(ASSESSMENT_ID)" || (echo "Set ASSESSMENT_ID=<uuid>" && exit 1)
+	docker compose exec -T api python manage.py promote_static_source $(ASSESSMENT_ID) --confirm PROMOTE
+
+source-confidence:
+	docker compose exec -T api python manage.py source_confidence_report
 
 poll-jpdp:
 	docker compose exec api python manage.py poll_jpdp

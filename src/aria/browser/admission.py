@@ -331,13 +331,14 @@ def assess_browser_admission(
     assessment = SourceAdmissionAssessment(
         endpoint=endpoint,
         source_pack_snapshot=snapshot,
+        admission_profile=SourceAdmissionAssessment.Profile.BROWSER_LISTING,
         status=(
             SourceAdmissionAssessment.Status.READY
             if report.ready_for_promotion
             else SourceAdmissionAssessment.Status.INCOMPLETE
         ),
         report_signature=signature,
-        required_captures=required_captures,
+        required_evidence_count=required_captures,
         evaluated_capture_ids=list(report.evaluated_capture_ids),
         candidate_set_sha256=report.candidate_set_sha256,
         candidate_count=report.candidate_count,
@@ -379,7 +380,7 @@ def promote_admitted_source(
         raise ValueError("Source endpoint is already enabled.")
     current, _ = assess_browser_admission(
         endpoint,
-        required_captures=assessment.required_captures,
+        required_captures=assessment.required_evidence_count,
     )
     if current.report_signature != assessment.report_signature:
         raise ValueError("Admission evidence changed; inspect a fresh assessment.")

@@ -1,11 +1,13 @@
 import ipaddress
 import math
 import socket
+import ssl
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
+import certifi
 import httpx
 from django.conf import settings
 from redis import Redis
@@ -66,6 +68,14 @@ class RedisDomainRateLimiter(RateLimiter):
 
 
 Resolver = Callable[[str, int], Iterable[str]]
+
+
+def build_tls_context() -> ssl.SSLContext:
+    context = ssl.create_default_context(cafile=certifi.where())
+    supplemental_bundle = settings.HTTP_SUPPLEMENTAL_CA_BUNDLE
+    if supplemental_bundle:
+        context.load_verify_locations(cafile=supplemental_bundle)
+    return context
 
 
 def system_resolver(hostname: str, port: int) -> list[str]:
@@ -160,6 +170,7 @@ class SafeHttpClient:
             follow_redirects=False,
             transport=transport,
             trust_env=False,
+            verify=build_tls_context(),
         )
 
     def close(self) -> None:

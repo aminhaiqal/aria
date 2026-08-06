@@ -104,6 +104,7 @@ class ConsoleSourceAndWorkflowTestCase(TestCase):
         for route in (
             reverse("console:dashboard"),
             reverse("console:source-list"),
+            reverse("console:source-confidence"),
             reverse("console:source-detail", args=[self.endpoint.id]),
             reverse("console:resource-detail", args=[self.resource.id]),
             reverse("console:orchestration-list"),
@@ -339,7 +340,7 @@ class ConsoleAdmissionWorkbenchTestCase(TestCase):
             report_signature="1" * 64,
             defaults={
                 "status": SourceAdmissionAssessment.Status.INCOMPLETE,
-                "required_captures": 2,
+                "required_evidence_count": 2,
                 "evaluated_capture_ids": [],
                 "candidate_set_sha256": "",
                 "candidate_count": 0,
@@ -511,3 +512,74 @@ class ConsoleComparisonTestCase(Phase3CFixture):
         )
         self.assertEqual(ComparisonReview.objects.count(), 0)
         self.assertEqual(ReviewedChangePublication.objects.count(), 0)
+
+
+class ConsoleStaticAdmissionTestCase(TestCase):
+    def setUp(self) -> None:
+        self.endpoint = apply_source_pack(
+            load_source_pack("parliament-dewan-rakyat-bills")
+        ).endpoint
+        self.staff = get_user_model().objects.create_user(
+            username="static-admission-operator",
+            password="test-password",
+            is_staff=True,
+        )
+        self.client.force_login(self.staff)
+
+    def test_static_workbench_renders_pack_and_guarded_actions(self) -> None:
+        response = self.client.get(reverse("console:source-detail", args=[self.endpoint.id]))
+
+        self.assertContains(response, "Static source admission")
+        self.assertContains(response, "parliament-dewan-rakyat-bills")
+        self.assertContains(response, "Run disabled pilot")
+        self.assertContains(response, "Assessment required")
+
+    def test_pilot_and_admission_routes_are_post_only_audited_and_safe(self) -> None:
+        pilot_route = reverse("console:static-source-pilot", args=[self.endpoint.id])
+        assess_route = reverse("console:static-source-assess", args=[self.endpoint.id])
+        promote_route = reverse("console:static-source-promote", args=[self.endpoint.id])
+        for route in (pilot_route, assess_route, promote_route):
+            self.assertEqual(self.client.get(route).status_code, 405)
+
+        with (
+            patch("aria.sources.pilots.execute_source_run.delay") as delay,
+            self.captureOnCommitCallbacks(execute=True),
+        ):
+            self.client.post(pilot_route)
+        run = SourceRun.objects.get(endpoint=self.endpoint)
+        delay.assert_called_once_with(str(run.id))
+        self.endpoint.refresh_from_db()
+        self.assertFalse(self.endpoint.is_enabled)
+        self.assertIsNone(self.endpoint.next_poll_at)
+        self.assertTrue(
+            AuditEvent.objects.filter(
+                action="source.pilot.queued",
+                actor_identifier=str(self.staff.id),
+            ).exists()
+        )
+
+        self.client.post(assess_route, {"required_runs": 2})
+        assessment = SourceAdmissionAssessment.objects.get(endpoint=self.endpoint)
+        self.assertEqual(assessment.status, SourceAdmissionAssessment.Status.INCOMPLETE)
+        self.assertEqual(assessment.admission_profile, assessment.Profile.STATIC_LISTING)
+        self.client.post(
+            promote_route,
+            {"assessment_id": assessment.id, "confirmation": "PROMOTE"},
+        )
+        self.endpoint.refresh_from_db()
+        self.assertFalse(self.endpoint.is_enabled)
+        self.assertTrue(
+            AuditEvent.objects.filter(
+                action="console.static_admission_assessed",
+                actor_identifier=str(self.staff.id),
+            ).exists()
+        )
+
+    def test_static_mutations_enforce_csrf(self) -> None:
+        csrf_client = Client(enforce_csrf_checks=True)
+        csrf_client.force_login(self.staff)
+        response = csrf_client.post(
+            reverse("console:static-source-pilot", args=[self.endpoint.id])
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(SourceRun.objects.count(), 0)

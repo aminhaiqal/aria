@@ -35,6 +35,9 @@ publications before any AI interpretation is introduced.
   before/after review, GPT summaries, explicit publication, and audit history
 - A staff-only source-admission workbench with bounded pilot captures, immutable gate assessments,
   exact-evidence promotion, network traces, and repair previews
+- Guarded disabled-source pilots and stale-safe admission for deterministic static listings
+- A consolidated source-confidence view spanning schedules, admission, R2, extraction, graph, and
+  embedding coverage
 - Immutable OCR derivatives with source/output hashes, toolchain records, and page metrics
 - A dedicated self-hosted OCRmyPDF/Tesseract worker with Malay and English language data
 - Explicit pipeline states from discovery through publication and failure handling
@@ -64,12 +67,13 @@ outputs are explicit derivatives and never replace or mutate the official source
 - Phase 3D.7 controlled AGC JavaScript-source admission: complete and promoted to daily polling
 - Phase 3D.8 source reliability, transition alerts, and repair planning: implemented
 - Phase 3D.9 governed source packs and source-admission workbench: implemented
+- Phase 3D.10 guarded static-source admission and multi-source confidence: implemented
 - Phase 3F bounded self-hosted OCR completion: implemented
 - Phase 3G measured hybrid semantic retrieval: implemented
-- Phase 2 source breadth: JPDP and the admitted AGC Updated Principal Acts source are operational;
-  Parliament Dewan Rakyat bills are registered as a disabled static pilot
-- Next implementation slice: complete the AGC scheduled-cycle soak and collect repeatable
-  Parliament pilot evidence before any scheduled activation
+- Phase 2 source breadth: JPDP, AGC Updated Principal Acts, and Parliament Dewan Rakyat bills are
+  operational with complete R2, extraction, graph, local-vector, and OpenAI-vector coverage
+- Next implementation slice: observe the first autonomous AGC and Parliament daily cycles, then
+  begin the reader-facing search and evidence interface
 
 ## Local setup
 
@@ -104,6 +108,10 @@ make migrate         # apply migrations
 make list-source-packs # list validated repository source contracts
 make plan-source-pack PACK=<slug> # preview a source-pack reconciliation without writes
 make apply-source-pack PACK=<slug> # explicitly apply the reviewed plan and snapshot it
+make pilot-source SOURCE=<slug> # run one disabled, unscheduled static-source pilot
+make audit-static SOURCE=<slug> # record immutable static-source admission gates
+make promote-static ASSESSMENT_ID=<uuid> # enable only the exact current ready evidence
+make source-confidence # report admission and end-to-end coverage for every source
 make poll-jpdp       # queue one bounded manual JPDP monitoring cycle
 make seed-agc        # register/update the disabled AGC JavaScript pilot
 make pilot-agc       # queue one manual AGC run without enabling its schedule

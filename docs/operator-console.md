@@ -19,7 +19,9 @@ The console includes:
 - explicit, idempotent reviewed-change publication;
 - searchable append-only audit history; and
 - a governed source-admission workbench with source-pack evidence, deterministic gates, bounded
-  capture controls, candidate and network review, and read-only repair previews.
+  capture/pilot controls, candidate and network review, and read-only repair previews; and
+- a source-confidence view spanning lifecycle state and end-to-end evidence coverage for every
+  official endpoint.
 
 This is an operator surface, not the later reader-facing regulatory search product.
 
@@ -65,6 +67,9 @@ queue summaries, or publish events. POST actions call transactionally locked dom
 | Capture admission pilot | disabled JavaScript endpoint, installed source pack, no active run | bounded `SourceRun`, browser evidence, audit event |
 | Assess admission | two to five completed captures | immutable, deduplicated gate assessment and audit event |
 | Promote admission | current ready assessment, exact `PROMOTE` confirmation | immutable promotion, enabled schedule, pipeline and audit events |
+| Run static pilot | disabled static endpoint, installed source pack, no active run | ordinary bounded `SourceRun`, exact pack/config evidence, audit event; no schedule |
+| Assess static source | two to five completed runs and downstream evidence | immutable run IDs, candidate hash, deterministic gates and audit event |
+| Promote static source | exact current ready assessment and `PROMOTE` | locked re-evaluation, immutable promotion, enabled bounded schedule |
 
 Failed or duplicate actions return an operator message without bypassing their invariant. A retry
 does not delete prior attempts. A changed decision appends a new review. Repeated publication skips
@@ -78,11 +83,16 @@ The admissions area is available at `/console/admissions/`. Promotion re-runs th
 under a database row lock. A changed capture set, candidate set, connector contract, or source-pack
 checksum makes the submitted assessment stale and blocks activation.
 
+Deterministic static-source admission appears on the ordinary source detail page. The read-only
+`/console/confidence/` page consolidates source-pack, lifecycle, admission, scheduling, reliability,
+artifact, extraction, graph, and embedding evidence. Its percentage measures record coverage only;
+it is not legal or predictive confidence.
+
 ## Operations
 
-The console remains part of the existing API image, so it needs no new service. Phase 3D.9 adds
-source-pack and admission-evidence migrations, which the Compose migration service applies before
-the API and workers start:
+The console remains part of the existing API image, so it needs no new service. Phases 3D.9–3D.10
+add source-pack and admission-evidence migrations, which the Compose migration service applies
+before the API and workers start:
 
 ```bash
 docker compose up --build -d

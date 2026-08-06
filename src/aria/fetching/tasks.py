@@ -13,6 +13,7 @@ from aria.fetching.client import (
 from aria.fetching.models import FetchAttempt
 from aria.fetching.services import (
     begin_fetch_attempt,
+    candidate_session_bootstrap_url,
     complete_fetch,
     complete_not_modified,
     fail_fetch_attempt,
@@ -51,6 +52,18 @@ def fetch_candidate(self, candidate_id: str, source_run_id: str) -> None:
     )
     client = get_default_http_client()
     try:
+        bootstrap_url = candidate_session_bootstrap_url(
+            candidate,
+            source_run.connector_configuration_version,
+        )
+        if bootstrap_url:
+            bootstrap = client.fetch(
+                bootstrap_url,
+                allowed_domains=candidate.endpoint.allowed_domains,
+            )
+            conditional_headers["Referer"] = bootstrap.final_url
+            attempt.request_headers = conditional_headers
+            attempt.save(update_fields=("request_headers", "updated_at"))
         response = client.fetch(
             candidate.canonical_url or candidate.discovered_url,
             allowed_domains=candidate.endpoint.allowed_domains,

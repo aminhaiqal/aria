@@ -58,6 +58,14 @@ class AdmissionAssessmentForm(forms.Form):
     )
 
 
+class StaticAdmissionAssessmentForm(forms.Form):
+    required_runs = forms.TypedChoiceField(
+        choices=((2, "2 runs"), (3, "3 runs"), (4, "4 runs"), (5, "5 runs")),
+        coerce=int,
+        initial=2,
+    )
+
+
 class AdmissionPromotionForm(forms.Form):
     assessment_id = forms.UUIDField(widget=forms.HiddenInput())
     confirmation = forms.CharField(max_length=16)

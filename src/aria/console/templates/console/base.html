@@ -24,6 +24,9 @@
       <a class="nav-item {% if active_section == 'sources' %}is-active{% endif %}" href="{% url 'console:source-list' %}">
         <span class="nav-icon" aria-hidden="true">◎</span><span>Official sources</span>
       </a>
+      <a class="nav-item {% if active_section == 'confidence' %}is-active{% endif %}" href="{% url 'console:source-confidence' %}">
+        <span class="nav-icon" aria-hidden="true">◉</span><span>Source confidence</span>
+      </a>
       <a class="nav-item {% if active_section == 'admissions' %}is-active{% endif %}" href="{% url 'console:admission-list' %}">
         <span class="nav-icon" aria-hidden="true">◇</span><span>Source admissions</span>
       </a>

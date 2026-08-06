@@ -56,6 +56,13 @@ class SourcePackValidationTestCase(TestCase):
         with self.assertRaisesMessage(SourcePackError, "declared together"):
             validate_source_pack(incomplete_extractor)
 
+        invalid_bootstrap = self.definition()
+        invalid_bootstrap["connector_configurations"][0]["configuration"][
+            "bootstrap_candidate_session"
+        ] = "yes"
+        with self.assertRaisesMessage(SourcePackError, "must be a boolean"):
+            validate_source_pack(invalid_bootstrap)
+
     def test_active_connector_must_match_endpoint_version(self) -> None:
         definition = self.definition()
         definition["connector_configurations"][0]["is_active"] = False
@@ -147,6 +154,8 @@ class SourcePackApplicationTestCase(TestCase):
         self.assertFalse(result.endpoint.is_enabled)
         self.assertFalse(result.endpoint.requires_javascript)
         self.assertIsNone(result.endpoint.next_poll_at)
-        configuration = result.endpoint.connector_configurations.get(version=1).configuration
+        self.assertEqual(result.endpoint.connector_configuration_version, 2)
+        configuration = result.endpoint.connector_configurations.get(version=2).configuration
         self.assertEqual(configuration["link_attribute"], "onclick")
         self.assertEqual(configuration["max_candidates"], 25)
+        self.assertTrue(configuration["bootstrap_candidate_session"])

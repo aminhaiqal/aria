@@ -15,6 +15,7 @@ urlpatterns = [
     path("assets/<str:asset_name>", views.console_asset, name="asset"),
     path("", views.dashboard, name="dashboard"),
     path("sources/", views.source_list, name="source-list"),
+    path("confidence/", views.source_confidence, name="source-confidence"),
     path("admissions/", views.admission_list, name="admission-list"),
     path(
         "admissions/<uuid:endpoint_id>/",
@@ -41,6 +42,21 @@ urlpatterns = [
         "sources/<uuid:endpoint_id>/poll/",
         views.source_poll,
         name="source-poll",
+    ),
+    path(
+        "sources/<uuid:endpoint_id>/pilot/",
+        views.static_source_pilot,
+        name="static-source-pilot",
+    ),
+    path(
+        "sources/<uuid:endpoint_id>/assess/",
+        views.static_source_assess,
+        name="static-source-assess",
+    ),
+    path(
+        "sources/<uuid:endpoint_id>/promote/",
+        views.static_source_promote,
+        name="static-source-promote",
     ),
     path("resources/<uuid:resource_id>/", views.resource_detail, name="resource-detail"),
     path(

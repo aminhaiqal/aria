@@ -1,3 +1,4 @@
+import base64
 import hashlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -6,7 +7,7 @@ from unittest.mock import patch
 import httpx
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from aria.artifacts.models import ArtifactObservation, RawArtifact
 from aria.artifacts.storage import FilesystemArtifactStore
@@ -28,10 +29,12 @@ from aria.fetching.client import (
     SafeHttpClient,
     UnexpectedContentTypeError,
     UnsafeTargetError,
+    build_tls_context,
     validate_target_url,
 )
 from aria.fetching.models import FetchAttempt
 from aria.fetching.services import begin_fetch_attempt, complete_fetch, complete_not_modified
+from aria.fetching.tasks import fetch_candidate
 from aria.orchestration.models import ChangeOrchestration
 from aria.sources.models import ConnectorConfiguration, SourceEndpoint
 
@@ -93,6 +96,84 @@ class PhaseTwoTestCase(TestCase):
                 allowed_domains=["example.com"],
                 resolver=lambda _hostname, _port: [PUBLIC_IP],
             )
+
+    @override_settings(
+        HTTP_SUPPLEMENTAL_CA_BUNDLE=str(
+            Path(__file__).parents[1]
+            / "config/certificates/sectigo-public-server-authentication-ca-dv-r36.pem"
+        )
+    )
+    def test_supplemental_ca_keeps_verified_context_and_pinned_certificate(self) -> None:
+        path = Path(__file__).parents[1] / (
+            "config/certificates/sectigo-public-server-authentication-ca-dv-r36.pem"
+        )
+        encoded = "".join(
+            line for line in path.read_text().splitlines() if not line.startswith("-----")
+        )
+        expected_fingerprint = "8c54c334b66ba4e426772af4a3f9136c19a1aec729fdb28c535c07a5a4ef22e0"
+        self.assertEqual(
+            hashlib.sha256(base64.b64decode(encoded)).hexdigest(),
+            expected_fingerprint,
+        )
+
+        context = build_tls_context()
+        fingerprints = {
+            hashlib.sha256(certificate).hexdigest()
+            for certificate in context.get_ca_certs(binary_form=True)
+        }
+        self.assertIn(expected_fingerprint, fingerprints)
+
+    def test_candidate_fetch_bootstraps_ephemeral_official_listing_session(self) -> None:
+        ConnectorConfiguration.objects.create(
+            endpoint=self.endpoint,
+            version=1,
+            configuration={
+                "max_candidates": 10,
+                "bootstrap_candidate_session": True,
+            },
+        )
+        source_run, _ = create_source_run(self.endpoint, trigger=SourceRun.Trigger.MANUAL)
+        candidate = self.make_candidate(source_run)
+
+        class RecordingClient:
+            def __init__(self):
+                self.calls = []
+
+            def fetch(self, url, *, allowed_domains, headers=None):
+                self.calls.append((url, allowed_domains, headers))
+                return FetchResponse(
+                    requested_url=url,
+                    final_url=url,
+                    status_code=200,
+                    headers={
+                        "content-type": (
+                            "text/html" if url == self_endpoint.discovery_url else "application/pdf"
+                        )
+                    },
+                    redirect_chain=[],
+                    resolved_addresses=[PUBLIC_IP],
+                    content=(b"<html></html>" if url == self_endpoint.discovery_url else b"%PDF-"),
+                )
+
+            def close(self):
+                return None
+
+        self_endpoint = self.endpoint
+        client = RecordingClient()
+        with (
+            patch("aria.fetching.tasks.get_default_http_client", return_value=client),
+            patch("aria.fetching.tasks.complete_fetch") as complete,
+        ):
+            fetch_candidate.run(str(candidate.id), str(source_run.id))
+
+        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(client.calls[0][0], self.endpoint.discovery_url)
+        self.assertIsNone(client.calls[0][2])
+        self.assertEqual(client.calls[1][0], candidate.canonical_url)
+        self.assertEqual(client.calls[1][2]["Referer"], self.endpoint.discovery_url)
+        attempt = FetchAttempt.objects.get(candidate=candidate, source_run=source_run)
+        self.assertEqual(attempt.request_headers["Referer"], self.endpoint.discovery_url)
+        complete.assert_called_once()
 
     def test_redirect_target_is_revalidated(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:

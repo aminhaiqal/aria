@@ -46,7 +46,7 @@ class Command(BaseCommand):
             "created": created,
             "endpoint_id": str(endpoint.id),
             "endpoint_name": endpoint.name,
-            "required_captures": assessment.required_captures,
+            "required_captures": assessment.required_evidence_count,
             "evaluated_capture_ids": assessment.evaluated_capture_ids,
             "candidate_set_sha256": assessment.candidate_set_sha256,
             "candidate_count": assessment.candidate_count,

@@ -67,6 +67,12 @@ Assessment evidence is also available through the staff-only, read-only endpoint
 /api/v1/source-reliability/
 ```
 
+Phase 3D.10 adds `/console/confidence/` and `make source-confidence`. They combine the current
+source-pack, admission, promotion, schedule, and dynamically collected pipeline coverage for every
+source without writing a new assessment. The reported percentage is the mean completion ratio for
+artifact preservation, extraction, graph projection, local embeddings, and the configured
+embedding provider. It is operational evidence coverage, not legal or predictive confidence.
+
 ## Change rehearsal and verification
 
 The isolated rehearsal exercises two safety boundaries: byte-level changes that normalize to the
@@ -79,12 +85,17 @@ docker compose exec -T api python manage.py test tests.test_reliability
 docker compose exec -T api python manage.py test
 ```
 
-The next operational acceptance point is AGC's first scheduled daily cycle. It must retain full
-coverage, use conditional PDF retrieval without duplicate versions or embeddings, and return to
-`healthy` within the pipeline grace period before another official corpus is admitted.
+The next operational acceptance points are AGC's and Parliament's first autonomous daily cycles.
+They must retain full coverage, avoid duplicate versions or embeddings, and return to `healthy`
+within the pipeline grace period.
 
 The post-deployment manual equivalent on 2026-08-06 completed with 20/20 HTTP 304 PDF checks and
 left the corpus at 20 versions, 604 sections, 604 local embeddings, and 604 OpenAI embeddings.
 JPDP's existing OCR derivative lineage was also recognized correctly, and its 133 missing OpenAI
 projections were repaired; its warning then produced one explicit recovery event. The first
 autonomous scheduled AGC cycle remains the soak boundary and is not claimed as observed yet.
+
+Parliament's controlled acceptance on 2026-08-07 completed two matching connector-v2 runs with
+25/25 artifacts, extractions, and graph projections plus 351/351 local and OpenAI embeddings. It
+was promoted from exact durable gate evidence and now reports `healthy`. Its first autonomous daily
+cycle is likewise not claimed until the scheduler actually executes it.

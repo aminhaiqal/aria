@@ -14,7 +14,9 @@ from aria.events.services import record_audit_event
 from aria.orchestration.models import ChangeOrchestration
 from aria.orchestration.services import comparison_review_state, prepare_orchestration_retry
 from aria.orchestration.tasks import process_change_orchestration
+from aria.sources.admission import assess_static_admission, promote_static_source
 from aria.sources.models import SourceEndpoint
+from aria.sources.pilots import SourcePilotError, queue_disabled_source_pilot
 
 
 class ConsoleOperationError(RuntimeError):
@@ -122,6 +124,65 @@ def promote_source_admission(
         return promote_admitted_source(
             endpoint,
             assessment,
+            actor_identifier=_actor(user),
+        )
+    except ValueError as error:
+        raise ConsoleOperationError(str(error)) from error
+
+
+def queue_static_source_pilot(endpoint: SourceEndpoint, *, user) -> SourceRun:
+    if endpoint.connector_type != SourceEndpoint.ConnectorType.HTML_LISTING:
+        raise ConsoleOperationError("Static pilots require an HTML listing source.")
+    if endpoint.requires_javascript:
+        raise ConsoleOperationError("JavaScript sources require a browser admission capture.")
+    try:
+        return queue_disabled_source_pilot(
+            endpoint,
+            actor_type="user",
+            actor_identifier=_actor(user),
+        )
+    except SourcePilotError as error:
+        raise ConsoleOperationError(str(error)) from error
+
+
+@transaction.atomic
+def record_static_admission_assessment(
+    endpoint: SourceEndpoint,
+    *,
+    required_runs: int,
+    user,
+) -> tuple[SourceAdmissionAssessment, bool]:
+    endpoint = SourceEndpoint.objects.select_for_update().get(pk=endpoint.pk)
+    try:
+        assessment, created = assess_static_admission(endpoint, required_runs=required_runs)
+    except ValueError as error:
+        raise ConsoleOperationError(str(error)) from error
+    record_audit_event(
+        action="console.static_admission_assessed",
+        target_type="source_endpoint",
+        target_id=endpoint.id,
+        actor_type="user",
+        actor_identifier=_actor(user),
+        details={
+            "assessment_id": str(assessment.id),
+            "report_signature": assessment.report_signature,
+            "created": created,
+        },
+    )
+    return assessment, created
+
+
+def promote_static_source_admission(
+    endpoint: SourceEndpoint,
+    assessment: SourceAdmissionAssessment,
+    *,
+    user,
+) -> SourceAdmissionPromotion:
+    try:
+        return promote_static_source(
+            endpoint,
+            assessment,
+            actor_type="user",
             actor_identifier=_actor(user),
         )
     except ValueError as error:

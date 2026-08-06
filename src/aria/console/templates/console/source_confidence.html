@@ -1,0 +1,20 @@
+{% extends "console/base.html" %}{% load console_extras %}
+{% block content %}
+<section class="page-heading">
+  <div><span class="eyebrow">All official sources</span><h1>Evidence confidence</h1><p>A read-only view of admission, scheduling, preservation, extraction, knowledge graph, and embedding coverage.</p></div>
+</section>
+<section class="panel">
+  <header class="panel-head"><div><span class="eyebrow">Deterministic evidence</span><h2>{{ rows|length }} source{{ rows|length|pluralize }}</h2></div></header>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Source</th><th>Lifecycle</th><th>Reliability</th><th>Evidence coverage</th><th>Pipeline</th><th>Next action</th></tr></thead>
+    <tbody>{% for row in rows %}<tr class="click-row" data-href="{% url 'console:source-detail' row.endpoint.id %}">
+      <td><a class="primary-link" href="{% url 'console:source-detail' row.endpoint.id %}">{{ row.endpoint.name }}</a><small>{{ row.endpoint.collection.authority.name }}</small></td>
+      <td><span class="badge {% if row.state == 'operational' %}badge-positive{% elif row.state == 'attention' %}badge-warning{% else %}badge-info{% endif %}">{{ row.state }}</span><small>{{ row.completed_run_count }} completed runs</small></td>
+      <td><span class="badge badge-{{ row.reliability.status|status_tone }}">{{ row.reliability.status }}</span><small>{% if row.next_poll_at %}Next {{ row.next_poll_at }}{% else %}Not scheduled{% endif %}</small></td>
+      <td><strong>{{ row.evidence_coverage_percent }}%</strong><small>{{ row.reliability.candidate_count }} latest candidates</small></td>
+      <td><small>R2 {{ row.reliability.artifact_ready_count }}/{{ row.reliability.candidate_count }}</small><small>Extract {{ row.reliability.extraction_ready_count }}/{{ row.reliability.candidate_count }} · Graph {{ row.reliability.graph_ready_count }}/{{ row.reliability.candidate_count }}</small><small>Vectors {{ row.reliability.configured_embedding_count }}/{{ row.reliability.section_count }}</small></td>
+      <td>{% if row.state == 'registered' %}Run controlled pilots{% elif row.state == 'pilot_evidence' %}Complete admission gates{% elif row.state == 'admission_ready' %}Review exact promotion{% elif row.state == 'attention' %}Inspect findings{% elif row.state == 'processing' %}Allow pipeline grace{% else %}Monitor schedule{% endif %}</td>
+    </tr>{% empty %}<tr><td colspan="6"><div class="empty-state"><span>No official sources are registered.</span></div></td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endblock %}

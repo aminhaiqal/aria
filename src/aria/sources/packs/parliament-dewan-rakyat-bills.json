@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "slug": "parliament-dewan-rakyat-bills",
-  "version": 1,
+  "version": 2,
   "authority": {
     "slug": "parliament-of-malaysia",
     "name": "Parliament of Malaysia",
@@ -33,7 +33,7 @@
     "pagination_strategy": "none",
     "expected_content_types": ["text/html", "application/pdf"],
     "requires_javascript": false,
-    "connector_configuration_version": 1,
+    "connector_configuration_version": 2,
     "default_enabled": false
   },
   "connector_configurations": [
@@ -50,6 +50,22 @@
         "max_candidates": 25
       },
       "notes": "Live review on 2026-08-07 found PDF paths in server-rendered onclick attributes, so this pack extracts bounded values without executing JavaScript.",
+      "is_active": false
+    },
+    {
+      "version": 2,
+      "configuration": {
+        "link_selector": "a[onclick^=\"loadResult('/files/billindex/pdf/\"]",
+        "link_attribute": "onclick",
+        "link_value_prefix": "loadResult('",
+        "link_value_suffix": "'",
+        "include_path_prefixes": ["/files/billindex/pdf/"],
+        "upload_path_prefixes": ["/files/billindex/pdf/"],
+        "document_extensions": [".pdf"],
+        "max_candidates": 25,
+        "bootstrap_candidate_session": true
+      },
+      "notes": "The official file server requires a short-lived listing session and Referer. Each bounded candidate fetch bootstraps that session without persisting its cookie.",
       "is_active": true
     }
   ],

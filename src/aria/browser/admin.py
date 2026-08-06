@@ -66,10 +66,10 @@ class SourceAdmissionAssessmentAdmin(ReadOnlyBrowserAdmin):
         "endpoint",
         "status",
         "candidate_count",
-        "required_captures",
+        "required_evidence_count",
         "assessed_at",
     )
-    list_filter = ("status", "required_captures")
+    list_filter = ("status", "admission_profile", "required_evidence_count")
     search_fields = ("endpoint__name", "report_signature", "candidate_set_sha256")
     date_hierarchy = "assessed_at"
 

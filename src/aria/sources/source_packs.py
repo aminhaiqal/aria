@@ -305,6 +305,8 @@ def validate_source_pack(definition: dict) -> None:
             raise SourcePackError("Connector link value boundaries must be 1-128 characters.")
         for domain in configuration.get("browser_dependency_domains", []):
             _validate_domain(domain, "browser_dependency_domains")
+        if not isinstance(configuration.get("bootstrap_candidate_session", False), bool):
+            raise SourcePackError("Connector session bootstrap must be a boolean.")
 
     if not isinstance(definition["resources"], list):
         raise SourcePackError("resources must be a list.")
