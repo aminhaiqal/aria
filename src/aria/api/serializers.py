@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from aria.artifacts.models import ArtifactDerivative, ArtifactObservation, RawArtifact
 from aria.authorities.models import Authority
+from aria.browser.models import BrowserCapture, BrowserNetworkExchange
 from aria.collections.models import PublicationCollection
 from aria.comparisons.models import (
     ComparisonItem,
@@ -305,6 +306,66 @@ class FetchAttemptSerializer(serializers.ModelSerializer):
             "finished_at",
             "error_code",
             "error_message",
+        )
+
+
+class BrowserNetworkExchangeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BrowserNetworkExchange
+        fields = (
+            "id",
+            "capture",
+            "attempt_number",
+            "sequence",
+            "requested_url",
+            "method",
+            "resource_type",
+            "disposition",
+            "block_reason",
+            "response_status",
+            "content_type",
+            "byte_size",
+            "body_sha256",
+            "body_artifact",
+            "resolved_addresses",
+            "occurred_at",
+        )
+
+
+class BrowserCaptureSerializer(serializers.ModelSerializer):
+    network_exchanges = BrowserNetworkExchangeSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = BrowserCapture
+        fields = (
+            "id",
+            "source_run",
+            "endpoint",
+            "status",
+            "profile",
+            "configuration",
+            "configuration_hash",
+            "toolchain",
+            "requested_url",
+            "final_url",
+            "response_status",
+            "response_headers",
+            "redirect_chain",
+            "resolved_addresses",
+            "original_artifact",
+            "rendered_artifact",
+            "rendered_derivative",
+            "attempt_count",
+            "request_count",
+            "blocked_request_count",
+            "response_bytes",
+            "started_at",
+            "finished_at",
+            "error_code",
+            "error_message",
+            "network_exchanges",
+            "created_at",
+            "updated_at",
         )
 
 

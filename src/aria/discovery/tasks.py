@@ -39,6 +39,47 @@ def schedule_due_endpoints() -> int:
     return len(source_runs)
 
 
+def complete_source_discovery(source_run: SourceRun, result) -> None:
+    from aria.fetching.tasks import fetch_candidate
+
+    with transaction.atomic():
+        configuration = (
+            ConnectorConfiguration.objects.filter(
+                endpoint=source_run.endpoint,
+                version=source_run.connector_configuration_version,
+                is_active=True,
+            )
+            .order_by("-created_at")
+            .values_list("configuration", flat=True)
+            .first()
+            or {}
+        )
+        record_endpoint_observation(
+            source_run,
+            result.response,
+            request_headers=result.request_headers,
+        )
+        fetchable_candidates = reconcile_listing_candidates(
+            source_run.endpoint,
+            result.candidates,
+            document_extensions=tuple(
+                configuration.get(
+                    "document_extensions",
+                    [".pdf", ".doc", ".docx", ".csv", ".json", ".xml"],
+                )
+            ),
+        )
+        for candidate_data in fetchable_candidates:
+            candidate, _ = observe_candidate(source_run, candidate_data)
+            transaction.on_commit(
+                lambda candidate_id=str(candidate.id): fetch_candidate.delay(
+                    candidate_id,
+                    str(source_run.id),
+                )
+            )
+        mark_source_run_completed(source_run)
+
+
 @shared_task(name="aria.discovery.tasks.schedule_due_resources")
 def schedule_due_resources() -> int:
     from aria.discovery.tasks import execute_resource_run
@@ -57,6 +98,14 @@ def schedule_due_resources() -> int:
 )
 def execute_source_run(self, source_run_id: str) -> None:
     source_run = SourceRun.objects.select_related("endpoint").get(pk=source_run_id)
+    if (
+        source_run.endpoint.connector_type
+        == source_run.endpoint.ConnectorType.JAVASCRIPT_LISTING
+    ):
+        from aria.browser.tasks import execute_browser_source_run
+
+        execute_browser_source_run.delay(source_run_id)
+        return
     if source_run.status == SourceRun.Status.PENDING:
         mark_source_run_started(source_run)
     elif source_run.status != SourceRun.Status.RUNNING:
@@ -66,44 +115,7 @@ def execute_source_run(self, source_run_id: str) -> None:
     try:
         connector = get_connector(source_run.endpoint.connector_type)
         result = connector.discover(source_run.endpoint, source_run.cursor_before)
-        from aria.fetching.tasks import fetch_candidate
-
-        with transaction.atomic():
-            configuration = (
-                ConnectorConfiguration.objects.filter(
-                    endpoint=source_run.endpoint,
-                    version=source_run.connector_configuration_version,
-                    is_active=True,
-                )
-                .order_by("-created_at")
-                .values_list("configuration", flat=True)
-                .first()
-                or {}
-            )
-            record_endpoint_observation(
-                source_run,
-                result.response,
-                request_headers=result.request_headers,
-            )
-            fetchable_candidates = reconcile_listing_candidates(
-                source_run.endpoint,
-                result.candidates,
-                document_extensions=tuple(
-                    configuration.get(
-                        "document_extensions",
-                        [".pdf", ".doc", ".docx", ".csv", ".json", ".xml"],
-                    )
-                ),
-            )
-            for candidate_data in fetchable_candidates:
-                candidate, _ = observe_candidate(source_run, candidate_data)
-                transaction.on_commit(
-                    lambda candidate_id=str(candidate.id): fetch_candidate.delay(
-                        candidate_id,
-                        str(source_run.id),
-                    )
-                )
-            mark_source_run_completed(source_run)
+        complete_source_discovery(source_run, result)
     except ConnectorNotRegistered as error:
         mark_source_run_failed(source_run, code="connector_not_registered", message=str(error))
     except Exception as error:

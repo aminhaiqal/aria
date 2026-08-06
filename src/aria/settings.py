@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "aria.comparisons",
     "aria.quality",
     "aria.orchestration",
+    "aria.browser",
     "aria.console",
     "aria.events",
     "aria.health",
@@ -151,6 +152,45 @@ HTTP_READ_TIMEOUT_SECONDS = float(os.getenv("ARIA_HTTP_READ_TIMEOUT_SECONDS", "3
 HTTP_MAX_RESPONSE_BYTES = int(os.getenv("ARIA_HTTP_MAX_RESPONSE_BYTES", str(25 * 1024 * 1024)))
 HTTP_MAX_REDIRECTS = int(os.getenv("ARIA_HTTP_MAX_REDIRECTS", "5"))
 HTTP_MIN_DOMAIN_INTERVAL_SECONDS = float(os.getenv("ARIA_HTTP_MIN_DOMAIN_INTERVAL_SECONDS", "1"))
+BROWSER_PROFILE_NAME = os.getenv("ARIA_BROWSER_PROFILE_NAME", "bounded-chromium")
+BROWSER_PROFILE_VERSION = os.getenv("ARIA_BROWSER_PROFILE_VERSION", "1")
+BROWSER_NAVIGATION_TIMEOUT_SECONDS = max(
+    5,
+    min(60, int(os.getenv("ARIA_BROWSER_NAVIGATION_TIMEOUT_SECONDS", "30"))),
+)
+BROWSER_RENDER_WAIT_MILLISECONDS = min(
+    5000,
+    max(0, int(os.getenv("ARIA_BROWSER_RENDER_WAIT_MILLISECONDS", "750"))),
+)
+BROWSER_MAX_RENDER_WAIT_MILLISECONDS = 5000
+BROWSER_CAPTURE_PROFILE = f"{BROWSER_PROFILE_NAME}-v{BROWSER_PROFILE_VERSION}"
+BROWSER_MAX_REQUESTS = min(200, max(1, int(os.getenv("ARIA_BROWSER_MAX_REQUESTS", "80"))))
+BROWSER_MAX_RESPONSE_BYTES = min(
+    100 * 1024 * 1024,
+    max(
+        1024,
+        int(os.getenv("ARIA_BROWSER_MAX_RESPONSE_BYTES", str(25 * 1024 * 1024))),
+    ),
+)
+BROWSER_MAX_DOM_BYTES = min(
+    20 * 1024 * 1024,
+    max(
+        1024,
+        int(os.getenv("ARIA_BROWSER_MAX_DOM_BYTES", str(5 * 1024 * 1024))),
+    ),
+)
+BROWSER_MAX_CAPTURE_BODY_BYTES = min(
+    5 * 1024 * 1024,
+    max(
+        1024,
+        int(os.getenv("ARIA_BROWSER_MAX_CAPTURE_BODY_BYTES", str(2 * 1024 * 1024))),
+    ),
+)
+BROWSER_MAX_REDIRECTS = min(
+    10,
+    max(0, int(os.getenv("ARIA_BROWSER_MAX_REDIRECTS", "5"))),
+)
+BROWSER_PLAYWRIGHT_VERSION = "1.61.0"
 MONITOR_UNHEALTHY_AFTER_FAILURES = max(
     1,
     int(os.getenv("ARIA_MONITOR_UNHEALTHY_AFTER_FAILURES", "3")),
@@ -231,6 +271,7 @@ CELERY_TASK_QUEUES = tuple(
     )
 )
 CELERY_TASK_ROUTES = {
+    "aria.browser.tasks.*": {"queue": "browser_fetch", "routing_key": "browser_fetch"},
     "aria.discovery.tasks.*": {"queue": "discovery", "routing_key": "discovery"},
     "aria.fetching.tasks.*": {"queue": "http_fetch", "routing_key": "http_fetch"},
     "aria.extraction.tasks.*": {"queue": "extraction", "routing_key": "extraction"},
@@ -269,8 +310,5 @@ LOGGING = {
     "root": {"handlers": ["console"], "level": LOG_LEVEL},
 }
 
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-SESSION_COOKIE_SECURE = not DEBUG
-CSRF_COOKIE_SECURE = not DEBUG
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"

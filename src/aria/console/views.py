@@ -14,6 +14,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
+from aria.browser.models import BrowserCapture
 from aria.comparisons.models import (
     ComparisonItem,
     ComparisonReview,
@@ -192,6 +193,11 @@ def source_detail(request, endpoint_id):
     ).exists()
     runs = endpoint.source_runs.select_related("resource_run")[:20]
     observations = endpoint.endpoint_observations.select_related("source_run")[:10]
+    browser_captures = BrowserCapture.objects.filter(endpoint=endpoint).select_related(
+        "source_run",
+        "original_artifact",
+        "rendered_artifact",
+    )[:10]
     return render(
         request,
         "console/source_detail.html",
@@ -201,6 +207,7 @@ def source_detail(request, endpoint_id):
             "resources": resources,
             "runs": runs,
             "observations": observations,
+            "browser_captures": browser_captures,
             "endpoint_poll_blocked": endpoint_poll_blocked,
         },
     )

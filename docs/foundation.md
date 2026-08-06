@@ -25,7 +25,7 @@ Browser / operator
        |
        +---- discovery worker queue
        +---- HTTP fetch queue ---- immutable artifact storage
-       +---- browser queue (reserved)
+       +---- bounded Chromium worker (browser queue)
        +---- extraction queue ---- durable change orchestration
        |                                  |
        |                                  +---- extraction -> quality gate -> graph/vectors
@@ -125,6 +125,9 @@ language packs. This bounds resource use and keeps OCR system packages out of th
 27. The operator console delegates every mutation to the same locked domain services used by
     workers and commands. Actions are POST- and CSRF-protected, staff-only, overlap-safe, and
     actor-audited; comparison reviews remain append-only and publication remains explicit.
+28. Browser execution is explicit per endpoint and isolated from general workers. Every request is
+    allowlisted, public-DNS validated, IP-pinned, read-only, resource-bounded, and represented by
+    append-only evidence; original responses and rendered DOM derivatives are both preserved.
 
 ## Self-hosting and Cloudflare
 
@@ -140,6 +143,6 @@ the default. A deployment can activate OpenAI for better semantic retrieval or s
 
 ## Next slice
 
-1. Add a bounded browser retrieval fallback for JavaScript-only official pages.
+1. Onboard and evaluate the first explicitly approved JavaScript-only official source.
 2. Add an operator-selected delivery adapter for reviewed outbox events.
 3. Measure change-detection precision when JPDP publishes the first distinct temporal artifact pair.

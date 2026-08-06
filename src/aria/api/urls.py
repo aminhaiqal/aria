@@ -4,6 +4,8 @@ from aria.api.views import (
     ArtifactDerivativeViewSet,
     ArtifactObservationViewSet,
     AuthorityViewSet,
+    BrowserCaptureViewSet,
+    BrowserNetworkExchangeViewSet,
     ChangeOrchestrationViewSet,
     ComparisonItemViewSet,
     ComparisonReviewViewSet,
@@ -47,6 +49,8 @@ router.register("monitored-resources", MonitoredResourceViewSet)
 router.register("resource-runs", ResourceRunViewSet)
 router.register("resource-observations", ResourceObservationViewSet)
 router.register("fetch-attempts", FetchAttemptViewSet)
+router.register("browser-captures", BrowserCaptureViewSet)
+router.register("browser-network-exchanges", BrowserNetworkExchangeViewSet)
 router.register("artifacts", RawArtifactViewSet)
 router.register("artifact-observations", ArtifactObservationViewSet)
 router.register("artifact-derivatives", ArtifactDerivativeViewSet)

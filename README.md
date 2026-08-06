@@ -11,6 +11,7 @@ publications before any AI interpretation is introduced.
 - Scheduled and manual source runs with durable PostgreSQL state
 - Idempotent discovered candidates and per-run observations
 - A configurable static HTML listing connector, initially seeded for Malaysia's JPDP
+- An opt-in JavaScript listing connector with a dedicated, resource-bounded Chromium worker
 - Six-hour JPDP monitoring with immutable endpoint observations and conditional artifact retrieval
 - Independently scheduled JPDP detail-page and approved RSS monitoring with immutable link snapshots
 - An HTTPS client with domain allowlists, public-address validation, redirect revalidation,
@@ -36,13 +37,12 @@ publications before any AI interpretation is introduced.
 - Transactional pipeline events and an outbox ready for a future delivery transport
 - Append-only audit records
 - Django Admin operations and read-only DRF registry, evidence, graph, and search APIs
-- Celery worker queues separated by workload type
+- Celery worker queues separated by workload type, including isolated browser and OCR workers
 - Liveness and database/Redis readiness probes
 - A self-hosted Docker Compose stack using pgvector-enabled PostgreSQL and Redis
 
-Browser retrieval, legal-relationship extraction, and external outbox delivery remain for later
-phases. OCR output is an explicit derivative and never replaces or mutates the official source
-artifact.
+Legal-relationship extraction and external outbox delivery remain for later phases. Browser and OCR
+outputs are explicit derivatives and never replace or mutate the official source artifact.
 
 ## Current milestone
 
@@ -56,10 +56,11 @@ artifact.
 - Phase 3D.2 independent detail-page/RSS monitoring and safe reconciliation: implemented
 - Phase 3D.3 evidence-gated downstream change orchestration: implemented
 - Phase 3D.5 self-hosted operator console: implemented
+- Phase 3D.6 bounded self-hosted browser retrieval: implemented
 - Phase 3F bounded self-hosted OCR completion: implemented
 - Phase 3G measured hybrid semantic retrieval: implemented
-- Phase 2 source breadth: the approved JPDP RSS path is implemented; browser fallback remains open
-- Next implementation slice: bounded browser retrieval for approved JavaScript-only sources
+- Phase 2 source breadth: the approved JPDP RSS path and opt-in browser fallback are implemented
+- Next implementation slice: onboard and evaluate the first explicitly approved JavaScript source
 
 ## Local setup
 
@@ -145,7 +146,7 @@ See [Foundation architecture](docs/foundation.md), [Phase 2 retrieval](docs/retr
 [Phase 3C version comparison](docs/version-comparison.md),
 [Phase 3D source monitoring](docs/monitoring.md),
 [Phase 3D.3 change orchestration](docs/orchestration.md),
-[Phase 3D.5 operator console](docs/operator-console.md), and
-[Phase F self-hosted OCR](docs/ocr.md) for design decisions and operating instructions.
-[Phase G hybrid embeddings](docs/embeddings.md) documents the OpenAI embedding boundary and
-measured retrieval results.
+[Phase 3D.5 operator console](docs/operator-console.md),
+[Phase 3D.6 browser retrieval](docs/browser-retrieval.md),
+[Phase F self-hosted OCR](docs/ocr.md), and
+[Phase G hybrid embeddings](docs/embeddings.md) for design decisions and operating instructions.

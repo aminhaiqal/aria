@@ -14,7 +14,7 @@ down:
 	docker compose down
 
 logs:
-	docker compose logs -f api worker ocr-worker beat
+	docker compose logs -f api worker browser-worker ocr-worker beat
 
 migrate:
 	docker compose run --rm migrate

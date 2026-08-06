@@ -25,6 +25,15 @@ CMD ["gunicorn", "aria.wsgi:application", "--bind", "0.0.0.0:8000", "--workers",
 
 FROM base AS app
 
+FROM base AS browser
+
+USER root
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN pip install --no-cache-dir "playwright==1.61.0" \
+    && playwright install --with-deps chromium \
+    && chmod -R a+rX /ms-playwright
+USER aria
+
 FROM base AS ocr
 
 USER root

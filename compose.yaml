@@ -91,7 +91,44 @@ services:
       - worker
       - --loglevel=${ARIA_LOG_LEVEL:-INFO}
       - --concurrency=${ARIA_WORKER_CONCURRENCY:-2}
-      - --queues=discovery,http_fetch,browser_fetch,extraction,normalization,diff,event_publish
+      - --queues=discovery,http_fetch,extraction,normalization,diff,event_publish
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  browser-worker:
+    <<: *app
+    user: aria
+    build:
+      context: .
+      target: browser
+    command:
+      - celery
+      - --app=aria
+      - worker
+      - --loglevel=${ARIA_LOG_LEVEL:-INFO}
+      - --concurrency=1
+      - --queues=browser_fetch
+      - --hostname=browser@%h
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=536870912,mode=1777
+    shm_size: 1gb
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: "1.5"
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_CHROOT
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./docker/playwright-seccomp.json
+    volumes:
+      - .:/app:ro
+      - artifact-data:/var/lib/aria/artifacts
+    stop_grace_period: 1m
     depends_on:
       migrate:
         condition: service_completed_successfully

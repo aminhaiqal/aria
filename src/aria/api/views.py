@@ -13,6 +13,8 @@ from aria.api.serializers import (
     ArtifactDerivativeSerializer,
     ArtifactObservationSerializer,
     AuthoritySerializer,
+    BrowserCaptureSerializer,
+    BrowserNetworkExchangeSerializer,
     ChangeOrchestrationSerializer,
     ComparisonItemSerializer,
     ComparisonReviewSerializer,
@@ -46,6 +48,7 @@ from aria.api.serializers import (
 from aria.artifacts.models import ArtifactDerivative, ArtifactObservation, RawArtifact
 from aria.artifacts.storage import get_artifact_store
 from aria.authorities.models import Authority
+from aria.browser.models import BrowserCapture, BrowserNetworkExchange
 from aria.collections.models import PublicationCollection
 from aria.comparisons.models import (
     ComparisonItem,
@@ -140,6 +143,22 @@ class ResourceObservationViewSet(ReadOnlyModelViewSet):
 class FetchAttemptViewSet(ReadOnlyModelViewSet):
     queryset = FetchAttempt.objects.select_related("candidate", "source_run")
     serializer_class = FetchAttemptSerializer
+
+
+class BrowserCaptureViewSet(ReadOnlyModelViewSet):
+    queryset = BrowserCapture.objects.select_related(
+        "source_run",
+        "endpoint",
+        "original_artifact",
+        "rendered_artifact",
+        "rendered_derivative",
+    ).prefetch_related("network_exchanges")
+    serializer_class = BrowserCaptureSerializer
+
+
+class BrowserNetworkExchangeViewSet(ReadOnlyModelViewSet):
+    queryset = BrowserNetworkExchange.objects.select_related("capture", "body_artifact")
+    serializer_class = BrowserNetworkExchangeSerializer
 
 
 class RawArtifactViewSet(ReadOnlyModelViewSet):

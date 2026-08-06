@@ -74,6 +74,7 @@ class ArtifactDerivative(AppendOnlyModel):
     class TransformationType(models.TextChoices):
         OCR_SEARCHABLE_PDF = "ocr_searchable_pdf", "OCR searchable PDF"
         OCR_TEXT_SIDECAR = "ocr_text_sidecar", "OCR text sidecar"
+        BROWSER_RENDERED_DOM = "browser_rendered_dom", "Browser-rendered DOM"
 
     source_artifact = models.ForeignKey(
         RawArtifact,

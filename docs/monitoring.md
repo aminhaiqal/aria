@@ -196,3 +196,8 @@ post-review only. See [Phase 3D.3 change orchestration](orchestration.md).
 Phase 3D.5 now provides that self-hosted operator console while preserving the deterministic
 comparison, append-only review, and explicit-publication boundaries. See
 [Phase 3D.5 operator console](operator-console.md).
+
+Phase 3D.6 adds an explicitly opt-in, bounded Chromium worker for JavaScript-only official
+listings. It preserves both the original response and rendered DOM, records append-only network
+evidence, and hands parsed candidates back to the same reconciliation path. See
+[Phase 3D.6 browser retrieval](browser-retrieval.md).
