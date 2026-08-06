@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from aria.artifacts.models import ArtifactObservation, RawArtifact
 from aria.authorities.models import Authority
+from aria.browser.models import SourceAdmissionAssessment
 from aria.collections.models import PublicationCollection
 from aria.comparisons.models import (
     ComparisonItem,
@@ -20,6 +21,7 @@ from aria.events.models import AuditEvent, OutboxEvent, PipelineEvent
 from aria.fetching.models import FetchAttempt
 from aria.orchestration.models import ChangeOrchestration
 from aria.sources.models import SourceEndpoint
+from aria.sources.source_packs import apply_source_pack, load_source_pack
 from tests.test_phase3c import Phase3CFixture
 
 
@@ -255,6 +257,118 @@ class ConsoleSourceAndWorkflowTestCase(TestCase):
         response = csrf_client.post(reverse("console:source-poll", args=[self.endpoint.id]))
         self.assertEqual(response.status_code, 403)
         self.assertEqual(SourceRun.objects.count(), 0)
+
+
+class ConsoleAdmissionWorkbenchTestCase(TestCase):
+    def setUp(self) -> None:
+        self.endpoint = apply_source_pack(load_source_pack("agc-updated-principal-acts")).endpoint
+        self.staff = get_user_model().objects.create_user(
+            username="admission-console-operator",
+            password="test-password",
+            is_staff=True,
+        )
+
+    def test_workbench_is_staff_only_and_renders_pack_gates_and_repair_preview(self) -> None:
+        list_route = reverse("console:admission-list")
+        self.assertRedirects(
+            self.client.get(list_route),
+            f"{reverse('console:login')}?next={list_route}",
+        )
+        self.client.force_login(self.staff)
+        self.client.post(
+            reverse("console:admission-assess", args=[self.endpoint.id]),
+            {"required_captures": 2},
+        )
+
+        list_response = self.client.get(list_route)
+        detail_response = self.client.get(
+            reverse("console:admission-detail", args=[self.endpoint.id])
+        )
+
+        self.assertContains(list_response, "agc-updated-principal-acts")
+        self.assertContains(detail_response, "Installed source pack")
+        self.assertContains(detail_response, "repeat_capture_count")
+        self.assertContains(detail_response, "Read-only repair preview")
+        self.assertContains(detail_response, self.endpoint.source_pack_snapshots.get().checksum)
+
+    def test_capture_and_assessment_are_post_only_audited_and_keep_pilot_disabled(self) -> None:
+        self.client.force_login(self.staff)
+        capture_route = reverse("console:admission-capture", args=[self.endpoint.id])
+        assess_route = reverse("console:admission-assess", args=[self.endpoint.id])
+        promote_route = reverse("console:admission-promote", args=[self.endpoint.id])
+        for route in (capture_route, assess_route, promote_route):
+            self.assertEqual(self.client.get(route).status_code, 405)
+
+        with (
+            patch("aria.console.operations.execute_source_run.delay") as delay,
+            self.captureOnCommitCallbacks(execute=True),
+        ):
+            response = self.client.post(capture_route)
+        self.assertRedirects(
+            response,
+            reverse("console:admission-detail", args=[self.endpoint.id]),
+        )
+        run = SourceRun.objects.get(endpoint=self.endpoint)
+        delay.assert_called_once_with(str(run.id))
+        self.assertTrue(
+            AuditEvent.objects.filter(
+                action="console.admission_capture_queued",
+                actor_identifier=str(self.staff.id),
+            ).exists()
+        )
+
+        self.client.post(assess_route, {"required_captures": 2})
+        assessment = SourceAdmissionAssessment.objects.get(endpoint=self.endpoint)
+        self.assertEqual(assessment.status, SourceAdmissionAssessment.Status.INCOMPLETE)
+        self.client.post(
+            promote_route,
+            {"assessment_id": assessment.id, "confirmation": "PROMOTE"},
+        )
+        self.endpoint.refresh_from_db()
+        self.assertFalse(self.endpoint.is_enabled)
+        self.assertTrue(
+            AuditEvent.objects.filter(
+                action="console.admission_assessed",
+                actor_identifier=str(self.staff.id),
+            ).exists()
+        )
+
+    def test_admission_mutations_enforce_csrf_and_exact_confirmation(self) -> None:
+        assessment, _ = SourceAdmissionAssessment.objects.get_or_create(
+            endpoint=self.endpoint,
+            report_signature="1" * 64,
+            defaults={
+                "status": SourceAdmissionAssessment.Status.INCOMPLETE,
+                "required_captures": 2,
+                "evaluated_capture_ids": [],
+                "candidate_set_sha256": "",
+                "candidate_count": 0,
+                "gates": [
+                    {
+                        "name": "repeat_capture_count",
+                        "passed": False,
+                        "detail": "0/2 completed captures",
+                    }
+                ],
+            },
+        )
+        csrf_client = Client(enforce_csrf_checks=True)
+        csrf_client.force_login(self.staff)
+        route = reverse("console:admission-promote", args=[self.endpoint.id])
+        self.assertEqual(
+            csrf_client.post(
+                route,
+                {"assessment_id": assessment.id, "confirmation": "PROMOTE"},
+            ).status_code,
+            403,
+        )
+        self.client.force_login(self.staff)
+        self.client.post(
+            route,
+            {"assessment_id": assessment.id, "confirmation": "promote"},
+        )
+        self.endpoint.refresh_from_db()
+        self.assertFalse(self.endpoint.is_enabled)
 
 
 @override_settings(ORCHESTRATION_AUTO_GPT_SUMMARIES=False, OPENAI_API_KEY="test-key")

@@ -1,13 +1,25 @@
+import hashlib
+import json
 from dataclasses import asdict, dataclass
+from datetime import timedelta
 from pathlib import PurePosixPath
 from urllib.parse import urlsplit
 
 from bs4 import BeautifulSoup
+from django.db import IntegrityError, transaction
+from django.utils import timezone
 
+from aria.artifacts.models import ArtifactDerivative
 from aria.artifacts.storage import get_artifact_store
-from aria.browser.models import BrowserCapture, BrowserNetworkExchange
-from aria.discovery.html_connector import normalize_publication_url
+from aria.browser.models import (
+    BrowserCapture,
+    BrowserNetworkExchange,
+    SourceAdmissionAssessment,
+    SourceAdmissionPromotion,
+)
+from aria.discovery.html_connector import configured_link_target, normalize_publication_url
 from aria.events.models import PipelineEvent
+from aria.events.services import record_audit_event, record_pipeline_event
 from aria.extraction.models import ExtractionRun
 from aria.fetching.client import hostname_is_allowed
 from aria.knowledge.models import GraphNode
@@ -27,6 +39,8 @@ class BrowserAdmissionReport:
     endpoint_name: str
     required_captures: int
     evaluated_capture_ids: tuple[str, ...]
+    candidate_set_sha256: str
+    candidate_count: int
     gates: tuple[AdmissionGate, ...]
 
     @property
@@ -39,6 +53,8 @@ class BrowserAdmissionReport:
             "endpoint_name": self.endpoint_name,
             "required_captures": self.required_captures,
             "evaluated_capture_ids": list(self.evaluated_capture_ids),
+            "candidate_set_sha256": self.candidate_set_sha256,
+            "candidate_count": self.candidate_count,
             "ready_for_promotion": self.ready_for_promotion,
             "gates": [asdict(gate) for gate in self.gates],
         }
@@ -76,10 +92,10 @@ def _original_candidate_count(capture: BrowserCapture, configuration: dict) -> i
     soup = BeautifulSoup(content, "html.parser")
     urls = set()
     for link in soup.select(configuration.get("link_selector", "a[href]")):
-        href = link.get("href")
-        if not isinstance(href, str) or not href.strip():
+        target = configured_link_target(link, configuration)
+        if not target:
             continue
-        url = normalize_publication_url(capture.requested_url, href.strip())
+        url = normalize_publication_url(capture.requested_url, target)
         if _url_qualifies(url, capture.endpoint, configuration):
             urls.add(url)
     return len(urls)
@@ -118,15 +134,36 @@ def capture_has_bounded_network(capture: BrowserCapture) -> bool:
 def _candidate_has_downstream_lineage(candidate) -> bool:
     for observation in candidate.artifact_observations.select_related("raw_artifact"):
         artifact = observation.raw_artifact
-        if not artifact.extraction_runs.filter(status=ExtractionRun.Status.SUCCEEDED).exists():
-            continue
-        if GraphNode.objects.filter(
-            node_type=GraphNode.NodeType.ARTIFACT,
-            source_type="raw_artifact",
-            source_id=artifact.id,
-        ).exists():
+        artifact_ids = {artifact.id}
+        artifact_ids.update(
+            ArtifactDerivative.objects.filter(
+                source_artifact=artifact,
+                transformation_type=ArtifactDerivative.TransformationType.OCR_SEARCHABLE_PDF,
+            ).values_list("derived_artifact_id", flat=True)
+        )
+        extracted = set(
+            ExtractionRun.objects.filter(
+                raw_artifact_id__in=artifact_ids,
+                status=ExtractionRun.Status.SUCCEEDED,
+            ).values_list("raw_artifact_id", flat=True)
+        )
+        graphed = set(
+            GraphNode.objects.filter(
+                node_type=GraphNode.NodeType.ARTIFACT,
+                source_type="raw_artifact",
+                source_id__in=artifact_ids,
+            ).values_list("source_id", flat=True)
+        )
+        if extracted & graphed:
             return True
     return False
+
+
+def _candidate_set_hash(urls: tuple[str, ...]) -> str:
+    if not urls:
+        return ""
+    serialized = json.dumps(urls, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode()).hexdigest()
 
 
 def evaluate_browser_admission(
@@ -162,6 +199,7 @@ def evaluate_browser_admission(
         .first()
         or {}
     )
+    source_pack_installed = endpoint.source_pack_snapshots.exists()
 
     enough_captures = len(captures) == required_captures
     immutable_evidence = enough_captures and all(
@@ -184,8 +222,9 @@ def evaluate_browser_admission(
         static_counts = [_original_candidate_count(capture, configuration) for capture in captures]
     except Exception:
         static_counts = [-1 for _capture in captures]
-    browser_lift = (
-        enough_captures and all(count == 0 for count in static_counts) and all(candidate_sets)
+    browser_lift = enough_captures and all(
+        count >= 0 and len(urls) > count
+        for count, urls in zip(static_counts, candidate_sets, strict=True)
     )
     repeatable = enough_captures and len(set(candidate_sets)) == 1
 
@@ -218,6 +257,11 @@ def evaluate_browser_admission(
             "source is disabled or has a recorded gate-backed promotion",
         ),
         AdmissionGate(
+            "source_pack_snapshot",
+            source_pack_installed,
+            "an immutable repository source-pack snapshot is installed",
+        ),
+        AdmissionGate(
             "repeat_capture_count",
             enough_captures,
             f"{len(captures)}/{required_captures} completed captures",
@@ -230,7 +274,7 @@ def evaluate_browser_admission(
         AdmissionGate(
             "bounded_network",
             bounded_network,
-            "only the configured official POST was allowed; no resource limit fired",
+            "network stayed inside configured allowlists and no resource limit fired",
         ),
         AdmissionGate(
             "browser_only_lift",
@@ -260,5 +304,121 @@ def evaluate_browser_admission(
         endpoint_name=endpoint.name,
         required_captures=required_captures,
         evaluated_capture_ids=tuple(str(capture.id) for capture in captures),
+        candidate_set_sha256=_candidate_set_hash(candidate_sets[-1] if candidate_sets else ()),
+        candidate_count=len(candidate_sets[-1]) if candidate_sets else 0,
         gates=gates,
     )
+
+
+def _report_signature(report: BrowserAdmissionReport, pack_checksum: str) -> str:
+    payload = {**report.as_dict(), "source_pack_checksum": pack_checksum}
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode()).hexdigest()
+
+
+@transaction.atomic
+def assess_browser_admission(
+    endpoint: SourceEndpoint,
+    *,
+    required_captures: int = 2,
+) -> tuple[SourceAdmissionAssessment, bool]:
+    report = evaluate_browser_admission(endpoint, required_captures=required_captures)
+    snapshot = endpoint.source_pack_snapshots.order_by("-applied_at", "-id").first()
+    signature = _report_signature(report, snapshot.checksum if snapshot else "")
+    existing = SourceAdmissionAssessment.objects.filter(report_signature=signature).first()
+    if existing:
+        return existing, False
+    assessment = SourceAdmissionAssessment(
+        endpoint=endpoint,
+        source_pack_snapshot=snapshot,
+        status=(
+            SourceAdmissionAssessment.Status.READY
+            if report.ready_for_promotion
+            else SourceAdmissionAssessment.Status.INCOMPLETE
+        ),
+        report_signature=signature,
+        required_captures=required_captures,
+        evaluated_capture_ids=list(report.evaluated_capture_ids),
+        candidate_set_sha256=report.candidate_set_sha256,
+        candidate_count=report.candidate_count,
+        gates=[asdict(gate) for gate in report.gates],
+    )
+    assessment.full_clean()
+    try:
+        assessment.save()
+    except IntegrityError:
+        return SourceAdmissionAssessment.objects.get(report_signature=signature), False
+    payload = {
+        "assessment_id": str(assessment.id),
+        "source_pack_checksum": snapshot.checksum if snapshot else "",
+        **report.as_dict(),
+    }
+    record_pipeline_event(
+        event_type="browser.admission.evaluated",
+        aggregate_type="source_endpoint",
+        aggregate_id=endpoint.id,
+        payload=payload,
+    )
+    return assessment, True
+
+
+@transaction.atomic
+def promote_admitted_source(
+    endpoint: SourceEndpoint,
+    assessment: SourceAdmissionAssessment,
+    *,
+    actor_identifier: str = "management_command",
+) -> SourceAdmissionPromotion:
+    endpoint = SourceEndpoint.objects.select_for_update().get(pk=endpoint.pk)
+    assessment = SourceAdmissionAssessment.objects.select_related("source_pack_snapshot").get(
+        pk=assessment.pk
+    )
+    if assessment.endpoint_id != endpoint.id:
+        raise ValueError("Admission assessment does not belong to this endpoint.")
+    if endpoint.is_enabled:
+        raise ValueError("Source endpoint is already enabled.")
+    current, _ = assess_browser_admission(
+        endpoint,
+        required_captures=assessment.required_captures,
+    )
+    if current.report_signature != assessment.report_signature:
+        raise ValueError("Admission evidence changed; inspect a fresh assessment.")
+    if current.status != SourceAdmissionAssessment.Status.READY:
+        failed = ", ".join(gate["name"] for gate in current.gates if not gate["passed"])
+        raise ValueError(f"Admission gates failed: {failed}.")
+    endpoint.is_enabled = True
+    endpoint.next_poll_at = timezone.now() + timedelta(minutes=endpoint.polling_interval_minutes)
+    endpoint.health_state = SourceEndpoint.HealthState.HEALTHY
+    endpoint.save(update_fields=("is_enabled", "next_poll_at", "health_state", "updated_at"))
+    promotion = SourceAdmissionPromotion(
+        endpoint=endpoint,
+        assessment=current,
+        next_poll_at=endpoint.next_poll_at,
+        actor_identifier=actor_identifier,
+    )
+    promotion.full_clean()
+    promotion.save()
+    payload = {
+        "promotion_id": str(promotion.id),
+        "assessment_id": str(current.id),
+        "report_signature": current.report_signature,
+        "source_pack_checksum": (
+            current.source_pack_snapshot.checksum if current.source_pack_snapshot else ""
+        ),
+        "next_poll_at": endpoint.next_poll_at.isoformat(),
+    }
+    record_audit_event(
+        action="browser.source.promoted",
+        target_type="source_endpoint",
+        target_id=endpoint.id,
+        actor_type="system",
+        actor_identifier=actor_identifier,
+        details=payload,
+    )
+    record_pipeline_event(
+        event_type="browser.source.promoted",
+        aggregate_type="source_endpoint",
+        aggregate_id=endpoint.id,
+        payload=payload,
+    )
+    return promotion

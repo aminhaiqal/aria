@@ -1,6 +1,6 @@
 from django.contrib import admin, messages
 
-from aria.sources.models import ConnectorConfiguration, SourceEndpoint
+from aria.sources.models import ConnectorConfiguration, SourceEndpoint, SourcePackSnapshot
 
 
 class ConnectorConfigurationInline(admin.TabularInline):
@@ -49,3 +49,27 @@ class ConnectorConfigurationAdmin(admin.ModelAdmin):
     list_filter = ("is_active",)
     search_fields = ("endpoint__name",)
     autocomplete_fields = ("endpoint",)
+
+
+@admin.register(SourcePackSnapshot)
+class SourcePackSnapshotAdmin(admin.ModelAdmin):
+    list_display = ("pack_slug", "pack_version", "endpoint", "checksum", "applied_at")
+    search_fields = ("pack_slug", "endpoint__name", "checksum")
+    readonly_fields = (
+        "endpoint",
+        "pack_slug",
+        "schema_version",
+        "pack_version",
+        "checksum",
+        "definition",
+        "applied_at",
+    )
+
+    def has_add_permission(self, request) -> bool:
+        return False
+
+    def has_change_permission(self, request, obj=None) -> bool:
+        return False
+
+    def has_delete_permission(self, request, obj=None) -> bool:
+        return False

@@ -15,6 +15,27 @@ urlpatterns = [
     path("assets/<str:asset_name>", views.console_asset, name="asset"),
     path("", views.dashboard, name="dashboard"),
     path("sources/", views.source_list, name="source-list"),
+    path("admissions/", views.admission_list, name="admission-list"),
+    path(
+        "admissions/<uuid:endpoint_id>/",
+        views.admission_detail,
+        name="admission-detail",
+    ),
+    path(
+        "admissions/<uuid:endpoint_id>/capture/",
+        views.admission_capture,
+        name="admission-capture",
+    ),
+    path(
+        "admissions/<uuid:endpoint_id>/assess/",
+        views.admission_assess,
+        name="admission-assess",
+    ),
+    path(
+        "admissions/<uuid:endpoint_id>/promote/",
+        views.admission_promote,
+        name="admission-promote",
+    ),
     path("sources/<uuid:endpoint_id>/", views.source_detail, name="source-detail"),
     path(
         "sources/<uuid:endpoint_id>/poll/",

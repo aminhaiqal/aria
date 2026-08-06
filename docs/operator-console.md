@@ -16,8 +16,10 @@ The console includes:
 - side-by-side deterministic before/after anchors with their artifact hashes and source locators;
 - append-only human decisions with supersession history;
 - bounded GPT summaries of currently confirmed items only;
-- explicit, idempotent reviewed-change publication; and
-- searchable append-only audit history.
+- explicit, idempotent reviewed-change publication;
+- searchable append-only audit history; and
+- a governed source-admission workbench with source-pack evidence, deterministic gates, bounded
+  capture controls, candidate and network review, and read-only repair previews.
 
 This is an operator surface, not the later reader-facing regulatory search product.
 
@@ -60,6 +62,9 @@ queue summaries, or publish events. POST actions call transactionally locked dom
 | Record decision | staff, non-unchanged item, valid decision/rationale | new append-only `ComparisonReview` linked to its predecessor |
 | Generate summary | complete current review, at least one confirmed item, no active summary | audit event and bounded GPT task |
 | Publish changes | complete review, confirmed item, exact `PUBLISH` confirmation | idempotent publication + pipeline/outbox event + audit event |
+| Capture admission pilot | disabled JavaScript endpoint, installed source pack, no active run | bounded `SourceRun`, browser evidence, audit event |
+| Assess admission | two to five completed captures | immutable, deduplicated gate assessment and audit event |
+| Promote admission | current ready assessment, exact `PROMOTE` confirmation | immutable promotion, enabled schedule, pipeline and audit events |
 
 Failed or duplicate actions return an operator message without bypassing their invariant. A retry
 does not delete prior attempts. A changed decision appends a new review. Repeated publication skips
@@ -69,9 +74,15 @@ GPT output remains presentation data: the prompt receives only bounded before/af
 currently confirmed items, must preserve deterministic IDs and change types, and must assert that
 legal effect was not assessed. It cannot publish or modify evidence.
 
+The admissions area is available at `/console/admissions/`. Promotion re-runs the exact assessment
+under a database row lock. A changed capture set, candidate set, connector contract, or source-pack
+checksum makes the submitted assessment stale and blocks activation.
+
 ## Operations
 
-The console is part of the existing API image, so deployment needs no new service or migration:
+The console remains part of the existing API image, so it needs no new service. Phase 3D.9 adds
+source-pack and admission-evidence migrations, which the Compose migration service applies before
+the API and workers start:
 
 ```bash
 docker compose up --build -d

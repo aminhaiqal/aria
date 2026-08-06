@@ -2,7 +2,12 @@ from rest_framework import serializers
 
 from aria.artifacts.models import ArtifactDerivative, ArtifactObservation, RawArtifact
 from aria.authorities.models import Authority
-from aria.browser.models import BrowserCapture, BrowserNetworkExchange
+from aria.browser.models import (
+    BrowserCapture,
+    BrowserNetworkExchange,
+    SourceAdmissionAssessment,
+    SourceAdmissionPromotion,
+)
 from aria.collections.models import PublicationCollection
 from aria.comparisons.models import (
     ComparisonItem,
@@ -34,7 +39,7 @@ from aria.quality.models import (
     QualityFinding,
 )
 from aria.reliability.models import SourceReliabilityAssessment
-from aria.sources.models import ConnectorConfiguration, SourceEndpoint
+from aria.sources.models import ConnectorConfiguration, SourceEndpoint, SourcePackSnapshot
 
 
 class AuthoritySerializer(serializers.ModelSerializer):
@@ -140,6 +145,61 @@ class SourceRunSerializer(serializers.ModelSerializer):
             "error_message",
             "created_at",
             "updated_at",
+        )
+
+
+class SourcePackSnapshotSerializer(serializers.ModelSerializer):
+    endpoint_name = serializers.CharField(source="endpoint.name", read_only=True)
+
+    class Meta:
+        model = SourcePackSnapshot
+        fields = (
+            "id",
+            "endpoint",
+            "endpoint_name",
+            "pack_slug",
+            "schema_version",
+            "pack_version",
+            "checksum",
+            "definition",
+            "applied_at",
+        )
+
+
+class SourceAdmissionAssessmentSerializer(serializers.ModelSerializer):
+    endpoint_name = serializers.CharField(source="endpoint.name", read_only=True)
+
+    class Meta:
+        model = SourceAdmissionAssessment
+        fields = (
+            "id",
+            "endpoint",
+            "endpoint_name",
+            "source_pack_snapshot",
+            "status",
+            "report_signature",
+            "required_captures",
+            "evaluated_capture_ids",
+            "candidate_set_sha256",
+            "candidate_count",
+            "gates",
+            "assessed_at",
+        )
+
+
+class SourceAdmissionPromotionSerializer(serializers.ModelSerializer):
+    endpoint_name = serializers.CharField(source="endpoint.name", read_only=True)
+
+    class Meta:
+        model = SourceAdmissionPromotion
+        fields = (
+            "id",
+            "endpoint",
+            "endpoint_name",
+            "assessment",
+            "next_poll_at",
+            "actor_identifier",
+            "promoted_at",
         )
 
 

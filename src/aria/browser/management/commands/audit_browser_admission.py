@@ -2,8 +2,7 @@ import json
 
 from django.core.management.base import BaseCommand, CommandError
 
-from aria.browser.admission import evaluate_browser_admission
-from aria.events.services import record_pipeline_event
+from aria.browser.admission import assess_browser_admission
 from aria.sources.models import SourceEndpoint
 
 
@@ -35,19 +34,25 @@ class Command(BaseCommand):
             raise CommandError("Admission auditing requires a JavaScript listing endpoint.")
 
         try:
-            report = evaluate_browser_admission(
+            assessment, created = assess_browser_admission(
                 endpoint,
                 required_captures=options["required_captures"],
             )
         except ValueError as error:
             raise CommandError(str(error)) from error
-        payload = report.as_dict()
-        record_pipeline_event(
-            event_type="browser.admission.evaluated",
-            aggregate_type="source_endpoint",
-            aggregate_id=endpoint.id,
-            payload=payload,
-        )
+        payload = {
+            "assessment_id": str(assessment.id),
+            "report_signature": assessment.report_signature,
+            "created": created,
+            "endpoint_id": str(endpoint.id),
+            "endpoint_name": endpoint.name,
+            "required_captures": assessment.required_captures,
+            "evaluated_capture_ids": assessment.evaluated_capture_ids,
+            "candidate_set_sha256": assessment.candidate_set_sha256,
+            "candidate_count": assessment.candidate_count,
+            "ready_for_promotion": assessment.status == assessment.Status.READY,
+            "gates": assessment.gates,
+        }
         self.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
-        if not report.ready_for_promotion and not options["allow_incomplete"]:
+        if assessment.status != assessment.Status.READY and not options["allow_incomplete"]:
             raise CommandError("Browser source is not ready for promotion; inspect failed gates.")

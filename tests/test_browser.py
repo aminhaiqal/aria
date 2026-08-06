@@ -15,10 +15,19 @@ from django.utils import timezone
 from aria.artifacts.models import ArtifactDerivative, ArtifactObservation, RawArtifact
 from aria.artifacts.storage import FilesystemArtifactStore
 from aria.authorities.models import Authority
-from aria.browser.admission import evaluate_browser_admission
+from aria.browser.admission import (
+    assess_browser_admission,
+    evaluate_browser_admission,
+    promote_admitted_source,
+)
 from aria.browser.connector import ConfiguredJavaScriptListingConnector
 from aria.browser.contracts import BrowserRenderResult, CapturedNetworkExchange
-from aria.browser.models import BrowserCapture, BrowserNetworkExchange
+from aria.browser.models import (
+    BrowserCapture,
+    BrowserNetworkExchange,
+    SourceAdmissionAssessment,
+    SourceAdmissionPromotion,
+)
 from aria.browser.network import BrowserNetworkPolicy, _ProxyBudget
 from aria.browser.runtime import PlaywrightBrowserRunner
 from aria.browser.services import browser_configuration, capture_source_run
@@ -29,7 +38,7 @@ from aria.extraction.models import ExtractionRun
 from aria.fetching.client import UnsafeTargetError
 from aria.fetching.models import FetchAttempt
 from aria.knowledge.models import GraphNode
-from aria.sources.models import ConnectorConfiguration, SourceEndpoint
+from aria.sources.models import ConnectorConfiguration, SourceEndpoint, SourcePackSnapshot
 
 
 class BrowserFixture(TestCase):
@@ -72,6 +81,18 @@ class BrowserFixture(TestCase):
                 "max_candidates": 10,
                 "ready_selector": "main",
                 "render_wait_milliseconds": 25,
+            },
+        )
+        self.source_pack_snapshot = SourcePackSnapshot.objects.create(
+            endpoint=self.endpoint,
+            pack_slug="browser-test-source",
+            schema_version=1,
+            pack_version=1,
+            checksum="a" * 64,
+            definition={
+                "schema_version": 1,
+                "slug": "browser-test-source",
+                "version": 1,
             },
         )
         self.original = RawArtifact.objects.create(
@@ -218,6 +239,27 @@ class BrowserEvidenceAPITestCase(BrowserFixture):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["original_artifact"], str(self.original.id))
         self.assertEqual(len(response.json()["network_exchanges"]), 1)
+        self.assertEqual(self.client.post(list_url, {}).status_code, 405)
+
+    def test_admission_evidence_api_is_staff_only_and_read_only(self) -> None:
+        self.endpoint.is_enabled = False
+        self.endpoint.next_poll_at = None
+        self.endpoint.save(update_fields=("is_enabled", "next_poll_at", "updated_at"))
+        assessment, _ = assess_browser_admission(self.endpoint)
+        list_url = reverse("sourceadmissionassessment-list")
+        self.assertEqual(self.client.get(list_url).status_code, 403)
+
+        staff = get_user_model().objects.create_user(
+            username="admission-api-operator",
+            password="test-password",
+            is_staff=True,
+        )
+        self.client.force_login(staff)
+        response = self.client.get(
+            reverse("sourceadmissionassessment-detail", args=[assessment.id])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["report_signature"], assessment.report_signature)
         self.assertEqual(self.client.post(list_url, {}).status_code, 405)
 
 
@@ -688,6 +730,11 @@ class BrowserAdmissionGateTestCase(BrowserFixture):
 
         self.assertTrue(report.ready_for_promotion)
         self.assertTrue(all(gate.passed for gate in report.gates))
+        assessment = SourceAdmissionAssessment.objects.get(endpoint=self.endpoint)
+        self.assertEqual(assessment.status, SourceAdmissionAssessment.Status.READY)
+        self.assertEqual(assessment.candidate_count, 1)
+        self.assertEqual(len(assessment.report_signature), 64)
+        self.assertTrue(SourceAdmissionPromotion.objects.filter(assessment=assessment).exists())
         self.endpoint.refresh_from_db()
         self.assertTrue(self.endpoint.is_enabled)
         self.assertIsNotNone(self.endpoint.next_poll_at)
@@ -723,6 +770,10 @@ class BrowserAdmissionGateTestCase(BrowserFixture):
                 aggregate_id=self.endpoint.id,
             ).exists()
         )
+        assessment = SourceAdmissionAssessment.objects.get(endpoint=self.endpoint)
+        replay, created = assess_browser_admission(self.endpoint)
+        self.assertFalse(created)
+        self.assertEqual(replay.id, assessment.id)
         with self.assertRaisesMessage(CommandError, "Admission gates failed"):
             call_command(
                 "promote_browser_source",
@@ -732,6 +783,27 @@ class BrowserAdmissionGateTestCase(BrowserFixture):
             )
         self.endpoint.refresh_from_db()
         self.assertFalse(self.endpoint.is_enabled)
+
+    def test_promotion_rejects_an_assessment_after_capture_evidence_changes(self) -> None:
+        self.endpoint.is_enabled = False
+        self.endpoint.next_poll_at = None
+        self.endpoint.save(update_fields=("is_enabled", "next_poll_at", "updated_at"))
+        stale, _ = assess_browser_admission(self.endpoint)
+        self.source_run.status = SourceRun.Status.COMPLETED
+        self.source_run.finished_at = timezone.now()
+        self.source_run.save(update_fields=("status", "finished_at", "updated_at"))
+        self.create_capture()
+
+        with (
+            patch("aria.browser.admission.get_artifact_store") as artifact_store,
+            self.assertRaisesMessage(ValueError, "evidence changed"),
+        ):
+            artifact_store.return_value.read.return_value = b"<html><main>Loading</main></html>"
+            promote_admitted_source(self.endpoint, stale)
+
+        self.endpoint.refresh_from_db()
+        self.assertFalse(self.endpoint.is_enabled)
+        self.assertEqual(SourceAdmissionPromotion.objects.count(), 0)
 
 
 class AGCBrowserPilotRegistryTestCase(TestCase):

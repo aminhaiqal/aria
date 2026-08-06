@@ -1,4 +1,4 @@
-.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage
+.PHONY: bootstrap build up down logs migrate makemigrations test check shell superuser list-source-packs plan-source-pack apply-source-pack poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage
 
 bootstrap:
 	@test -f .env || cp .env.example .env
@@ -33,6 +33,17 @@ shell:
 
 superuser:
 	docker compose exec api python manage.py createsuperuser
+
+list-source-packs:
+	docker compose exec -T api python manage.py sync_source_pack --list
+
+plan-source-pack:
+	@test -n "$(PACK)" || (echo "Set PACK=<source-pack-slug>" && exit 1)
+	docker compose exec -T api python manage.py sync_source_pack $(PACK)
+
+apply-source-pack:
+	@test -n "$(PACK)" || (echo "Set PACK=<source-pack-slug>" && exit 1)
+	docker compose exec -T api python manage.py sync_source_pack $(PACK) --apply --confirm
 
 poll-jpdp:
 	docker compose exec api python manage.py poll_jpdp

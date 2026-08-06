@@ -24,6 +24,9 @@
       <a class="nav-item {% if active_section == 'sources' %}is-active{% endif %}" href="{% url 'console:source-list' %}">
         <span class="nav-icon" aria-hidden="true">◎</span><span>Official sources</span>
       </a>
+      <a class="nav-item {% if active_section == 'admissions' %}is-active{% endif %}" href="{% url 'console:admission-list' %}">
+        <span class="nav-icon" aria-hidden="true">◇</span><span>Source admissions</span>
+      </a>
       <a class="nav-item {% if active_section == 'workflows' %}is-active{% endif %}" href="{% url 'console:orchestration-list' %}">
         <span class="nav-icon" aria-hidden="true">⌁</span><span>Change workflows</span>
       </a>

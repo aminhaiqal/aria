@@ -6,7 +6,7 @@ from django.utils import timezone
 from aria.artifacts.models import ArtifactDerivative, RawArtifact
 from aria.common.models import AppendOnlyModel, TimeStampedModel
 from aria.discovery.models import SourceRun
-from aria.sources.models import SourceEndpoint
+from aria.sources.models import SourceEndpoint, SourcePackSnapshot
 
 
 class BrowserCapture(TimeStampedModel):
@@ -200,3 +200,94 @@ class BrowserNetworkExchange(AppendOnlyModel):
 
     def __str__(self) -> str:
         return f"{self.capture_id}:{self.attempt_number}:{self.sequence}"
+
+
+class SourceAdmissionAssessment(AppendOnlyModel):
+    class Status(models.TextChoices):
+        INCOMPLETE = "incomplete", "Incomplete"
+        READY = "ready", "Ready for promotion"
+
+    endpoint = models.ForeignKey(
+        SourceEndpoint,
+        on_delete=models.PROTECT,
+        related_name="admission_assessments",
+    )
+    source_pack_snapshot = models.ForeignKey(
+        SourcePackSnapshot,
+        on_delete=models.PROTECT,
+        related_name="admission_assessments",
+        null=True,
+        blank=True,
+    )
+    status = models.CharField(max_length=16, choices=Status.choices, db_index=True)
+    report_signature = models.CharField(
+        max_length=64,
+        unique=True,
+        validators=[RegexValidator(r"^[0-9a-f]{64}$")],
+    )
+    required_captures = models.PositiveSmallIntegerField(default=2)
+    evaluated_capture_ids = models.JSONField(default=list, blank=True)
+    candidate_set_sha256 = models.CharField(
+        max_length=64,
+        blank=True,
+        validators=[RegexValidator(r"^$|^[0-9a-f]{64}$")],
+    )
+    candidate_count = models.PositiveIntegerField(default=0)
+    gates = models.JSONField(default=list)
+    assessed_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ("-assessed_at", "-id")
+        indexes = [models.Index(fields=("endpoint", "status", "assessed_at"))]
+
+    def clean(self) -> None:
+        if self.source_pack_snapshot_id:
+            if self.source_pack_snapshot.endpoint_id != self.endpoint_id:
+                raise ValidationError("Admission source pack must belong to its endpoint.")
+        if not 2 <= self.required_captures <= 5:
+            raise ValidationError("Admission assessments require two to five captures.")
+        if not isinstance(self.evaluated_capture_ids, list):
+            raise ValidationError("Admission capture evidence must be a list.")
+        if not isinstance(self.gates, list) or any(
+            not isinstance(gate, dict) or not {"name", "passed", "detail"}.issubset(gate)
+            for gate in self.gates
+        ):
+            raise ValidationError("Admission gates require name, passed, and detail.")
+        expected_status = (
+            self.Status.READY
+            if self.gates and all(gate["passed"] is True for gate in self.gates)
+            else self.Status.INCOMPLETE
+        )
+        if self.status != expected_status:
+            raise ValidationError("Admission status must match its gate results.")
+
+    def __str__(self) -> str:
+        return f"{self.endpoint_id} [{self.status}] {self.report_signature[:12]}…"
+
+
+class SourceAdmissionPromotion(AppendOnlyModel):
+    endpoint = models.ForeignKey(
+        SourceEndpoint,
+        on_delete=models.PROTECT,
+        related_name="admission_promotions",
+    )
+    assessment = models.OneToOneField(
+        SourceAdmissionAssessment,
+        on_delete=models.PROTECT,
+        related_name="promotion",
+    )
+    next_poll_at = models.DateTimeField()
+    actor_identifier = models.CharField(max_length=255, blank=True)
+    promoted_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ("-promoted_at", "-id")
+
+    def clean(self) -> None:
+        if self.assessment_id and self.assessment.endpoint_id != self.endpoint_id:
+            raise ValidationError("Admission promotion assessment must match its endpoint.")
+        if self.assessment_id and self.assessment.status != SourceAdmissionAssessment.Status.READY:
+            raise ValidationError("Only a ready admission assessment can be promoted.")
+
+    def __str__(self) -> str:
+        return f"{self.endpoint_id} promoted from {self.assessment_id}"

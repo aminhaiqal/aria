@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "slug": "parliament-dewan-rakyat-bills",
+  "version": 1,
+  "authority": {
+    "slug": "parliament-of-malaysia",
+    "name": "Parliament of Malaysia",
+    "aliases": ["Parlimen Malaysia"],
+    "jurisdiction": "Malaysia",
+    "country_code": "MY",
+    "authority_type": "legislature",
+    "regulatory_domains": ["federal-legislation", "parliamentary-bills"],
+    "official_domains": ["parlimen.gov.my"],
+    "trust_classification": "authoritative",
+    "is_enabled": true
+  },
+  "collection": {
+    "slug": "dewan-rakyat-bills",
+    "name": "Dewan Rakyat bills",
+    "document_family": "acts_regulations",
+    "default_legal_status": "Official parliamentary bill publication; not enacted law",
+    "is_evidence_eligible": true,
+    "priority": 20,
+    "expected_update_frequency": "During parliamentary sittings; proposed daily after validation",
+    "is_enabled": true
+  },
+  "endpoint": {
+    "name": "Parliament Dewan Rakyat bills",
+    "discovery_url": "https://www.parlimen.gov.my/portal/bills-dewan-rakyat.html?lang=en&uweb=dr",
+    "connector_type": "html_listing",
+    "allowed_domains": ["parlimen.gov.my"],
+    "polling_interval_minutes": 1440,
+    "pagination_strategy": "none",
+    "expected_content_types": ["text/html", "application/pdf"],
+    "requires_javascript": false,
+    "connector_configuration_version": 1,
+    "default_enabled": false
+  },
+  "connector_configurations": [
+    {
+      "version": 1,
+      "configuration": {
+        "link_selector": "a[onclick^=\"loadResult('/files/billindex/pdf/\"]",
+        "link_attribute": "onclick",
+        "link_value_prefix": "loadResult('",
+        "link_value_suffix": "'",
+        "include_path_prefixes": ["/files/billindex/pdf/"],
+        "upload_path_prefixes": ["/files/billindex/pdf/"],
+        "document_extensions": [".pdf"],
+        "max_candidates": 25
+      },
+      "notes": "Live review on 2026-08-07 found PDF paths in server-rendered onclick attributes, so this pack extracts bounded values without executing JavaScript.",
+      "is_active": true
+    }
+  ],
+  "resources": []
+}

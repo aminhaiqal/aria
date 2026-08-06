@@ -2,6 +2,8 @@ from dataclasses import asdict
 
 from django.db import transaction
 
+from aria.browser.admission import assess_browser_admission, promote_admitted_source
+from aria.browser.models import SourceAdmissionAssessment, SourceAdmissionPromotion
 from aria.comparisons.models import ComparisonSummary, DocumentComparison
 from aria.comparisons.publications import publish_confirmed_comparison_changes
 from aria.comparisons.tasks import summarize_comparison
@@ -46,6 +48,84 @@ def queue_endpoint_poll(endpoint: SourceEndpoint, *, user) -> SourceRun:
     )
     transaction.on_commit(lambda: execute_source_run.delay(str(source_run.id)))
     return source_run
+
+
+@transaction.atomic
+def queue_admission_capture(endpoint: SourceEndpoint, *, user) -> SourceRun:
+    endpoint = SourceEndpoint.objects.select_for_update().get(pk=endpoint.pk)
+    if endpoint.connector_type != SourceEndpoint.ConnectorType.JAVASCRIPT_LISTING:
+        raise ConsoleOperationError("Admission captures require a JavaScript listing source.")
+    if endpoint.is_enabled:
+        raise ConsoleOperationError("Use the normal source poll for an enabled endpoint.")
+    if not endpoint.source_pack_snapshots.exists():
+        raise ConsoleOperationError("Install a validated source pack before capturing this pilot.")
+    overlap = SourceRun.objects.filter(
+        endpoint=endpoint,
+        status__in=(SourceRun.Status.PENDING, SourceRun.Status.RUNNING),
+        resource_run__isnull=True,
+    ).exists()
+    if overlap:
+        raise ConsoleOperationError("This pilot already has an active capture.")
+    source_run, _ = create_source_run(endpoint, trigger=SourceRun.Trigger.MANUAL)
+    record_audit_event(
+        action="console.admission_capture_queued",
+        target_type="source_endpoint",
+        target_id=endpoint.id,
+        actor_type="user",
+        actor_identifier=_actor(user),
+        details={"source_run_id": str(source_run.id)},
+    )
+    transaction.on_commit(lambda: execute_source_run.delay(str(source_run.id)))
+    return source_run
+
+
+@transaction.atomic
+def record_admission_assessment(
+    endpoint: SourceEndpoint,
+    *,
+    required_captures: int,
+    user,
+) -> tuple[SourceAdmissionAssessment, bool]:
+    endpoint = SourceEndpoint.objects.select_for_update().get(pk=endpoint.pk)
+    if endpoint.connector_type != SourceEndpoint.ConnectorType.JAVASCRIPT_LISTING:
+        raise ConsoleOperationError("Admission assessment requires a JavaScript listing source.")
+    try:
+        assessment, created = assess_browser_admission(
+            endpoint,
+            required_captures=required_captures,
+        )
+    except ValueError as error:
+        raise ConsoleOperationError(str(error)) from error
+    record_audit_event(
+        action="console.admission_assessed",
+        target_type="source_endpoint",
+        target_id=endpoint.id,
+        actor_type="user",
+        actor_identifier=_actor(user),
+        details={
+            "assessment_id": str(assessment.id),
+            "report_signature": assessment.report_signature,
+            "created": created,
+        },
+    )
+    return assessment, created
+
+
+@transaction.atomic
+def promote_source_admission(
+    endpoint: SourceEndpoint,
+    assessment: SourceAdmissionAssessment,
+    *,
+    user,
+) -> SourceAdmissionPromotion:
+    try:
+        return promote_admitted_source(
+            endpoint,
+            assessment,
+            actor_identifier=_actor(user),
+        )
+    except ValueError as error:
+        raise ConsoleOperationError(str(error)) from error
 
 
 @transaction.atomic

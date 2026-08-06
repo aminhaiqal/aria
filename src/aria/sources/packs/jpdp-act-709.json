@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "slug": "jpdp-act-709",
+  "version": 1,
+  "authority": {
+    "slug": "personal-data-protection-commissioner-malaysia",
+    "name": "Personal Data Protection Commissioner, Malaysia",
+    "aliases": ["JPDP", "PPDP"],
+    "jurisdiction": "Malaysia",
+    "country_code": "MY",
+    "authority_type": "regulator",
+    "regulatory_domains": ["personal-data-protection"],
+    "official_domains": ["pdp.gov.my"],
+    "trust_classification": "authoritative",
+    "is_enabled": true
+  },
+  "collection": {
+    "slug": "act-709-regulatory-publications",
+    "name": "Act 709 regulatory publications",
+    "document_family": "acts_regulations",
+    "default_legal_status": "Official publication",
+    "is_evidence_eligible": true,
+    "priority": 10,
+    "expected_update_frequency": "Ad hoc; poll every six hours",
+    "is_enabled": true
+  },
+  "endpoint": {
+    "name": "JPDP Act 709 regulatory library",
+    "discovery_url": "https://www.pdp.gov.my/ppdpv1/en/akta/pdp-act-2010-en/",
+    "connector_type": "html_listing",
+    "allowed_domains": ["pdp.gov.my"],
+    "polling_interval_minutes": 360,
+    "pagination_strategy": "none",
+    "expected_content_types": ["text/html", "application/pdf"],
+    "requires_javascript": false,
+    "connector_configuration_version": 3,
+    "default_enabled": true
+  },
+  "connector_configurations": [
+    {
+      "version": 1,
+      "configuration": {
+        "link_selector": "a[href]",
+        "include_path_prefixes": ["/ppdpv1/en/akta/", "/ppdpv1/wp-content/uploads/"],
+        "upload_path_prefixes": ["/ppdpv1/wp-content/uploads/"],
+        "exclude_path_suffixes": ["/feed/"],
+        "document_extensions": [".pdf", ".doc", ".docx", ".csv", ".json", ".xml"],
+        "max_candidates": 20
+      },
+      "notes": "Historical Phase 2 listing-only configuration.",
+      "is_active": false
+    },
+    {
+      "version": 2,
+      "configuration": {
+        "link_selector": "a[href]",
+        "include_path_prefixes": ["/ppdpv1/en/akta/", "/ppdpv1/wp-content/uploads/"],
+        "upload_path_prefixes": ["/ppdpv1/wp-content/uploads/"],
+        "exclude_path_suffixes": ["/feed/"],
+        "document_extensions": [".pdf", ".doc", ".docx", ".csv", ".json", ".xml"],
+        "max_candidates": 20,
+        "follow_detail_pages": true,
+        "detail_content_selector": ".betterdocs-entry-content",
+        "max_detail_pages": 20
+      },
+      "notes": "JPDP Phase 3B detail-page configuration.",
+      "is_active": false
+    },
+    {
+      "version": 3,
+      "configuration": {
+        "link_selector": "a[href]",
+        "include_path_prefixes": ["/ppdpv1/en/akta/", "/ppdpv1/wp-content/uploads/"],
+        "upload_path_prefixes": ["/ppdpv1/wp-content/uploads/"],
+        "exclude_path_suffixes": ["/feed/"],
+        "document_extensions": [".pdf", ".doc", ".docx", ".csv", ".json", ".xml"],
+        "max_candidates": 20,
+        "follow_detail_pages": true,
+        "detail_content_selector": ".betterdocs-entry-content",
+        "detail_resource_path_prefixes": ["/ppdpv1/en/akta/"],
+        "max_detail_pages": 20,
+        "max_feed_entries": 20
+      },
+      "notes": "Phase 3D.2 bounded listing, detail-page, and official-feed monitoring.",
+      "is_active": true
+    }
+  ],
+  "resources": [
+    {
+      "resource_type": "rss",
+      "url": "https://www.pdp.gov.my/ppdpv1/en/feed/",
+      "title": "JPDP English official site feed",
+      "is_approved": true,
+      "approval_basis": "Declared as application/rss+xml by the approved JPDP listing page",
+      "polling_interval_minutes": 60,
+      "metadata": {
+        "declaration_page": "https://www.pdp.gov.my/ppdpv1/en/akta/pdp-act-2010-en/",
+        "excludes": ["comments feeds"]
+      }
+    }
+  ],
+  "detail_resource_backfill": {
+    "metadata_url_key": "source_detail_page",
+    "metadata_title_key": "title",
+    "resource_type": "detail_page",
+    "approval_basis": "Backfilled from prior approved JPDP listing evidence",
+    "polling_interval_minutes": 360
+  }
+}

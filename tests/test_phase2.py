@@ -191,6 +191,51 @@ class PhaseTwoTestCase(TestCase):
         self.assertEqual(candidates[0].metadata_hints["title"], "Rule Two PDF")
         self.assertEqual(len(candidates[0].fingerprint), 64)
 
+    def test_html_listing_connector_extracts_bounded_non_href_value(self) -> None:
+        ConnectorConfiguration.objects.create(
+            endpoint=self.endpoint,
+            version=1,
+            configuration={
+                "link_selector": "a[onclick]",
+                "link_attribute": "onclick",
+                "link_value_prefix": "loadResult('",
+                "link_value_suffix": "'",
+                "include_path_prefixes": ["/files/bills/"],
+                "upload_path_prefixes": ["/files/bills/"],
+                "document_extensions": [".pdf"],
+                "max_candidates": 2,
+            },
+        )
+        html = b"""
+            <a href="#" onclick="loadResult('/files/bills/Bill 2026.pdf','Bill.pdf');">
+              D.R.1/2026
+            </a>
+            <a href="#" onclick="mutate('/files/bills/unsafe.pdf');">Ignore</a>
+        """
+        client = SafeHttpClient(
+            resolver=lambda _hostname, _port: [PUBLIC_IP],
+            rate_limiter=RateLimiter(),
+            transport=httpx.MockTransport(
+                lambda _request: httpx.Response(
+                    200,
+                    headers={"Content-Type": "text/html; charset=UTF-8"},
+                    content=html,
+                )
+            ),
+        )
+
+        result = ConfiguredHTMLListingConnector(client_factory=lambda: client).discover(
+            self.endpoint,
+            cursor=None,
+        )
+
+        self.assertEqual(len(result.candidates), 1)
+        self.assertEqual(
+            result.candidates[0].canonical_url,
+            "https://example.com/files/bills/Bill%202026.pdf",
+        )
+        self.assertEqual(result.candidates[0].metadata_hints["title"], "D.R.1/2026")
+
     def test_html_listing_connector_routes_detail_page_primary_document(self) -> None:
         ConnectorConfiguration.objects.create(
             endpoint=self.endpoint,

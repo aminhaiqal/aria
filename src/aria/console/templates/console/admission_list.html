@@ -1,0 +1,13 @@
+{% extends "console/base.html" %}{% load console_extras %}
+{% block content %}
+<section class="page-heading">
+  <div><span class="eyebrow">Controlled onboarding</span><h1>Source admissions</h1><p>Versioned source packs and evidence-gated browser pilots.</p></div>
+</section>
+<section class="panel">
+  <header class="panel-head"><div><span class="eyebrow">Browser-dependent sources</span><h2>{{ rows|length }} admission contract{{ rows|length|pluralize }}</h2></div></header>
+  <div class="table-wrap"><table><thead><tr><th>Source</th><th>Pack</th><th>Captures</th><th>Assessment</th><th>Activation</th></tr></thead><tbody>
+  {% for row in rows %}<tr class="click-row" data-href="{% url 'console:admission-detail' row.endpoint.id %}"><td><a class="primary-link" href="{% url 'console:admission-detail' row.endpoint.id %}">{{ row.endpoint.name }}</a><small>{{ row.endpoint.collection.authority.name }}</small></td><td>{% if row.snapshot %}<span class="mono">{{ row.snapshot.pack_slug }} v{{ row.snapshot.pack_version }}</span><small>{{ row.snapshot.checksum|short_hash }}</small>{% else %}<span class="badge badge-warning">No pack</span>{% endif %}</td><td>{{ row.capture_count }}</td><td>{% if row.assessment %}<span class="badge badge-{{ row.assessment.status|status_tone }}">{{ row.assessment.get_status_display }}</span><small>{{ row.assessment.assessed_at|timesince }} ago</small>{% else %}<span class="badge badge-neutral">Unassessed</span>{% endif %}</td><td>{% if row.promotion %}<span class="badge badge-positive">Promoted</span><small>{{ row.promotion.promoted_at }}</small>{% elif row.endpoint.is_enabled %}<span class="badge badge-info">Previously enabled</span>{% else %}<span class="badge badge-neutral">Disabled pilot</span>{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="5"><div class="empty-state"><span>No JavaScript source packs are installed.</span></div></td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

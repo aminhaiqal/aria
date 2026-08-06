@@ -1,7 +1,7 @@
 import hashlib
 from collections.abc import Callable
 from pathlib import PurePosixPath
-from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
+from urllib.parse import quote, unquote, urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup
 
@@ -20,7 +20,33 @@ def normalize_publication_url(base_url: str, href: str) -> str:
     absolute = urljoin(base_url, href)
     parsed = urlsplit(absolute)
     hostname = (parsed.hostname or "").encode("idna").decode("ascii").lower()
-    return urlunsplit((parsed.scheme.lower(), hostname, parsed.path or "/", parsed.query, ""))
+    path = quote(parsed.path or "/", safe="/%:@-._~!$&'()*+,;=")
+    query = quote(parsed.query, safe="%:@-._~!$&'()*+,;=/?")
+    return urlunsplit((parsed.scheme.lower(), hostname, path, query, ""))
+
+
+def configured_link_target(link, configuration: dict) -> str | None:
+    """Extract a URL-shaped value without evaluating source-provided script."""
+    attribute = configuration.get("link_attribute", "href")
+    value = link.get(attribute)
+    if not isinstance(value, str) or not value.strip():
+        return None
+    value = value.strip()
+    prefix = configuration.get("link_value_prefix")
+    suffix = configuration.get("link_value_suffix")
+    if prefix is None and suffix is None:
+        return value
+    if not isinstance(prefix, str) or not isinstance(suffix, str):
+        return None
+    start = value.find(prefix)
+    if start < 0:
+        return None
+    remainder = value[start + len(prefix) :]
+    end = remainder.find(suffix)
+    if end < 0:
+        return None
+    target = remainder[:end].strip()
+    return target or None
 
 
 class ConfiguredHTMLListingConnector:
@@ -99,10 +125,10 @@ class ConfiguredHTMLListingConnector:
             source_url = normalize_publication_url(endpoint.discovery_url, endpoint.discovery_url)
             candidates_by_url: dict[str, CandidateData] = {}
             for link in soup.select(selector):
-                href = link.get("href")
-                if not isinstance(href, str) or not href.strip():
+                target = configured_link_target(link, configuration)
+                if not target:
                     continue
-                canonical_url = normalize_publication_url(endpoint.discovery_url, href.strip())
+                canonical_url = normalize_publication_url(endpoint.discovery_url, target)
                 parsed = urlsplit(canonical_url)
                 if parsed.scheme != "https" or not parsed.hostname:
                     continue

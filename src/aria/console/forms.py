@@ -48,3 +48,22 @@ class PublicationConfirmationForm(forms.Form):
         if value != "PUBLISH":
             raise forms.ValidationError("Type PUBLISH to confirm this action.")
         return value
+
+
+class AdmissionAssessmentForm(forms.Form):
+    required_captures = forms.TypedChoiceField(
+        choices=((2, "2 captures"), (3, "3 captures"), (4, "4 captures"), (5, "5 captures")),
+        coerce=int,
+        initial=2,
+    )
+
+
+class AdmissionPromotionForm(forms.Form):
+    assessment_id = forms.UUIDField(widget=forms.HiddenInput())
+    confirmation = forms.CharField(max_length=16)
+
+    def clean_confirmation(self):
+        value = self.cleaned_data["confirmation"].strip()
+        if value != "PROMOTE":
+            raise forms.ValidationError("Type PROMOTE to confirm scheduled retrieval.")
+        return value

@@ -8,6 +8,8 @@ publications before any AI interpretation is introduced.
 
 - Registry hierarchy: authorities, publication collections, source endpoints, and versioned
   connector configuration
+- Repository-backed, checksummed source packs with strict validation, read-only plans, guarded
+  application, and immutable installed snapshots
 - Scheduled and manual source runs with durable PostgreSQL state
 - Idempotent discovered candidates and per-run observations
 - A configurable static HTML listing connector, initially seeded for Malaysia's JPDP
@@ -31,6 +33,8 @@ publications before any AI interpretation is introduced.
   review waits, and post-review GPT-summary dispatch
 - A staff-only self-hosted operator console for source health, bounded polling, workflow recovery,
   before/after review, GPT summaries, explicit publication, and audit history
+- A staff-only source-admission workbench with bounded pilot captures, immutable gate assessments,
+  exact-evidence promotion, network traces, and repair previews
 - Immutable OCR derivatives with source/output hashes, toolchain records, and page metrics
 - A dedicated self-hosted OCRmyPDF/Tesseract worker with Malay and English language data
 - Explicit pipeline states from discovery through publication and failure handling
@@ -59,11 +63,13 @@ outputs are explicit derivatives and never replace or mutate the official source
 - Phase 3D.6 bounded self-hosted browser retrieval: implemented
 - Phase 3D.7 controlled AGC JavaScript-source admission: complete and promoted to daily polling
 - Phase 3D.8 source reliability, transition alerts, and repair planning: implemented
+- Phase 3D.9 governed source packs and source-admission workbench: implemented
 - Phase 3F bounded self-hosted OCR completion: implemented
 - Phase 3G measured hybrid semantic retrieval: implemented
-- Phase 2 source breadth: JPDP and the admitted AGC Updated Principal Acts source are operational
-- Next implementation slice: complete the AGC scheduled-cycle soak, then onboard a second
-  browser-dependent official corpus through the same admission and reliability contract
+- Phase 2 source breadth: JPDP and the admitted AGC Updated Principal Acts source are operational;
+  Parliament Dewan Rakyat bills are registered as a disabled static pilot
+- Next implementation slice: complete the AGC scheduled-cycle soak and collect repeatable
+  Parliament pilot evidence before any scheduled activation
 
 ## Local setup
 
@@ -95,6 +101,9 @@ make logs            # follow API and worker logs
 make test            # run the Django test suite in Compose
 make makemigrations  # generate model migrations
 make migrate         # apply migrations
+make list-source-packs # list validated repository source contracts
+make plan-source-pack PACK=<slug> # preview a source-pack reconciliation without writes
+make apply-source-pack PACK=<slug> # explicitly apply the reviewed plan and snapshot it
 make poll-jpdp       # queue one bounded manual JPDP monitoring cycle
 make seed-agc        # register/update the disabled AGC JavaScript pilot
 make pilot-agc       # queue one manual AGC run without enabling its schedule
@@ -161,5 +170,6 @@ See [Foundation architecture](docs/foundation.md), [Phase 2 retrieval](docs/retr
 [Phase 3D.6 browser retrieval](docs/browser-retrieval.md),
 [Phase 3D.7 AGC browser pilot](docs/browser-retrieval.md#phase-3d7-first-official-source-pilot),
 [Phase 3D.8 source reliability](docs/reliability.md),
+[Phase 3D.9 source admission](docs/source-admission.md),
 [Phase F self-hosted OCR](docs/ocr.md), and
 [Phase G hybrid embeddings](docs/embeddings.md) for design decisions and operating instructions.

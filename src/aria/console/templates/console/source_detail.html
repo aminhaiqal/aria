@@ -2,7 +2,7 @@
 {% block content %}
 <section class="page-heading">
   <div><a class="eyebrow" href="{% url 'console:source-list' %}">← Official sources</a><h1>{{ endpoint.name }}</h1><p>{{ endpoint.collection.authority.name }} · {{ endpoint.collection.name }}</p></div>
-  <div class="heading-actions"><span class="badge badge-{{ endpoint.health_state|status_tone }}">{{ endpoint.get_health_state_display }}</span><form method="post" action="{% url 'console:source-poll' endpoint.id %}" data-confirm="Queue a fresh bounded check of this official endpoint?">{% csrf_token %}<button class="button button-primary" type="submit" {% if not endpoint.is_enabled or endpoint_poll_blocked %}disabled{% endif %}>Poll endpoint now</button></form></div>
+  <div class="heading-actions"><span class="badge badge-{{ endpoint.health_state|status_tone }}">{{ endpoint.get_health_state_display }}</span>{% if endpoint.requires_javascript %}<a class="button button-secondary" href="{% url 'console:admission-detail' endpoint.id %}">Admission evidence</a>{% endif %}<form method="post" action="{% url 'console:source-poll' endpoint.id %}" data-confirm="Queue a fresh bounded check of this official endpoint?">{% csrf_token %}<button class="button button-primary" type="submit" {% if not endpoint.is_enabled or endpoint_poll_blocked %}disabled{% endif %}>Poll endpoint now</button></form></div>
 </section>
 <div class="detail-grid">
   <div class="detail-stack">

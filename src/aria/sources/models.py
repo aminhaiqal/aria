@@ -1,8 +1,10 @@
 from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
 from django.db import models
+from django.utils import timezone
 
 from aria.collections.models import PublicationCollection
-from aria.common.models import TimeStampedModel
+from aria.common.models import AppendOnlyModel, TimeStampedModel
 
 
 class SourceEndpoint(TimeStampedModel):
@@ -108,3 +110,44 @@ class ConnectorConfiguration(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.endpoint} v{self.version}"
+
+
+class SourcePackSnapshot(AppendOnlyModel):
+    endpoint = models.ForeignKey(
+        SourceEndpoint,
+        on_delete=models.PROTECT,
+        related_name="source_pack_snapshots",
+    )
+    pack_slug = models.SlugField(max_length=128)
+    schema_version = models.PositiveIntegerField()
+    pack_version = models.PositiveIntegerField()
+    checksum = models.CharField(
+        max_length=64,
+        unique=True,
+        validators=[RegexValidator(r"^[0-9a-f]{64}$")],
+    )
+    definition = models.JSONField()
+    applied_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ("-applied_at", "-id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("pack_slug", "pack_version"),
+                name="unique_source_pack_version",
+            )
+        ]
+        indexes = [models.Index(fields=("endpoint", "applied_at"))]
+
+    def clean(self) -> None:
+        if not isinstance(self.definition, dict):
+            raise ValidationError("Source pack snapshots require an object definition.")
+        if self.definition.get("slug") != self.pack_slug:
+            raise ValidationError("Source pack snapshot slug must match its definition.")
+        if self.definition.get("version") != self.pack_version:
+            raise ValidationError("Source pack snapshot version must match its definition.")
+        if self.definition.get("schema_version") != self.schema_version:
+            raise ValidationError("Source pack schema version must match its definition.")
+
+    def __str__(self) -> str:
+        return f"{self.pack_slug} v{self.pack_version} ({self.checksum[:12]}…)"

@@ -40,7 +40,10 @@ from aria.api.serializers import (
     ResourceObservationSerializer,
     ResourceRunSerializer,
     ReviewedChangePublicationSerializer,
+    SourceAdmissionAssessmentSerializer,
+    SourceAdmissionPromotionSerializer,
     SourceEndpointSerializer,
+    SourcePackSnapshotSerializer,
     SourceReliabilityAssessmentSerializer,
     SourceRunSerializer,
     StructuralAnchorSerializer,
@@ -49,7 +52,12 @@ from aria.api.serializers import (
 from aria.artifacts.models import ArtifactDerivative, ArtifactObservation, RawArtifact
 from aria.artifacts.storage import get_artifact_store
 from aria.authorities.models import Authority
-from aria.browser.models import BrowserCapture, BrowserNetworkExchange
+from aria.browser.models import (
+    BrowserCapture,
+    BrowserNetworkExchange,
+    SourceAdmissionAssessment,
+    SourceAdmissionPromotion,
+)
 from aria.collections.models import PublicationCollection
 from aria.comparisons.models import (
     ComparisonItem,
@@ -87,7 +95,7 @@ from aria.quality.models import (
     QualityFinding,
 )
 from aria.reliability.models import SourceReliabilityAssessment
-from aria.sources.models import SourceEndpoint
+from aria.sources.models import SourceEndpoint, SourcePackSnapshot
 
 
 class AuthorityViewSet(ReadOnlyModelViewSet):
@@ -111,6 +119,21 @@ class SourceEndpointViewSet(ReadOnlyModelViewSet):
 class SourceRunViewSet(ReadOnlyModelViewSet):
     queryset = SourceRun.objects.select_related("endpoint")
     serializer_class = SourceRunSerializer
+
+
+class SourcePackSnapshotViewSet(ReadOnlyModelViewSet):
+    queryset = SourcePackSnapshot.objects.select_related("endpoint")
+    serializer_class = SourcePackSnapshotSerializer
+
+
+class SourceAdmissionAssessmentViewSet(ReadOnlyModelViewSet):
+    queryset = SourceAdmissionAssessment.objects.select_related("endpoint", "source_pack_snapshot")
+    serializer_class = SourceAdmissionAssessmentSerializer
+
+
+class SourceAdmissionPromotionViewSet(ReadOnlyModelViewSet):
+    queryset = SourceAdmissionPromotion.objects.select_related("endpoint", "assessment")
+    serializer_class = SourceAdmissionPromotionSerializer
 
 
 class SourceReliabilityAssessmentViewSet(ReadOnlyModelViewSet):

@@ -14,7 +14,11 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
-from aria.browser.models import BrowserCapture
+from aria.browser.models import (
+    BrowserCapture,
+    BrowserNetworkExchange,
+    SourceAdmissionAssessment,
+)
 from aria.comparisons.models import (
     ComparisonItem,
     ComparisonReview,
@@ -23,14 +27,22 @@ from aria.comparisons.models import (
     ReviewedChangePublication,
 )
 from aria.comparisons.reviews import record_comparison_review
-from aria.console.forms import ComparisonReviewForm, PublicationConfirmationForm
+from aria.console.forms import (
+    AdmissionAssessmentForm,
+    AdmissionPromotionForm,
+    ComparisonReviewForm,
+    PublicationConfirmationForm,
+)
 from aria.console.operations import (
     ConsoleOperationError,
+    promote_source_admission,
     publish_reviewed_comparison,
+    queue_admission_capture,
     queue_comparison_summary,
     queue_endpoint_poll,
     queue_orchestration_retry,
     queue_resource_poll,
+    record_admission_assessment,
 )
 from aria.discovery.models import MonitoredResource, ResourceRun, SourceRun
 from aria.events.models import AuditEvent, OutboxEvent, PipelineEvent
@@ -38,6 +50,7 @@ from aria.orchestration.models import ChangeOrchestration
 from aria.orchestration.services import comparison_review_state
 from aria.quality.models import DocumentQualityAssessment
 from aria.reliability.models import SourceReliabilityAssessment
+from aria.reliability.repair import build_source_repair_plan
 from aria.sources.models import SourceEndpoint
 
 staff_required = user_passes_test(
@@ -201,6 +214,154 @@ def source_list(request):
             "health_choices": SourceEndpoint.HealthState.choices,
         },
     )
+
+
+@staff_required
+def admission_list(request):
+    endpoints = SourceEndpoint.objects.filter(
+        connector_type=SourceEndpoint.ConnectorType.JAVASCRIPT_LISTING
+    ).select_related("collection", "collection__authority")
+    rows = []
+    for endpoint in endpoints:
+        rows.append(
+            {
+                "endpoint": endpoint,
+                "snapshot": endpoint.source_pack_snapshots.first(),
+                "assessment": endpoint.admission_assessments.first(),
+                "promotion": endpoint.admission_promotions.first(),
+                "capture_count": endpoint.browser_captures.count(),
+            }
+        )
+    return render(
+        request,
+        "console/admission_list.html",
+        {
+            **_base_context(
+                title="Source admissions",
+                section="admissions",
+                eyebrow="Controlled onboarding",
+            ),
+            "rows": rows,
+        },
+    )
+
+
+@staff_required
+def admission_detail(request, endpoint_id):
+    endpoint = get_object_or_404(
+        SourceEndpoint.objects.select_related("collection", "collection__authority"),
+        pk=endpoint_id,
+        connector_type=SourceEndpoint.ConnectorType.JAVASCRIPT_LISTING,
+    )
+    snapshot = endpoint.source_pack_snapshots.first()
+    assessments = endpoint.admission_assessments.select_related("source_pack_snapshot")[:10]
+    latest_assessment = assessments[0] if assessments else None
+    captures = endpoint.browser_captures.select_related(
+        "source_run", "original_artifact", "rendered_artifact", "rendered_derivative"
+    ).prefetch_related("network_exchanges")[:10]
+    latest_capture = captures[0] if captures else None
+    candidate_urls = []
+    if latest_capture:
+        candidate_urls = list(
+            latest_capture.source_run.candidate_observations.values_list(
+                "candidate__canonical_url", flat=True
+            ).order_by("candidate__canonical_url")
+        )
+    network_exchanges = (
+        BrowserNetworkExchange.objects.filter(capture__endpoint=endpoint)
+        .select_related("capture")
+        .order_by("-occurred_at", "-id")[:30]
+    )
+    active_capture = endpoint.source_runs.filter(
+        status__in=(SourceRun.Status.PENDING, SourceRun.Status.RUNNING),
+        resource_run__isnull=True,
+    ).first()
+    repair_plan = build_source_repair_plan(endpoint)
+    promotion_form = AdmissionPromotionForm(
+        initial={"assessment_id": latest_assessment.id if latest_assessment else None}
+    )
+    return render(
+        request,
+        "console/admission_detail.html",
+        {
+            **_base_context(
+                title=endpoint.name,
+                section="admissions",
+                eyebrow="Admission workbench",
+            ),
+            "endpoint": endpoint,
+            "snapshot": snapshot,
+            "assessments": assessments,
+            "latest_assessment": latest_assessment,
+            "captures": captures,
+            "candidate_urls": candidate_urls,
+            "network_exchanges": network_exchanges,
+            "active_capture": active_capture,
+            "repair_plan": repair_plan,
+            "assessment_form": AdmissionAssessmentForm(initial={"required_captures": 2}),
+            "promotion_form": promotion_form,
+        },
+    )
+
+
+@staff_required
+@require_POST
+def admission_capture(request, endpoint_id):
+    endpoint = get_object_or_404(SourceEndpoint, pk=endpoint_id)
+    try:
+        run = queue_admission_capture(endpoint, user=request.user)
+    except ConsoleOperationError as error:
+        messages.error(request, str(error))
+    else:
+        messages.success(request, f"Bounded admission capture queued as run {run.id}.")
+    return redirect("console:admission-detail", endpoint_id=endpoint.id)
+
+
+@staff_required
+@require_POST
+def admission_assess(request, endpoint_id):
+    endpoint = get_object_or_404(SourceEndpoint, pk=endpoint_id)
+    form = AdmissionAssessmentForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Choose a valid capture requirement.")
+    else:
+        try:
+            assessment, created = record_admission_assessment(
+                endpoint,
+                required_captures=form.cleaned_data["required_captures"],
+                user=request.user,
+            )
+        except ConsoleOperationError as error:
+            messages.error(request, str(error))
+        else:
+            action = "recorded" if created else "unchanged"
+            messages.success(request, f"Admission assessment {action}: {assessment.status}.")
+    return redirect("console:admission-detail", endpoint_id=endpoint.id)
+
+
+@staff_required
+@require_POST
+def admission_promote(request, endpoint_id):
+    endpoint = get_object_or_404(SourceEndpoint, pk=endpoint_id)
+    form = AdmissionPromotionForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Promotion requires the exact PROMOTE confirmation.")
+    else:
+        assessment = get_object_or_404(
+            SourceAdmissionAssessment,
+            pk=form.cleaned_data["assessment_id"],
+            endpoint=endpoint,
+        )
+        try:
+            promotion = promote_source_admission(endpoint, assessment, user=request.user)
+        except ConsoleOperationError as error:
+            messages.error(request, str(error))
+        else:
+            messages.success(
+                request,
+                f"Source promoted; next bounded poll is {promotion.next_poll_at}.",
+            )
+    return redirect("console:admission-detail", endpoint_id=endpoint.id)
 
 
 @staff_required

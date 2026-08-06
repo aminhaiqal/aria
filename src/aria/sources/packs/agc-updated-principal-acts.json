@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "slug": "agc-updated-principal-acts",
+  "version": 1,
+  "authority": {
+    "slug": "attorney-generals-chambers-malaysia",
+    "name": "Attorney General's Chambers of Malaysia",
+    "aliases": ["AGC Malaysia", "Jabatan Peguam Negara"],
+    "jurisdiction": "Malaysia",
+    "country_code": "MY",
+    "authority_type": "other",
+    "regulatory_domains": ["federal-legislation"],
+    "official_domains": ["agc.gov.my"],
+    "trust_classification": "authoritative",
+    "is_enabled": true
+  },
+  "collection": {
+    "slug": "updated-principal-acts",
+    "name": "Updated principal Acts",
+    "document_family": "acts_regulations",
+    "default_legal_status": "Official federal legislation publication",
+    "is_evidence_eligible": true,
+    "priority": 20,
+    "expected_update_frequency": "Ad hoc; pilot daily after admission",
+    "is_enabled": true
+  },
+  "endpoint": {
+    "name": "AGC updated principal Acts",
+    "discovery_url": "https://lom.agc.gov.my/principal.php?type=updated",
+    "connector_type": "javascript_listing",
+    "allowed_domains": ["lom.agc.gov.my"],
+    "polling_interval_minutes": 1440,
+    "pagination_strategy": "none",
+    "expected_content_types": ["text/html", "application/pdf"],
+    "requires_javascript": true,
+    "connector_configuration_version": 1,
+    "default_enabled": false
+  },
+  "connector_configurations": [
+    {
+      "version": 1,
+      "configuration": {
+        "link_selector": "#data-updated a.event_kira_download_updated[href]",
+        "include_path_prefixes": ["/ilims/upload/portal/akta/outputaktap/"],
+        "upload_path_prefixes": ["/ilims/upload/portal/akta/outputaktap/"],
+        "document_extensions": [".pdf"],
+        "max_candidates": 20,
+        "ready_selector": "#data-updated tbody tr",
+        "render_wait_milliseconds": 1500,
+        "browser_dependency_domains": ["cdn.datatables.net", "cdnjs.cloudflare.com"],
+        "browser_read_only_post_paths": ["/json-updated-2024.php"]
+      },
+      "notes": "Phase 3D.7 bounded AGC browser source admitted after two repeatable captures.",
+      "is_active": true
+    }
+  ],
+  "resources": []
+}
