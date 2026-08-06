@@ -4,9 +4,9 @@
 
 This foundation implements Phase 1, the Phase 2 JPDP retrieval slice, Phase 3A deterministic
 extraction and evidence projection, Phase 3B quality and linked-file remediation, Phase 3C
-evidence-backed version comparison, Phase 3D.0–3D.3 continuous official-source monitoring and
-downstream orchestration,
-Phase F self-hosted OCR completion, and Phase G hybrid semantic retrieval. It provides durable
+evidence-backed version comparison, Phase 3D.0–3D.5 continuous official-source monitoring,
+downstream orchestration and operator review, Phase F self-hosted OCR completion, and Phase G
+hybrid semantic retrieval. It provides durable
 registry, workflow, retrieval, immutable evidence, document versioning, OCR lineage, graph, search,
 comparison, review, monitoring, and extraction-quality boundaries.
 
@@ -16,7 +16,7 @@ comparison, review, monitoring, and extraction-quality boundaries.
 Browser / operator
        |
        v
- Django API + Admin ---- PostgreSQL + pgvector
+ Django console + API ---- PostgreSQL + pgvector
        |                       |
        |                       +---- pipeline events + outbox + audit
        |                       +---- local + optional OpenAI vectors
@@ -53,6 +53,7 @@ language packs. This bounds resource use and keeps OCR system packages out of th
 - `comparisons`: version lineage, structural anchors, deterministic deltas, review, and summaries
 - `quality`: versioned corpus assessments and append-only, provenance-backed findings
 - `orchestration`: durable changed-artifact workflows, stage attempts, gates, and recovery
+- `console`: staff-only monitoring, review, recovery, summary, publication, and audit surface
 - `events`: transactional pipeline history, delivery outbox, and append-only audit history
 - `api`: administrator-only read API
 - `health`: unauthenticated liveness and dependency readiness probes
@@ -121,6 +122,9 @@ language packs. This bounds resource use and keeps OCR system packages out of th
 26. Recovery atomically marks pending or stale work as queued, so repeated beat passes cannot
     duplicate dispatch. Failed work requires an explicit retry; OCR-ready work resumes from its
     derivative evidence without extracting the official source again.
+27. The operator console delegates every mutation to the same locked domain services used by
+    workers and commands. Actions are POST- and CSRF-protected, staff-only, overlap-safe, and
+    actor-audited; comparison reviews remain append-only and publication remains explicit.
 
 ## Self-hosting and Cloudflare
 
@@ -136,7 +140,6 @@ the default. A deployment can activate OpenAI for better semantic retrieval or s
 
 ## Next slice
 
-1. Build the Phase 3D.5 self-hosted operator console for monitoring and review.
-2. Add a bounded browser retrieval fallback for JavaScript-only official pages.
-3. Add an operator-selected delivery adapter for reviewed outbox events.
-4. Measure change-detection precision when JPDP publishes the first distinct temporal artifact pair.
+1. Add a bounded browser retrieval fallback for JavaScript-only official pages.
+2. Add an operator-selected delivery adapter for reviewed outbox events.
+3. Measure change-detection precision when JPDP publishes the first distinct temporal artifact pair.

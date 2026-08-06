@@ -1,0 +1,34 @@
+{% extends "console/base.html" %}
+{% block body_class %}auth-body{% endblock %}
+{% block body %}
+<main class="auth-shell">
+  <section class="auth-panel" aria-labelledby="login-title">
+    <a class="brand brand-dark" href="{% url 'console:login' %}">
+      <span class="brand-mark" aria-hidden="true"><span>A</span></span>
+      <span><strong>ARIA</strong><small>Regulatory intelligence</small></span>
+    </a>
+    <div class="auth-copy">
+      <span class="eyebrow">Operator access</span>
+      <h1 id="login-title">Evidence deserves a careful interface.</h1>
+      <p>Sign in with a staff account to monitor official sources, inspect workflow evidence, and review deterministic changes.</p>
+    </div>
+    <form method="post" class="auth-form">
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="form-error">{{ form.non_field_errors }}</div>{% endif %}
+      <label for="id_username">Username</label>
+      <input class="field-control" type="text" name="username" id="id_username" value="{{ form.username.value|default:'' }}" autocomplete="username" autofocus required>
+      <label for="id_password">Password</label>
+      <input class="field-control" type="password" name="password" id="id_password" autocomplete="current-password" required>
+      {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+      <button class="button button-primary button-wide" type="submit">Enter operator console</button>
+    </form>
+    <p class="auth-boundary"><span></span> Active staff accounts only</p>
+  </section>
+  <aside class="auth-visual" aria-hidden="true">
+    <div class="signal-orbit orbit-one"></div><div class="signal-orbit orbit-two"></div>
+    <div class="evidence-card evidence-card-a"><small>Official source</small><strong>JPDP</strong><span class="badge badge-positive">Healthy</span></div>
+    <div class="evidence-card evidence-card-b"><small>Evidence chain</small><strong>SHA-256 verified</strong><span>Immutable artifact</span></div>
+    <div class="evidence-card evidence-card-c"><small>Review boundary</small><strong>Human decision</strong><span>Required before publication</span></div>
+  </aside>
+</main>
+{% endblock %}

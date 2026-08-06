@@ -93,8 +93,10 @@ Historical backfill is never automatic. This prevents deployment from converting
 observations into a burst of comparisons without an operator-selected temporal order.
 
 Administrator-only, read-only workflow records and nested step attempts are available at
-`/api/v1/change-orchestrations/` and in Django Admin. Reviews remain writable only through the
-existing controlled review paths.
+`/api/v1/change-orchestrations/` and in Django Admin. The staff-only console at `/console/` adds a
+workflow trace and explicit retry action while delegating to the same locked recovery service.
+Comparison decisions are append-only and publication remains a separate confirmed action. See
+[Phase 3D.5 operator console](operator-console.md).
 
 ## Verification
 

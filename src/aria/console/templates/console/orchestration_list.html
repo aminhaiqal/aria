@@ -1,0 +1,25 @@
+{% extends "console/base.html" %}{% load console_extras %}
+{% block content %}
+<section class="page-heading">
+  <div><span class="eyebrow">Phase 3D.3 pipeline</span><h1>Change workflows</h1><p>Trace every changed official artifact from immutable capture through extraction, quality, comparison, review, and bounded GPT summary.</p></div>
+</section>
+
+<form class="filter-bar" method="get">
+  <div class="filter-field is-grow"><label for="workflow-q">Search evidence</label><input class="field-control" id="workflow-q" type="search" name="q" value="{{ query }}" placeholder="Title, URL, artifact hash, error, or workflow UUID"></div>
+  <div class="filter-field"><label for="workflow-status">Status</label><select class="field-control" id="workflow-status" name="status"><option value="">All statuses</option>{% for value, label in status_choices %}<option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <button class="button button-primary" type="submit">Apply filters</button>
+  {% if query or selected_status %}<a class="button button-ghost" href="{% url 'console:orchestration-list' %}">Clear</a>{% endif %}
+</form>
+
+<section class="panel">
+  <div class="table-wrap"><table><thead><tr><th>Artifact / document</th><th>Stage</th><th>Status</th><th>Retries</th><th>Updated</th></tr></thead><tbody>
+    {% for workflow in page.object_list %}
+    <tr class="click-row" data-href="{% url 'console:orchestration-detail' workflow.id %}">
+      <td><a class="primary-link" href="{% url 'console:orchestration-detail' workflow.id %}">{% if workflow.document_version %}{{ workflow.document_version.identity.canonical_title|default:"Untitled publication" }}{% else %}{{ workflow.source_artifact.sha256|short_hash }}{% endif %}</a><small>{{ workflow.artifact_observation.final_url|truncatechars:76 }}</small></td>
+      <td>{{ workflow.get_current_stage_display }}</td><td><span class="badge badge-{{ workflow.status|status_tone }}">{{ workflow.get_status_display }}</span></td><td>{{ workflow.retry_count }}</td><td>{{ workflow.updated_at|timesince }} ago</td>
+    </tr>
+    {% empty %}<tr><td colspan="5"><div class="empty-state"><strong>No matching workflows</strong><span>Changed official artifacts appear here after immutable capture.</span></div></td></tr>{% endfor %}
+  </tbody></table></div>
+  {% include "console/includes/pagination.html" with page=page page_query=page_query %}
+</section>
+{% endblock %}

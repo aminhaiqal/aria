@@ -1,0 +1,575 @@
+import json
+from pathlib import Path
+from urllib.parse import urlencode
+from uuid import UUID
+
+from django.conf import settings
+from django.contrib import messages
+from django.contrib.auth.decorators import user_passes_test
+from django.contrib.auth.views import LoginView
+from django.core.paginator import Paginator
+from django.db.models import Count, Q
+from django.http import FileResponse, Http404, HttpResponseRedirect
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.views.decorators.http import require_GET, require_POST
+
+from aria.comparisons.models import (
+    ComparisonItem,
+    ComparisonReview,
+    ComparisonSummary,
+    DocumentComparison,
+    ReviewedChangePublication,
+)
+from aria.comparisons.reviews import record_comparison_review
+from aria.console.forms import ComparisonReviewForm, PublicationConfirmationForm
+from aria.console.operations import (
+    ConsoleOperationError,
+    publish_reviewed_comparison,
+    queue_comparison_summary,
+    queue_endpoint_poll,
+    queue_orchestration_retry,
+    queue_resource_poll,
+)
+from aria.discovery.models import MonitoredResource, ResourceRun, SourceRun
+from aria.events.models import AuditEvent, OutboxEvent, PipelineEvent
+from aria.orchestration.models import ChangeOrchestration
+from aria.orchestration.services import comparison_review_state
+from aria.quality.models import DocumentQualityAssessment
+from aria.sources.models import SourceEndpoint
+
+staff_required = user_passes_test(
+    lambda user: user.is_active and user.is_staff,
+    login_url="console:login",
+)
+
+ASSETS = {
+    "console.css": ("text/css; charset=utf-8", "console.css"),
+    "console.js": ("text/javascript; charset=utf-8", "console.js"),
+}
+
+
+class StaffLoginView(LoginView):
+    template_name = "console/login.html"
+    redirect_authenticated_user = False
+
+    def form_valid(self, form):
+        user = form.get_user()
+        if not user.is_active or not user.is_staff:
+            form.add_error(None, "This console requires an active staff account.")
+            return self.form_invalid(form)
+        return super().form_valid(form)
+
+
+@require_GET
+def console_asset(request, asset_name):
+    asset = ASSETS.get(asset_name)
+    if asset is None:
+        raise Http404
+    content_type, filename = asset
+    path = Path(__file__).with_name("static") / filename
+    response = FileResponse(path.open("rb"), content_type=content_type)
+    response["Cache-Control"] = "public, max-age=3600"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+def _page(request, queryset, *, page_size=25):
+    page = Paginator(queryset, page_size).get_page(request.GET.get("page"))
+    query = request.GET.copy()
+    query.pop("page", None)
+    return page, urlencode(query, doseq=True)
+
+
+def _base_context(*, title, section, eyebrow="Operations"):
+    return {"page_title": title, "active_section": section, "eyebrow": eyebrow}
+
+
+@staff_required
+def dashboard(request):
+    active_work_statuses = (
+        ChangeOrchestration.Status.PENDING,
+        ChangeOrchestration.Status.QUEUED,
+        ChangeOrchestration.Status.RUNNING,
+        ChangeOrchestration.Status.WAITING_OCR,
+        ChangeOrchestration.Status.SUMMARY_PENDING,
+    )
+    context = {
+        **_base_context(title="Operational overview", section="dashboard"),
+        "healthy_sources": SourceEndpoint.objects.filter(
+            is_enabled=True,
+            health_state=SourceEndpoint.HealthState.HEALTHY,
+        ).count(),
+        "enabled_sources": SourceEndpoint.objects.filter(is_enabled=True).count(),
+        "unhealthy_resources": MonitoredResource.objects.filter(
+            is_enabled=True,
+            health_state__in=(
+                MonitoredResource.HealthState.DEGRADED,
+                MonitoredResource.HealthState.UNHEALTHY,
+            ),
+        ).count(),
+        "active_workflows": ChangeOrchestration.objects.filter(
+            status__in=active_work_statuses
+        ).count(),
+        "review_queue": ChangeOrchestration.objects.filter(
+            status=ChangeOrchestration.Status.REVIEW_REQUIRED
+        ).count(),
+        "failed_workflows": ChangeOrchestration.objects.filter(
+            status__in=(
+                ChangeOrchestration.Status.FAILED,
+                ChangeOrchestration.Status.SUMMARY_FAILED,
+            )
+        ).count(),
+        "pending_outbox": OutboxEvent.objects.filter(status=OutboxEvent.Status.PENDING).count(),
+        "recent_workflows": ChangeOrchestration.objects.select_related(
+            "artifact_observation",
+            "source_artifact",
+            "comparison__identity",
+        )[:8],
+        "recent_source_runs": SourceRun.objects.select_related("endpoint")[:8],
+        "recent_events": PipelineEvent.objects.all()[:8],
+    }
+    return render(request, "console/dashboard.html", context)
+
+
+@staff_required
+def source_list(request):
+    health = request.GET.get("health", "")
+    query = request.GET.get("q", "").strip()
+    endpoints = (
+        SourceEndpoint.objects.select_related(
+            "collection",
+            "collection__authority",
+        )
+        .annotate(
+            resource_count=Count("monitored_resources", distinct=True),
+            active_run_count=Count(
+                "source_runs",
+                filter=Q(
+                    source_runs__status__in=(SourceRun.Status.PENDING, SourceRun.Status.RUNNING)
+                ),
+                distinct=True,
+            ),
+        )
+        .order_by("collection__authority__name", "collection__name", "name")
+    )
+    if health in SourceEndpoint.HealthState.values:
+        endpoints = endpoints.filter(health_state=health)
+    if query:
+        endpoints = endpoints.filter(
+            Q(name__icontains=query)
+            | Q(collection__name__icontains=query)
+            | Q(collection__authority__name__icontains=query)
+            | Q(discovery_url__icontains=query)
+        )
+    page, page_query = _page(request, endpoints)
+    return render(
+        request,
+        "console/source_list.html",
+        {
+            **_base_context(title="Official sources", section="sources"),
+            "page": page,
+            "page_query": page_query,
+            "selected_health": health,
+            "query": query,
+            "health_choices": SourceEndpoint.HealthState.choices,
+        },
+    )
+
+
+@staff_required
+def source_detail(request, endpoint_id):
+    endpoint = get_object_or_404(
+        SourceEndpoint.objects.select_related("collection", "collection__authority"),
+        pk=endpoint_id,
+    )
+    resources = endpoint.monitored_resources.select_related("parent").order_by(
+        "resource_type", "title", "url"
+    )
+    endpoint_poll_blocked = endpoint.source_runs.filter(
+        status__in=(SourceRun.Status.PENDING, SourceRun.Status.RUNNING),
+        resource_run__isnull=True,
+    ).exists()
+    runs = endpoint.source_runs.select_related("resource_run")[:20]
+    observations = endpoint.endpoint_observations.select_related("source_run")[:10]
+    return render(
+        request,
+        "console/source_detail.html",
+        {
+            **_base_context(title=endpoint.name, section="sources", eyebrow="Official source"),
+            "endpoint": endpoint,
+            "resources": resources,
+            "runs": runs,
+            "observations": observations,
+            "endpoint_poll_blocked": endpoint_poll_blocked,
+        },
+    )
+
+
+@staff_required
+@require_POST
+def source_poll(request, endpoint_id):
+    endpoint = get_object_or_404(SourceEndpoint, pk=endpoint_id)
+    try:
+        run = queue_endpoint_poll(endpoint, user=request.user)
+    except ConsoleOperationError as error:
+        messages.error(request, str(error))
+    else:
+        messages.success(request, f"Source check queued as run {run.id}.")
+    return redirect("console:source-detail", endpoint_id=endpoint.id)
+
+
+@staff_required
+def resource_detail(request, resource_id):
+    resource = get_object_or_404(
+        MonitoredResource.objects.select_related(
+            "endpoint", "endpoint__collection", "endpoint__collection__authority", "parent"
+        ),
+        pk=resource_id,
+    )
+    runs = resource.runs.select_related("source_run")[:20]
+    observations = resource.observations.prefetch_related("link_observations")[:10]
+    latest_observation = observations[0] if observations else None
+    active_run = resource.runs.filter(
+        status__in=(ResourceRun.Status.PENDING, ResourceRun.Status.RUNNING)
+    ).first()
+    return render(
+        request,
+        "console/resource_detail.html",
+        {
+            **_base_context(
+                title=resource.title or resource.get_resource_type_display(),
+                section="sources",
+                eyebrow="Monitored resource",
+            ),
+            "resource": resource,
+            "runs": runs,
+            "observations": observations,
+            "latest_observation": latest_observation,
+            "active_run": active_run,
+        },
+    )
+
+
+@staff_required
+@require_POST
+def resource_poll(request, resource_id):
+    resource = get_object_or_404(MonitoredResource, pk=resource_id)
+    try:
+        run = queue_resource_poll(resource, user=request.user)
+    except ConsoleOperationError as error:
+        messages.error(request, str(error))
+    else:
+        messages.success(request, f"Resource check queued as run {run.id}.")
+    return redirect("console:resource-detail", resource_id=resource.id)
+
+
+@staff_required
+def orchestration_list(request):
+    status = request.GET.get("status", "")
+    query = request.GET.get("q", "").strip()
+    workflows = ChangeOrchestration.objects.select_related(
+        "artifact_observation",
+        "source_artifact",
+        "document_version__identity",
+        "comparison__identity",
+    )
+    if status in ChangeOrchestration.Status.values:
+        workflows = workflows.filter(status=status)
+    if query:
+        filters = (
+            Q(source_artifact__sha256__icontains=query)
+            | Q(artifact_observation__final_url__icontains=query)
+            | Q(error_code__icontains=query)
+            | Q(document_version__identity__canonical_title__icontains=query)
+        )
+        try:
+            filters |= Q(id=UUID(query))
+        except ValueError:
+            pass
+        workflows = workflows.filter(filters)
+    page, page_query = _page(request, workflows)
+    return render(
+        request,
+        "console/orchestration_list.html",
+        {
+            **_base_context(title="Change workflows", section="workflows"),
+            "page": page,
+            "page_query": page_query,
+            "selected_status": status,
+            "query": query,
+            "status_choices": ChangeOrchestration.Status.choices,
+        },
+    )
+
+
+@staff_required
+def orchestration_detail(request, orchestration_id):
+    workflow = get_object_or_404(
+        ChangeOrchestration.objects.select_related(
+            "artifact_observation__candidate__endpoint",
+            "source_artifact",
+            "extraction_run",
+            "document_version__identity",
+            "quality_run",
+            "lineage_assessment",
+            "comparison__identity",
+            "summary",
+        ).prefetch_related("step_attempts"),
+        pk=orchestration_id,
+    )
+    quality_assessment = None
+    if workflow.quality_run_id and workflow.document_version_id:
+        quality_assessment = (
+            DocumentQualityAssessment.objects.filter(
+                quality_run=workflow.quality_run,
+                document_version=workflow.document_version,
+            )
+            .prefetch_related("findings")
+            .first()
+        )
+    retryable = workflow.status in (
+        ChangeOrchestration.Status.FAILED,
+        ChangeOrchestration.Status.SUMMARY_FAILED,
+    )
+    if workflow.status == ChangeOrchestration.Status.WAITING_OCR:
+        retryable = hasattr(workflow.artifact_observation, "document_version_evidence")
+    return render(
+        request,
+        "console/orchestration_detail.html",
+        {
+            **_base_context(
+                title="Workflow trace",
+                section="workflows",
+                eyebrow="Changed artifact",
+            ),
+            "workflow": workflow,
+            "quality_assessment": quality_assessment,
+            "retryable": retryable,
+        },
+    )
+
+
+@staff_required
+@require_POST
+def orchestration_retry(request, orchestration_id):
+    workflow = get_object_or_404(ChangeOrchestration, pk=orchestration_id)
+    try:
+        queue_orchestration_retry(workflow, user=request.user)
+    except ConsoleOperationError as error:
+        messages.error(request, str(error))
+    else:
+        messages.success(request, "Workflow retry queued.")
+    return redirect("console:orchestration-detail", orchestration_id=workflow.id)
+
+
+def _comparison_rows(comparisons):
+    rows = []
+    for comparison in comparisons:
+        state = _console_review_state(comparison)
+        rows.append(
+            {
+                "comparison": comparison,
+                "review_state": state,
+                "latest_summary": comparison.summaries.order_by("-created_at").first(),
+            }
+        )
+    return rows
+
+
+def _console_review_state(comparison):
+    state = comparison_review_state(comparison)
+    decisions = []
+    for item in comparison.items.exclude(change_type=ComparisonItem.ChangeType.UNCHANGED):
+        latest = item.reviews.order_by("-created_at", "-id").first()
+        decisions.append(latest.decision if latest else None)
+    return {
+        **state,
+        "rejected_count": decisions.count(ComparisonReview.Decision.REJECTED),
+        "needs_context_count": decisions.count(ComparisonReview.Decision.NEEDS_CONTEXT),
+    }
+
+
+@staff_required
+def comparison_list(request):
+    review = request.GET.get("review", "")
+    query = request.GET.get("q", "").strip()
+    comparisons = DocumentComparison.objects.select_related(
+        "identity", "before_version", "after_version"
+    ).prefetch_related("items__reviews", "summaries")
+    if query:
+        comparisons = comparisons.filter(
+            Q(identity__canonical_title__icontains=query)
+            | Q(identity__canonical_url__icontains=query)
+            | Q(comparison_track_key__icontains=query)
+        )
+    if review == "pending":
+        comparisons = comparisons.filter(change_orchestrations__status="review_required")
+    elif review == "summary_failed":
+        comparisons = comparisons.filter(change_orchestrations__status="summary_failed")
+    page, page_query = _page(request, comparisons.distinct())
+    return render(
+        request,
+        "console/comparison_list.html",
+        {
+            **_base_context(title="Comparison review", section="comparisons"),
+            "page": page,
+            "page_query": page_query,
+            "rows": _comparison_rows(page.object_list),
+            "selected_review": review,
+            "query": query,
+        },
+    )
+
+
+@staff_required
+def comparison_detail(request, comparison_id):
+    comparison = get_object_or_404(
+        DocumentComparison.objects.select_related(
+            "identity",
+            "identity__collection__authority",
+            "before_version",
+            "after_version",
+        ).prefetch_related(
+            "items__before_anchor__source_artifact",
+            "items__after_anchor__source_artifact",
+            "items__reviews__reviewer",
+            "items__reviewed_publications",
+            "summaries",
+            "change_orchestrations",
+        ),
+        pk=comparison_id,
+    )
+    item_rows = []
+    for item in comparison.items.all():
+        current_review = item.reviews.order_by("-created_at", "-id").first()
+        item_rows.append(
+            {
+                "item": item,
+                "current_review": current_review,
+                "review_form": ComparisonReviewForm(
+                    auto_id=f"id_{item.id}_%s",
+                    initial={
+                        "decision": current_review.decision if current_review else "",
+                        "rationale": current_review.rationale if current_review else "",
+                    },
+                ),
+                "publication": item.reviewed_publications.order_by("-created_at").first(),
+            }
+        )
+    review_state = _console_review_state(comparison)
+    latest_summary = comparison.summaries.order_by("-created_at").first()
+    summary_in_flight = comparison.change_orchestrations.filter(
+        status=ChangeOrchestration.Status.SUMMARY_PENDING
+    ).exists() or bool(
+        latest_summary
+        and latest_summary.status
+        in (ComparisonSummary.Status.PENDING, ComparisonSummary.Status.RUNNING)
+    )
+    published_count = ReviewedChangePublication.objects.filter(
+        comparison_item__comparison=comparison
+    ).count()
+    return render(
+        request,
+        "console/comparison_detail.html",
+        {
+            **_base_context(
+                title=comparison.identity.canonical_title or "Untitled publication",
+                section="comparisons",
+                eyebrow="Evidence review",
+            ),
+            "comparison": comparison,
+            "item_rows": item_rows,
+            "review_state": review_state,
+            "review_percent": round(
+                review_state["reviewed_count"] * 100 / review_state["item_count"]
+            )
+            if review_state["item_count"]
+            else 100,
+            "latest_summary": latest_summary,
+            "summary_enabled": bool(settings.OPENAI_API_KEY),
+            "summary_in_flight": summary_in_flight,
+            "published_count": published_count,
+            "publication_form": PublicationConfirmationForm(),
+        },
+    )
+
+
+@staff_required
+@require_POST
+def comparison_item_review(request, item_id):
+    item = get_object_or_404(
+        ComparisonItem.objects.select_related("comparison"),
+        pk=item_id,
+    )
+    form = ComparisonReviewForm(request.POST)
+    if item.change_type == ComparisonItem.ChangeType.UNCHANGED:
+        messages.error(request, "Unchanged alignments do not accept review decisions.")
+    elif not form.is_valid():
+        messages.error(
+            request,
+            "Review was not recorded: " + json.dumps(form.errors.get_json_data()),
+        )
+    else:
+        record_comparison_review(
+            item,
+            decision=form.cleaned_data["decision"],
+            rationale=form.cleaned_data["rationale"],
+            reviewer=request.user,
+        )
+        messages.success(request, "Append-only review decision recorded.")
+    target = reverse("console:comparison-detail", args=[item.comparison_id])
+    return HttpResponseRedirect(f"{target}#item-{item.id}")
+
+
+@staff_required
+@require_POST
+def comparison_summarize(request, comparison_id):
+    comparison = get_object_or_404(DocumentComparison, pk=comparison_id)
+    try:
+        queue_comparison_summary(comparison, user=request.user)
+    except ConsoleOperationError as error:
+        messages.error(request, str(error))
+    else:
+        messages.success(request, "Structured GPT summary queued.")
+    return redirect("console:comparison-detail", comparison_id=comparison.id)
+
+
+@staff_required
+@require_POST
+def comparison_publish(request, comparison_id):
+    comparison = get_object_or_404(DocumentComparison, pk=comparison_id)
+    form = PublicationConfirmationForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Publication not confirmed. Type PUBLISH exactly.")
+    else:
+        try:
+            result = publish_reviewed_comparison(comparison, user=request.user)
+        except ConsoleOperationError as error:
+            messages.error(request, str(error))
+        else:
+            messages.success(
+                request,
+                f"Published {result.published_count} reviewed change(s); "
+                f"{result.skipped_count} already existed.",
+            )
+    return redirect("console:comparison-detail", comparison_id=comparison.id)
+
+
+@staff_required
+def audit_list(request):
+    action = request.GET.get("action", "").strip()
+    events = AuditEvent.objects.all()
+    if action:
+        events = events.filter(action__icontains=action)
+    page, page_query = _page(request, events, page_size=40)
+    return render(
+        request,
+        "console/audit_list.html",
+        {
+            **_base_context(title="Audit trail", section="audit"),
+            "page": page,
+            "page_query": page_query,
+            "action": action,
+        },
+    )

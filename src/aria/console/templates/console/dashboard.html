@@ -1,0 +1,43 @@
+{% extends "console/base.html" %}{% load console_extras %}
+{% block content %}
+<section class="page-heading">
+  <div><span class="eyebrow">Live evidence system</span><h1>Operational overview</h1><p>One view of source health, changed-artifact processing, review, and publication boundaries.</p></div>
+  <div class="heading-actions"><a class="button button-secondary" href="{% url 'console:audit-list' %}">Open audit trail</a><a class="button button-primary" href="{% url 'console:comparison-list' %}?review=pending">Review changes</a></div>
+</section>
+
+<section class="metric-grid" aria-label="System metrics">
+  <article class="metric-card"><span class="metric-icon tone-positive">◎</span><div><small>Healthy sources</small><strong>{{ healthy_sources }}<span>/{{ enabled_sources }}</span></strong><p>Enabled endpoints reporting healthy</p></div></article>
+  <article class="metric-card"><span class="metric-icon tone-warning">!</span><div><small>Resources at risk</small><strong>{{ unhealthy_resources }}</strong><p>Degraded or unhealthy monitored resources</p></div></article>
+  <article class="metric-card"><span class="metric-icon tone-info">⌁</span><div><small>Active workflows</small><strong>{{ active_workflows }}</strong><p>Queued, running, OCR, or summary work</p></div></article>
+  <article class="metric-card"><span class="metric-icon tone-purple">◫</span><div><small>Human review</small><strong>{{ review_queue }}</strong><p>Comparisons waiting for decisions</p></div></article>
+</section>
+
+{% if failed_workflows or pending_outbox %}
+<section class="attention-strip">
+  <div><span class="attention-mark">!</span><div><strong>Operator attention</strong><p>{{ failed_workflows }} failed workflow{{ failed_workflows|pluralize }} and {{ pending_outbox }} pending outbox event{{ pending_outbox|pluralize }}.</p></div></div>
+  <a href="{% url 'console:orchestration-list' %}?status=failed">Inspect failures →</a>
+</section>
+{% endif %}
+
+<div class="content-grid content-grid-main">
+  <section class="panel">
+    <header class="panel-head"><div><span class="eyebrow">Pipeline</span><h2>Recent change workflows</h2></div><a href="{% url 'console:orchestration-list' %}">View all</a></header>
+    <div class="table-wrap"><table><thead><tr><th>Artifact</th><th>Stage</th><th>Status</th><th>Updated</th></tr></thead><tbody>
+      {% for workflow in recent_workflows %}<tr class="click-row" data-href="{% url 'console:orchestration-detail' workflow.id %}"><td><a class="primary-link" href="{% url 'console:orchestration-detail' workflow.id %}">{{ workflow.source_artifact.sha256|short_hash }}</a><small>{{ workflow.artifact_observation.final_url|truncatechars:54 }}</small></td><td>{{ workflow.get_current_stage_display }}</td><td><span class="badge badge-{{ workflow.status|status_tone }}">{{ workflow.get_status_display }}</span></td><td>{{ workflow.updated_at|timesince }} ago</td></tr>
+      {% empty %}<tr><td colspan="4"><div class="empty-state"><strong>No Phase 3D.3 workflows yet</strong><span>Future changed official artifacts will appear here automatically.</span></div></td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+  <aside class="panel activity-panel">
+    <header class="panel-head"><div><span class="eyebrow">Evidence log</span><h2>Recent events</h2></div></header>
+    <ol class="activity-list">
+      {% for event in recent_events %}<li><span class="activity-dot"></span><div><strong>{{ event.event_type }}</strong><small>{{ event.aggregate_type }} · {{ event.aggregate_id|short_id }}</small><time>{{ event.occurred_at|timesince }} ago</time></div></li>
+      {% empty %}<li class="empty-state"><span>No pipeline events recorded.</span></li>{% endfor %}
+    </ol>
+  </aside>
+</div>
+
+<section class="panel">
+  <header class="panel-head"><div><span class="eyebrow">Collection</span><h2>Latest official-source runs</h2></div><a href="{% url 'console:source-list' %}">Manage sources</a></header>
+  <div class="run-grid">{% for run in recent_source_runs %}<article class="run-card"><span class="badge badge-{{ run.status|status_tone }}">{{ run.get_status_display }}</span><h3>{{ run.endpoint.name }}</h3><p>{{ run.get_trigger_display }} · {{ run.created_at|timesince }} ago</p><small>{{ run.discovered_candidate_count }} candidate{{ run.discovered_candidate_count|pluralize }}</small></article>{% empty %}<div class="empty-state"><span>No source runs recorded.</span></div>{% endfor %}</div>
+</section>
+{% endblock %}

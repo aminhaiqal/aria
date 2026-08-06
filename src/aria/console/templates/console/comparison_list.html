@@ -1,0 +1,17 @@
+{% extends "console/base.html" %}{% load console_extras %}
+{% block content %}
+<section class="page-heading">
+  <div><span class="eyebrow">Human decision queue</span><h1>Comparison review</h1><p>Inspect deterministic before/after anchors, append reviewer decisions, then explicitly publish only currently confirmed textual changes.</p></div>
+</section>
+
+<form class="filter-bar" method="get">
+  <div class="filter-field is-grow"><label for="comparison-q">Search publications</label><input class="field-control" id="comparison-q" type="search" name="q" value="{{ query }}" placeholder="Title, canonical URL, or comparison track"></div>
+  <div class="filter-field"><label for="comparison-review">Queue</label><select class="field-control" id="comparison-review" name="review"><option value="">All comparisons</option><option value="pending" {% if selected_review == 'pending' %}selected{% endif %}>Awaiting review</option><option value="summary_failed" {% if selected_review == 'summary_failed' %}selected{% endif %}>GPT summary failed</option></select></div>
+  <button class="button button-primary" type="submit">Apply filters</button>{% if query or selected_review %}<a class="button button-ghost" href="{% url 'console:comparison-list' %}">Clear</a>{% endif %}
+</form>
+
+<section class="panel"><div class="table-wrap"><table><thead><tr><th>Official publication</th><th>Detected delta</th><th>Review state</th><th>GPT summary</th><th>Created</th></tr></thead><tbody>
+  {% for row in rows %}{% with comparison=row.comparison state=row.review_state summary=row.latest_summary %}<tr class="click-row" data-href="{% url 'console:comparison-detail' comparison.id %}"><td><a class="primary-link" href="{% url 'console:comparison-detail' comparison.id %}">{{ comparison.identity.canonical_title|default:"Untitled publication" }}</a><small>{{ comparison.identity.canonical_url }}</small></td><td>{{ comparison.added_count }} added · {{ comparison.removed_count }} removed · {{ comparison.modified_count }} modified<small>{{ comparison.moved_count }} moved · {{ comparison.format_only_count }} format-only · {{ comparison.ambiguous_count }} ambiguous</small></td><td>{% if state.complete %}<span class="badge badge-positive">Complete</span>{% else %}<span class="badge badge-warning">{{ state.reviewed_count }}/{{ state.item_count }} decided</span>{% endif %}<small>{{ state.confirmed_count }} currently confirmed</small></td><td>{% if summary %}<span class="badge badge-{{ summary.status|status_tone }}">{{ summary.get_status_display }}</span><small>{{ summary.model }}</small>{% else %}<span class="badge badge-neutral">Not generated</span>{% endif %}</td><td>{{ comparison.created_at|timesince }} ago</td></tr>{% endwith %}
+  {% empty %}<tr><td colspan="5"><div class="empty-state"><strong>No matching comparisons</strong><span>Completed deterministic comparisons will appear here.</span></div></td></tr>{% endfor %}
+</tbody></table></div>{% include "console/includes/pagination.html" with page=page page_query=page_query %}</section>
+{% endblock %}

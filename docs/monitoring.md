@@ -140,10 +140,10 @@ All APIs are administrator-only and read-only.
 
 ## Interface sequence
 
-Phase 3D.5 will add the self-hosted operator console for source health, runs, quarantines,
-comparison review, and GPT-summary approval. Django Admin remains the operational interface until
-then. The polished reader-facing search, evidence timeline, and reviewed-change interface belongs
-to Phase 4, after real temporal comparisons exist.
+Phase 3D.5 adds the staff-only self-hosted operator console at `/console/` for source health,
+bounded endpoint/resource checks, workflow inspection and retry, comparison review, GPT summaries,
+explicit reviewed-change publication, and audit history. Django Admin remains available for raw
+registry administration. The reader-facing search and evidence interface still belongs to Phase 4.
 
 ## Live JPDP verification
 
@@ -170,7 +170,7 @@ On 2026-08-05, the Phase 3D.2 read-only audit confirmed:
 - separate comments feeds are declared but are intentionally not approved;
 - the feed advertises hourly updates and returned bounded official entry metadata.
 
-The pre-deployment gate passed all 85 repository tests with external requests mocked.
+The Phase 3D.2 pre-deployment gate passed all 85 repository tests with external requests mocked.
 
 The controlled post-deployment pilot then completed without failed resource runs:
 
@@ -193,5 +193,6 @@ extraction, quality, graph/vector projection, lineage, anchors, and eligible com
 normalized content stops early; material deltas wait for human review; GPT summaries are
 post-review only. See [Phase 3D.3 change orchestration](orchestration.md).
 
-Phase 3D.5 next adds the self-hosted operator console. It must preserve the same deterministic
-comparison, review, and explicit-publication boundaries.
+Phase 3D.5 now provides that self-hosted operator console while preserving the deterministic
+comparison, append-only review, and explicit-publication boundaries. See
+[Phase 3D.5 operator console](operator-console.md).

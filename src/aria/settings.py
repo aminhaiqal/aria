@@ -23,6 +23,9 @@ if not SECRET_KEY:
         raise ImproperlyConfigured("ARIA_SECRET_KEY must be set when ARIA_DEBUG is false.")
     SECRET_KEY = "unsafe-development-key"
 ALLOWED_HOSTS = env_list("ARIA_ALLOWED_HOSTS", "localhost,127.0.0.1")
+CSRF_TRUSTED_ORIGINS = env_list("ARIA_CSRF_TRUSTED_ORIGINS")
+if env_bool("ARIA_TRUST_X_FORWARDED_PROTO", False):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -46,6 +49,7 @@ INSTALLED_APPS = [
     "aria.comparisons",
     "aria.quality",
     "aria.orchestration",
+    "aria.console",
     "aria.events",
     "aria.health",
     "aria.api",
@@ -108,6 +112,15 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+LOGIN_URL = "/console/login/"
+LOGIN_REDIRECT_URL = "/console/"
+LOGOUT_REDIRECT_URL = "/console/login/"
+SESSION_COOKIE_SECURE = env_bool("ARIA_SECURE_COOKIES", not DEBUG)
+CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {

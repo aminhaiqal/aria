@@ -1,0 +1,78 @@
+{% load console_extras %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>{{ page_title|default:"Operator console" }} · ARIA</title>
+  <link rel="stylesheet" href="{% url 'console:asset' 'console.css' %}">
+  <script defer src="{% url 'console:asset' 'console.js' %}"></script>
+</head>
+<body class="{% block body_class %}console-body{% endblock %}">
+  {% block body %}
+  <input class="nav-toggle" type="checkbox" id="nav-toggle" aria-label="Toggle navigation">
+  <aside class="sidebar" aria-label="Primary navigation">
+    <a class="brand" href="{% url 'console:dashboard' %}" aria-label="ARIA overview">
+      <span class="brand-mark" aria-hidden="true"><span>A</span></span>
+      <span><strong>ARIA</strong><small>Regulatory intelligence</small></span>
+    </a>
+    <nav class="nav-list">
+      <a class="nav-item {% if active_section == 'dashboard' %}is-active{% endif %}" href="{% url 'console:dashboard' %}">
+        <span class="nav-icon" aria-hidden="true">⌂</span><span>Overview</span>
+      </a>
+      <a class="nav-item {% if active_section == 'sources' %}is-active{% endif %}" href="{% url 'console:source-list' %}">
+        <span class="nav-icon" aria-hidden="true">◎</span><span>Official sources</span>
+      </a>
+      <a class="nav-item {% if active_section == 'workflows' %}is-active{% endif %}" href="{% url 'console:orchestration-list' %}">
+        <span class="nav-icon" aria-hidden="true">⌁</span><span>Change workflows</span>
+      </a>
+      <a class="nav-item {% if active_section == 'comparisons' %}is-active{% endif %}" href="{% url 'console:comparison-list' %}">
+        <span class="nav-icon" aria-hidden="true">◫</span><span>Comparison review</span>
+      </a>
+      <a class="nav-item {% if active_section == 'audit' %}is-active{% endif %}" href="{% url 'console:audit-list' %}">
+        <span class="nav-icon" aria-hidden="true">✓</span><span>Audit trail</span>
+      </a>
+    </nav>
+    <div class="sidebar-foot">
+      <span class="boundary-dot" aria-hidden="true"></span>
+      <div><strong>Evidence-first</strong><small>Human approval remains required</small></div>
+    </div>
+  </aside>
+  <label class="nav-scrim" for="nav-toggle" aria-hidden="true"></label>
+  <main class="main-shell">
+    <header class="topbar">
+      <label class="mobile-menu" for="nav-toggle" aria-label="Open navigation">☰</label>
+      <div class="topbar-context">
+        <span class="eyebrow">{{ eyebrow|default:"Operations" }}</span>
+        <span class="topbar-title">{{ page_title }}</span>
+      </div>
+      <div class="user-menu">
+        <span class="user-avatar" aria-hidden="true">{{ request.user.username|first|upper }}</span>
+        <span class="user-copy"><strong>{{ request.user.get_full_name|default:request.user.username }}</strong><small>Staff operator</small></span>
+        <form method="post" action="{% url 'console:logout' %}">
+          {% csrf_token %}
+          <button class="button button-ghost button-small" type="submit">Sign out</button>
+        </form>
+      </div>
+    </header>
+    <div class="page-shell">
+      {% if messages %}
+      <div class="message-stack" aria-live="polite">
+        {% for message in messages %}
+        <div class="message message-{{ message.tags|default:'info' }}" role="status">
+          <span>{{ message }}</span><button type="button" data-dismiss-message aria-label="Dismiss">×</button>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% block content %}{% endblock %}
+      <footer class="console-footer">
+        <span>ARIA Core · Self-hosted operator surface</span>
+        <span>Textual evidence is not legal advice.</span>
+      </footer>
+    </div>
+  </main>
+  {% endblock %}
+</body>
+</html>

@@ -1,0 +1,18 @@
+{% extends "console/base.html" %}{% load console_extras %}
+{% block content %}
+<section class="page-heading"><div><span class="eyebrow">Collection boundary</span><h1>Official sources</h1><p>Monitor approved authority endpoints and their independently scheduled detail pages and feeds.</p></div></section>
+<form class="filter-bar" method="get">
+  <div class="filter-field is-grow"><label for="source-q">Search</label><input class="field-control" id="source-q" name="q" value="{{ query }}" placeholder="Authority, collection, endpoint, or URL"></div>
+  <div class="filter-field"><label for="source-health">Health</label><select class="field-control" id="source-health" name="health"><option value="">All health states</option>{% for value,label in health_choices %}<option value="{{ value }}" {% if selected_health == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <button class="button button-primary" type="submit">Apply filters</button>
+  {% if query or selected_health %}<a class="button button-ghost" href="{% url 'console:source-list' %}">Clear</a>{% endif %}
+</form>
+<section class="panel">
+  <header class="panel-head"><div><span class="eyebrow">Registered endpoints</span><h2>{{ page.paginator.count }} source{{ page.paginator.count|pluralize }}</h2></div></header>
+  <div class="table-wrap"><table><thead><tr><th>Authority and endpoint</th><th>Connector</th><th>Resources</th><th>Active work</th><th>Health</th><th>Last checked</th></tr></thead><tbody>
+  {% for endpoint in page.object_list %}<tr class="click-row" data-href="{% url 'console:source-detail' endpoint.id %}"><td><a class="primary-link" href="{% url 'console:source-detail' endpoint.id %}">{{ endpoint.name }}</a><small>{{ endpoint.collection.authority.name }} · {{ endpoint.collection.name }}</small></td><td>{{ endpoint.get_connector_type_display }}<small>{{ endpoint.polling_interval_minutes }} minute cadence</small></td><td>{{ endpoint.resource_count }}</td><td>{{ endpoint.active_run_count }}</td><td><span class="badge badge-{{ endpoint.health_state|status_tone }}">{{ endpoint.get_health_state_display }}</span></td><td>{% if endpoint.last_checked_at %}{{ endpoint.last_checked_at|timesince }} ago{% else %}Never{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="6"><div class="empty-state"><strong>No sources match these filters</strong><span>Try clearing the health state or search query.</span></div></td></tr>{% endfor %}
+  </tbody></table></div>
+  {% include "console/includes/pagination.html" %}
+</section>
+{% endblock %}
