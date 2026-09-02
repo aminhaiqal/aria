@@ -118,6 +118,56 @@ class ConsoleSourceAndWorkflowTestCase(TestCase):
         self.assertContains(source_page, "Official console source")
         self.assertContains(source_page, "Safe manual check")
 
+    def test_dashboard_counts_source_runs_and_ignores_buffered_outbox_events(self) -> None:
+        SourceRun.objects.create(
+            endpoint=self.endpoint,
+            trigger=SourceRun.Trigger.MANUAL,
+            status=SourceRun.Status.PENDING,
+            idempotency_key="console-active-source-run",
+            connector_configuration_version=1,
+        )
+        event = PipelineEvent.objects.create(
+            event_type="console.buffered",
+            aggregate_type="source_endpoint",
+            aggregate_id=self.endpoint.id,
+            payload={},
+        )
+        OutboxEvent.objects.create(
+            pipeline_event=event,
+            topic=event.event_type,
+            payload={},
+            status=OutboxEvent.Status.PENDING,
+        )
+        self.client.force_login(self.staff)
+
+        response = self.client.get(reverse("console:dashboard"))
+
+        self.assertContains(response, "Active processing")
+        self.assertContains(response, "<strong>1</strong>", html=True)
+        self.assertNotContains(response, "pending outbox")
+        self.assertNotContains(response, "Operator attention")
+
+    def test_dashboard_alerts_on_failed_outbox_delivery(self) -> None:
+        event = PipelineEvent.objects.create(
+            event_type="console.delivery_failed",
+            aggregate_type="source_endpoint",
+            aggregate_id=self.endpoint.id,
+            payload={},
+        )
+        OutboxEvent.objects.create(
+            pipeline_event=event,
+            topic=event.event_type,
+            payload={},
+            status=OutboxEvent.Status.FAILED,
+            last_error="Configured delivery transport rejected the event.",
+        )
+        self.client.force_login(self.staff)
+
+        response = self.client.get(reverse("console:dashboard"))
+
+        self.assertContains(response, "Operator attention")
+        self.assertContains(response, "1 failed outbox delivery")
+
     def test_source_poll_is_post_only_audited_and_overlap_guarded(self) -> None:
         self.client.force_login(self.staff)
         route = reverse("console:source-poll", args=[self.endpoint.id])

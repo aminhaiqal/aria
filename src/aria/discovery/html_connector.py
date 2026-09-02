@@ -1,7 +1,10 @@
+import base64
+import binascii
 import hashlib
+import re
 from collections.abc import Callable
 from pathlib import PurePosixPath
-from urllib.parse import quote, unquote, urljoin, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, unquote, urljoin, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup
 
@@ -14,6 +17,9 @@ from aria.sources.models import ConnectorConfiguration, SourceEndpoint
 
 class ConnectorStructureChanged(RuntimeError):
     pass
+
+
+SHA256_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
 def normalize_publication_url(base_url: str, href: str) -> str:
@@ -34,19 +40,50 @@ def configured_link_target(link, configuration: dict) -> str | None:
     value = value.strip()
     prefix = configuration.get("link_value_prefix")
     suffix = configuration.get("link_value_suffix")
-    if prefix is None and suffix is None:
+    if prefix is not None or suffix is not None:
+        if not isinstance(prefix, str) or not isinstance(suffix, str):
+            return None
+        start = value.find(prefix)
+        if start < 0:
+            return None
+        remainder = value[start + len(prefix) :]
+        end = remainder.find(suffix)
+        if end < 0:
+            return None
+        value = remainder[:end].strip()
+        if not value:
+            return None
+
+    wrapped_target = configuration.get("wrapped_link_target")
+    if not wrapped_target:
         return value
-    if not isinstance(prefix, str) or not isinstance(suffix, str):
+    if not isinstance(wrapped_target, dict):
         return None
-    start = value.find(prefix)
-    if start < 0:
+    parsed = urlsplit(value)
+    configured_path = str(wrapped_target.get("path", ""))
+    value_path = f"/{parsed.path.lstrip('/')}"
+    if value_path != configured_path:
+        # Preserve compatibility if the official source returns direct document URLs again.
+        return value
+    if wrapped_target.get("encoding") != "base64_url_sha256_v1":
         return None
-    remainder = value[start + len(prefix) :]
-    end = remainder.find(suffix)
-    if end < 0:
+    parameter = wrapped_target.get("query_parameter")
+    if not isinstance(parameter, str):
         return None
-    target = remainder[:end].strip()
-    return target or None
+    try:
+        parameters = parse_qsl(parsed.query, keep_blank_values=True, strict_parsing=True)
+    except ValueError:
+        return None
+    if len(parameters) != 1 or parameters[0][0] != parameter or not parameters[0][1]:
+        return None
+    try:
+        decoded = base64.b64decode(parameters[0][1], validate=True).decode("utf-8")
+    except (binascii.Error, UnicodeDecodeError, ValueError):
+        return None
+    target, separator, digest = decoded.rpartition("|")
+    if not separator or not target or not SHA256_PATTERN.fullmatch(digest):
+        return None
+    return target
 
 
 class ConfiguredHTMLListingConnector:

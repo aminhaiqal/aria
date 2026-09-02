@@ -21,6 +21,7 @@ from aria.sources.models import ConnectorConfiguration, SourceEndpoint, SourcePa
 PACK_ROOT = Path(__file__).with_name("packs")
 PACK_SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 HTML_ATTRIBUTE_PATTERN = re.compile(r"^[A-Za-z_:][A-Za-z0-9_.:-]*$")
+QUERY_PARAMETER_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
 FORBIDDEN_KEY_PARTS = ("api_key", "credential", "password", "secret", "token")
 
 
@@ -303,6 +304,25 @@ def validate_source_pack(definition: dict) -> None:
             or len(suffix) > 128
         ):
             raise SourcePackError("Connector link value boundaries must be 1-128 characters.")
+        wrapped_target = configuration.get("wrapped_link_target")
+        if wrapped_target is not None:
+            if not isinstance(wrapped_target, dict):
+                raise SourcePackError("Connector wrapped_link_target must be an object.")
+            expected_keys = {"path", "query_parameter", "encoding"}
+            if set(wrapped_target) != expected_keys:
+                raise SourcePackError(
+                    "Connector wrapped_link_target requires only path, query_parameter, and "
+                    "encoding."
+                )
+            _validate_paths({"paths": [wrapped_target["path"]]}, "paths")
+            if not isinstance(
+                wrapped_target["query_parameter"], str
+            ) or not QUERY_PARAMETER_PATTERN.fullmatch(wrapped_target["query_parameter"]):
+                raise SourcePackError(
+                    "Connector wrapped link query_parameter must be a safe parameter name."
+                )
+            if wrapped_target["encoding"] != "base64_url_sha256_v1":
+                raise SourcePackError("Connector wrapped link encoding is unsupported.")
         for domain in configuration.get("browser_dependency_domains", []):
             _validate_domain(domain, "browser_dependency_domains")
         if not isinstance(configuration.get("bootstrap_candidate_session", False), bool):

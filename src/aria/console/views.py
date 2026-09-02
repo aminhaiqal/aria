@@ -115,6 +115,7 @@ def dashboard(request):
         ChangeOrchestration.Status.WAITING_OCR,
         ChangeOrchestration.Status.SUMMARY_PENDING,
     )
+    active_source_statuses = (SourceRun.Status.PENDING, SourceRun.Status.RUNNING)
     latest_reliability = list(
         SourceReliabilityAssessment.objects.select_related("endpoint")
         .order_by("endpoint_id", "-assessed_at", "-id")
@@ -143,9 +144,10 @@ def dashboard(request):
             ),
         ).count(),
         "reliability_alerts": reliability_alerts,
-        "active_workflows": ChangeOrchestration.objects.filter(
-            status__in=active_work_statuses
-        ).count(),
+        "active_workflows": (
+            ChangeOrchestration.objects.filter(status__in=active_work_statuses).count()
+            + SourceRun.objects.filter(status__in=active_source_statuses).count()
+        ),
         "review_queue": ChangeOrchestration.objects.filter(
             status=ChangeOrchestration.Status.REVIEW_REQUIRED
         ).count(),
@@ -155,7 +157,7 @@ def dashboard(request):
                 ChangeOrchestration.Status.SUMMARY_FAILED,
             )
         ).count(),
-        "pending_outbox": OutboxEvent.objects.filter(status=OutboxEvent.Status.PENDING).count(),
+        "failed_outbox": OutboxEvent.objects.filter(status=OutboxEvent.Status.FAILED).count(),
         "recent_workflows": ChangeOrchestration.objects.select_related(
             "artifact_observation",
             "source_artifact",

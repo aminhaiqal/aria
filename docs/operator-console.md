@@ -8,8 +8,8 @@ the same PostgreSQL evidence records used by workers, commands, Admin, and the r
 
 The console includes:
 
-- an operational overview of source health, active/failed workflows, review demand, and outbox
-  backlog;
+- an operational overview of source health, active source/workflow processing, review demand, and
+  failed outbox deliveries;
 - searchable official endpoints and monitored resources with immutable observation/run history;
 - workflow traces linking the official URL, artifact hash, normalized version, quality gate,
   lineage, comparison, and append-only stage attempts;
@@ -110,6 +110,11 @@ The root route now redirects to the authenticated `/reader/` preview. The operat
 at `/console/`; existing Admin, health, and administrator API routes remain unchanged.
 Static console assets are vendored and served through an exact two-file allowlist, so the login page
 does not depend on a CDN or internet access.
+
+Pending outbox rows are durable events awaiting a future delivery adapter, not delivery failures,
+so their normal accumulation does not trigger operator attention. The dashboard alerts on failed
+delivery attempts instead. Its active-processing count includes pending/running source runs as well
+as changed-artifact orchestration, preventing queued collection work from appearing idle.
 
 ## Verification
 

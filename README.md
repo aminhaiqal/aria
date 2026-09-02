@@ -88,9 +88,20 @@ outputs are explicit derivatives and never replace or mutate the official source
 Requirements: Docker Engine with Docker Compose.
 
 ```bash
-cp .env.example .env
-docker compose up --build -d
-docker compose exec api python manage.py createsuperuser
+make start
+make superuser
+```
+
+`make start` creates `.env` from `.env.example` when it is absent, then builds and waits for the
+lightweight reader stack: PostgreSQL, Redis, migrations, compiled React assets, and the Django API.
+It deliberately leaves scheduled monitoring, OCR, and Chromium stopped. Start those only when the
+corresponding local workflow is needed:
+
+```bash
+make start-workers  # normal ingestion worker and scheduler
+make start-ocr      # OCR worker
+make start-browser  # bounded Chromium worker
+make start-all      # complete stack in one command
 ```
 
 Open:
@@ -111,8 +122,17 @@ values before using this outside local development.
 ## Common commands
 
 ```bash
-make bootstrap       # create .env if absent, build, and start
-make logs            # follow API and worker logs
+make start           # build and start the lightweight reader/API stack
+make start-workers   # start normal ingestion and scheduled monitoring
+make start-ocr       # start the opt-in OCR worker
+make start-browser   # start the opt-in bounded Chromium worker
+make start-all       # build and start every service (also available as make bootstrap)
+make status          # show container and health status
+make health          # call Django's database/Redis readiness probe
+make logs-core       # follow API, PostgreSQL, and Redis logs
+make logs            # follow API and all worker logs
+make stop-heavy      # stop OCR and browser workers while leaving the reader running
+make stop            # stop the stack without deleting persistent volumes
 make test            # run the Django test suite in Compose
 make frontend-test   # install deterministically, lint, test with coverage, and build the reader
 make frontend-build  # rebuild and publish the hashed reader bundle into the Compose volume

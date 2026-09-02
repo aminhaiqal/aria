@@ -3,6 +3,7 @@ import hashlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
+from urllib.parse import quote
 
 import httpx
 from django.core.exceptions import ValidationError
@@ -316,6 +317,95 @@ class PhaseTwoTestCase(TestCase):
             "https://example.com/files/bills/Bill%202026.pdf",
         )
         self.assertEqual(result.candidates[0].metadata_hints["title"], "D.R.1/2026")
+
+    def test_html_listing_connector_decodes_bounded_signed_url_wrapper(self) -> None:
+        target = "https://example.com/files/bills/Act 709.pdf"
+        checksum = "a" * 64
+        wrapped_value = base64.b64encode(f"{target}|{checksum}".encode()).decode()
+        ConnectorConfiguration.objects.create(
+            endpoint=self.endpoint,
+            version=1,
+            configuration={
+                "link_selector": "a.download[href]",
+                "include_path_prefixes": ["/files/bills/"],
+                "upload_path_prefixes": ["/files/bills/"],
+                "document_extensions": [".pdf"],
+                "max_candidates": 2,
+                "wrapped_link_target": {
+                    "path": "/processFile.php",
+                    "query_parameter": "token",
+                    "encoding": "base64_url_sha256_v1",
+                },
+            },
+        )
+        malformed_digest = base64.b64encode(f"{target}|short".encode()).decode()
+        html = (
+            f'<a class="download" href="processFile.php?token='
+            f'{quote(wrapped_value, safe="")}">Act 709</a>'
+            '<a class="download" href="processFile.php?token=not-base64">Unsafe</a>'
+            f'<a class="download" href="processFile.php?token={malformed_digest}">Bad</a>'
+        ).encode()
+        client = SafeHttpClient(
+            resolver=lambda _hostname, _port: [PUBLIC_IP],
+            rate_limiter=RateLimiter(),
+            transport=httpx.MockTransport(
+                lambda _request: httpx.Response(
+                    200,
+                    headers={"Content-Type": "text/html; charset=UTF-8"},
+                    content=html,
+                )
+            ),
+        )
+
+        result = ConfiguredHTMLListingConnector(client_factory=lambda: client).discover(
+            self.endpoint,
+            cursor=None,
+        )
+
+        self.assertEqual(len(result.candidates), 1)
+        self.assertEqual(
+            result.candidates[0].canonical_url,
+            "https://example.com/files/bills/Act%20709.pdf",
+        )
+
+    def test_signed_url_wrapper_cannot_bypass_source_allowlist(self) -> None:
+        target = "https://untrusted.example.net/files/bills/Act.pdf"
+        wrapped_value = base64.b64encode(f"{target}|{'b' * 64}".encode()).decode()
+        ConnectorConfiguration.objects.create(
+            endpoint=self.endpoint,
+            version=1,
+            configuration={
+                "link_selector": "a[href]",
+                "include_path_prefixes": ["/files/bills/"],
+                "document_extensions": [".pdf"],
+                "max_candidates": 2,
+                "wrapped_link_target": {
+                    "path": "/processFile.php",
+                    "query_parameter": "token",
+                    "encoding": "base64_url_sha256_v1",
+                },
+            },
+        )
+        html = (
+            f'<a href="processFile.php?token={quote(wrapped_value, safe="")}">External</a>'
+        ).encode()
+        client = SafeHttpClient(
+            resolver=lambda _hostname, _port: [PUBLIC_IP],
+            rate_limiter=RateLimiter(),
+            transport=httpx.MockTransport(
+                lambda _request: httpx.Response(
+                    200,
+                    headers={"Content-Type": "text/html"},
+                    content=html,
+                )
+            ),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "no qualifying publication links"):
+            ConfiguredHTMLListingConnector(client_factory=lambda: client).discover(
+                self.endpoint,
+                cursor=None,
+            )
 
     def test_html_listing_connector_routes_detail_page_primary_document(self) -> None:
         ConnectorConfiguration.objects.create(

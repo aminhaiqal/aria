@@ -8,14 +8,14 @@
 <section class="metric-grid" aria-label="System metrics">
   <article class="metric-card"><span class="metric-icon tone-positive">◎</span><div><small>Healthy sources</small><strong>{{ healthy_sources }}<span>/{{ enabled_sources }}</span></strong><p>Enabled endpoints reporting healthy</p></div></article>
   <article class="metric-card"><span class="metric-icon tone-warning">!</span><div><small>Sources at risk</small><strong>{{ reliability_alerts }}</strong><p>Latest end-to-end reliability warnings</p></div></article>
-  <article class="metric-card"><span class="metric-icon tone-info">⌁</span><div><small>Active workflows</small><strong>{{ active_workflows }}</strong><p>Queued, running, OCR, or summary work</p></div></article>
+  <article class="metric-card"><span class="metric-icon tone-info">⌁</span><div><small>Active processing</small><strong>{{ active_workflows }}</strong><p>Source runs and changed-artifact workflows</p></div></article>
   <article class="metric-card"><span class="metric-icon tone-purple">◫</span><div><small>Human review</small><strong>{{ review_queue }}</strong><p>Comparisons waiting for decisions</p></div></article>
 </section>
 
-{% if failed_workflows or pending_outbox or reliability_alerts %}
+{% if failed_workflows or failed_outbox or reliability_alerts %}
 <section class="attention-strip">
-  <div><span class="attention-mark">!</span><div><strong>Operator attention</strong><p>{{ reliability_alerts }} source reliability alert{{ reliability_alerts|pluralize }}, {{ failed_workflows }} failed workflow{{ failed_workflows|pluralize }}, and {{ pending_outbox }} pending outbox event{{ pending_outbox|pluralize }}.</p></div></div>
-  <a href="{% url 'console:orchestration-list' %}?status=failed">Inspect failures →</a>
+  <div><span class="attention-mark">!</span><div><strong>Operator attention</strong><p>{{ reliability_alerts }} source reliability alert{{ reliability_alerts|pluralize }}, {{ failed_workflows }} failed workflow{{ failed_workflows|pluralize }}, and {{ failed_outbox }} failed outbox deliver{{ failed_outbox|pluralize:"y,ies" }}.</p></div></div>
+  {% if failed_workflows %}<a href="{% url 'console:orchestration-list' %}?status=failed">Inspect failures →</a>{% else %}<a href="{% url 'console:source-list' %}">Inspect sources →</a>{% endif %}
 </section>
 {% endif %}
 

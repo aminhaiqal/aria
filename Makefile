@@ -1,8 +1,55 @@
-.PHONY: bootstrap build up down logs migrate makemigrations test check frontend-build frontend-test frontend-format reader-e2e shell superuser list-source-packs plan-source-pack apply-source-pack pilot-source audit-static promote-static source-confidence source-soak poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings evaluate-reader quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage
+.DEFAULT_GOAL := help
 
-bootstrap:
-	@test -f .env || cp .env.example .env
-	docker compose up --build -d
+.PHONY: help ensure-env start start-workers start-ocr start-browser start-all stop stop-heavy status health logs-core bootstrap build up down logs migrate makemigrations test check frontend-build frontend-test frontend-format reader-e2e shell superuser list-source-packs plan-source-pack apply-source-pack pilot-source audit-static promote-static source-confidence source-soak poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings evaluate-reader quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage
+
+help:
+	@printf '%s\n' \
+		'make start          Start the lightweight local reader' \
+		'make start-workers  Start ingestion and scheduled monitoring' \
+		'make start-ocr      Start OCR processing' \
+		'make start-browser  Start bounded Chromium processing' \
+		'make start-all      Start the complete stack' \
+		'make status         Show service health' \
+		'make health         Check application readiness' \
+		'make stop           Stop everything without deleting data'
+
+ensure-env:
+	@test -f .env || (cp .env.example .env && echo "Created .env from .env.example; review it before non-local use.")
+
+# Lightweight local reader: database, Redis, migrations, frontend build, and API.
+start: ensure-env
+	docker compose up --build -d --wait --wait-timeout 180 postgres redis api
+
+# Normal ingestion and scheduled monitoring. Start only when those workflows are needed.
+start-workers: ensure-env
+	docker compose up --build -d --wait --wait-timeout 180 worker beat
+
+# Resource-intensive workers remain opt-in for local development.
+start-ocr: ensure-env
+	docker compose up --build -d --wait --wait-timeout 180 ocr-worker
+
+start-browser: ensure-env
+	docker compose up --build -d --wait --wait-timeout 180 browser-worker
+
+start-all: ensure-env
+	docker compose up --build -d --wait --wait-timeout 180
+
+stop:
+	docker compose down
+
+stop-heavy:
+	docker compose stop ocr-worker browser-worker
+
+status:
+	docker compose ps
+
+health:
+	docker compose exec -T api python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health/ready/', timeout=5).read().decode())"
+
+logs-core:
+	docker compose logs -f api postgres redis
+
+bootstrap: start-all
 
 build:
 	docker compose build

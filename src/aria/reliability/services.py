@@ -191,6 +191,22 @@ def collect_source_reliability(
         )
         status = SourceReliabilityAssessment.Status.WARNING
     else:
+        if endpoint.health_state == SourceEndpoint.HealthState.UNHEALTHY:
+            findings.append(
+                _finding(
+                    "endpoint_unhealthy",
+                    "critical",
+                    f"Endpoint has {endpoint.consecutive_failures} consecutive failed runs.",
+                )
+            )
+        elif endpoint.health_state == SourceEndpoint.HealthState.DEGRADED:
+            findings.append(
+                _finding(
+                    "endpoint_degraded",
+                    "warning",
+                    f"Endpoint has {endpoint.consecutive_failures} consecutive failed runs.",
+                )
+            )
         run_finished = latest_run.finished_at or latest_run.created_at
         within_pipeline_grace = now <= run_finished + timedelta(
             minutes=settings.SOURCE_PIPELINE_GRACE_MINUTES

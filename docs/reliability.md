@@ -15,6 +15,7 @@ Each `SourceReliabilityAssessment` is append-only and linked to the latest compl
 - document-version and normalized-section totals;
 - current local and configured-provider embedding coverage;
 - browser-capture and bounded-network evidence for JavaScript sources; and
+- the endpoint's current HTTP health and consecutive-failure state; and
 - structured findings with stable codes, severities, and operator-facing details.
 
 Statuses are `healthy`, `processing`, `warning`, `critical`, or `disabled`. Missing downstream
@@ -106,3 +107,12 @@ Parliament's controlled acceptance on 2026-08-07 completed two matching connecto
 25/25 artifacts, extractions, and graph projections plus 351/351 local and OpenAI embeddings. It
 was promoted from exact durable gate evidence and now reports `healthy`. Its first autonomous daily
 cycle is likewise not claimed until the scheduler actually executes it.
+
+On 2026-09-02 AGC changed its rendered download links from direct PDF URLs to signed
+`processFile.php` wrappers. Source-pack version 2 and connector version 2 add a narrowly configured
+base64 URL/SHA-256 decoder. The decoded destination still has to pass the existing HTTPS, official
+domain, exact path-prefix, and PDF-extension checks. A bounded verification run completed with
+20 candidates and 20/20 artifact observations, after which the repair planner restored 1208/1208
+local and OpenAI embeddings. JPDP's remaining projection was also repaired to 534/534. Fresh
+append-only assessments recorded JPDP, AGC, and Parliament as healthy with complete current-run
+coverage.

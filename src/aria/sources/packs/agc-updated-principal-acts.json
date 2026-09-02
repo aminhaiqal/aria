@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "slug": "agc-updated-principal-acts",
-  "version": 1,
+  "version": 2,
   "authority": {
     "slug": "attorney-generals-chambers-malaysia",
     "name": "Attorney General's Chambers of Malaysia",
@@ -33,7 +33,7 @@
     "pagination_strategy": "none",
     "expected_content_types": ["text/html", "application/pdf"],
     "requires_javascript": true,
-    "connector_configuration_version": 1,
+    "connector_configuration_version": 2,
     "default_enabled": false
   },
   "connector_configurations": [
@@ -51,6 +51,27 @@
         "browser_read_only_post_paths": ["/json-updated-2024.php"]
       },
       "notes": "Phase 3D.7 bounded AGC browser source admitted after two repeatable captures.",
+      "is_active": false
+    },
+    {
+      "version": 2,
+      "configuration": {
+        "link_selector": "#data-updated a.event_kira_download_updated[href]",
+        "include_path_prefixes": ["/ilims/upload/portal/akta/outputaktap/"],
+        "upload_path_prefixes": ["/ilims/upload/portal/akta/outputaktap/"],
+        "document_extensions": [".pdf"],
+        "max_candidates": 20,
+        "ready_selector": "#data-updated tbody tr",
+        "render_wait_milliseconds": 1500,
+        "browser_dependency_domains": ["cdn.datatables.net", "cdnjs.cloudflare.com"],
+        "browser_read_only_post_paths": ["/json-updated-2024.php"],
+        "wrapped_link_target": {
+          "path": "/processFile.php",
+          "query_parameter": "token",
+          "encoding": "base64_url_sha256_v1"
+        }
+      },
+      "notes": "Phase 4A repair for AGC's signed processFile.php wrapper, first observed in bounded capture evidence on 2026-08-29.",
       "is_active": true
     }
   ],

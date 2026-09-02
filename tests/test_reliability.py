@@ -303,6 +303,16 @@ class SourceReliabilityAssessmentTestCase(ReliabilityFixture):
             1,
         )
 
+    def test_endpoint_health_failures_are_part_of_end_to_end_reliability(self) -> None:
+        self.endpoint.health_state = SourceEndpoint.HealthState.UNHEALTHY
+        self.endpoint.consecutive_failures = 3
+        self.endpoint.save(update_fields=("health_state", "consecutive_failures", "updated_at"))
+
+        assessment, _ = assess_source_reliability(self.endpoint, assessed_at=self.now)
+
+        self.assertEqual(assessment.status, SourceReliabilityAssessment.Status.CRITICAL)
+        self.assertIn("endpoint_unhealthy", [item["code"] for item in assessment.findings])
+
     def test_incomplete_new_run_is_processing_then_warning_after_grace(self) -> None:
         incomplete_endpoint = SourceEndpoint.objects.create(
             collection=self.collection,

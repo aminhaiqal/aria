@@ -129,6 +129,12 @@ assets from `cdn.datatables.net` and `cdnjs.cloudflare.com`.
 - a maximum of 20 candidates per capture; and
 - `is_enabled=false`, `next_poll_at=null`, so the scheduler cannot run it during admission.
 
+AGC later changed the rendered link value to a signed `processFile.php` wrapper. Connector version
+2 decodes only the explicitly configured query parameter and requires a UTF-8 payload shaped as an
+HTTPS target plus a 64-character SHA-256 value. Decoding is not admission: every target continues
+through the official-domain, path-prefix, and PDF-extension checks, and direct official PDF links
+remain supported if AGC changes back.
+
 Run the controlled workflow with:
 
 ```bash
@@ -153,4 +159,5 @@ gate.
 
 The initial admission completed on 2026-08-06 with two matching 20-candidate captures and 20/20
 artifact, extraction, and knowledge-graph lineage checks. The source was promoted through the
-guarded command and now polls daily; reseeding preserves that promoted state.
+guarded command and now polls daily; reseeding preserves that promoted state. Connector version 2
+was verified on 2026-09-02 with a fresh bounded 20-candidate capture and 20/20 artifact checks.

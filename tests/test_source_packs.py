@@ -65,9 +65,24 @@ class SourcePackValidationTestCase(TestCase):
 
     def test_active_connector_must_match_endpoint_version(self) -> None:
         definition = self.definition()
-        definition["connector_configurations"][0]["is_active"] = False
+        definition["connector_configurations"][-1]["is_active"] = False
         with self.assertRaisesMessage(SourcePackError, "Exactly"):
             validate_source_pack(definition)
+
+    def test_wrapped_link_contract_is_strictly_bounded(self) -> None:
+        invalid_path = self.definition()
+        invalid_path["connector_configurations"][-1]["configuration"][
+            "wrapped_link_target"
+        ]["path"] = "https://example.com/processFile.php"
+        with self.assertRaisesMessage(SourcePackError, "exact safe paths"):
+            validate_source_pack(invalid_path)
+
+        unsupported_encoding = self.definition()
+        unsupported_encoding["connector_configurations"][-1]["configuration"][
+            "wrapped_link_target"
+        ]["encoding"] = "eval_javascript"
+        with self.assertRaisesMessage(SourcePackError, "encoding is unsupported"):
+            validate_source_pack(unsupported_encoding)
 
 
 class SourcePackApplicationTestCase(TestCase):
@@ -81,6 +96,7 @@ class SourcePackApplicationTestCase(TestCase):
         replay = apply_source_pack(pack)
 
         self.assertFalse(first.endpoint.is_enabled)
+        self.assertEqual(first.endpoint.connector_configuration_version, 2)
         self.assertIsNone(first.endpoint.next_poll_at)
         self.assertTrue(first.snapshot_created)
         self.assertFalse(replay.snapshot_created)
