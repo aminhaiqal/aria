@@ -220,6 +220,59 @@ class ConsoleSourceAndWorkflowTestCase(TestCase):
         self.assertEqual(ResourceRun.objects.filter(resource=self.resource).count(), 1)
         blocked_delay.assert_not_called()
 
+    def test_resource_retirement_requires_explicit_reason_and_preserves_history(self) -> None:
+        self.client.force_login(self.staff)
+        route = reverse("console:resource-retire", args=[self.resource.id])
+        detail_route = reverse("console:resource-detail", args=[self.resource.id])
+        self.assertEqual(self.client.get(route).status_code, 405)
+
+        invalid = self.client.post(route, {"reason": "obsolete", "confirmation": "RETIRE"})
+        self.assertRedirects(invalid, detail_route)
+        self.resource.refresh_from_db()
+        self.assertFalse(self.resource.is_retired)
+
+        response = self.client.post(
+            route,
+            {
+                "reason": "The official page now redirects to its replacement index.",
+                "confirmation": "RETIRE",
+            },
+        )
+        self.assertRedirects(response, detail_route)
+        self.resource.refresh_from_db()
+        self.assertTrue(self.resource.is_retired)
+        self.assertFalse(self.resource.is_enabled)
+        self.assertEqual(self.resource.health_state, MonitoredResource.HealthState.DISABLED)
+        self.assertIsNone(self.resource.next_poll_at)
+        audit = AuditEvent.objects.get(
+            action="source.resource.retired", target_id=self.resource.id
+        )
+        self.assertEqual(audit.actor_identifier, str(self.staff.id))
+        self.assertEqual(
+            PipelineEvent.objects.filter(
+                event_type="source.resource.retired", aggregate_id=self.resource.id
+            ).count(),
+            1,
+        )
+
+        retired_page = self.client.get(detail_route)
+        self.assertContains(retired_page, "Monitoring retired")
+        self.assertContains(retired_page, "Existing runs and observations remain available")
+
+        self.client.post(
+            route,
+            {
+                "reason": "A second operator request should remain idempotent.",
+                "confirmation": "RETIRE",
+            },
+        )
+        self.assertEqual(
+            AuditEvent.objects.filter(
+                action="source.resource.retired", target_id=self.resource.id
+            ).count(),
+            1,
+        )
+
     def _failed_workflow(self) -> ChangeOrchestration:
         source_run = SourceRun.objects.create(
             endpoint=self.endpoint,

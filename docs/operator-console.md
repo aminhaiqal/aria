@@ -66,6 +66,7 @@ queue summaries, or publish events. POST actions call transactionally locked dom
 |---|---|---|
 | Poll endpoint | enabled and no active endpoint run | manual `SourceRun`, audit event, queued task |
 | Poll resource | endpoint/resource enabled, explicitly approved, no active run | manual `ResourceRun`, audit event, queued task |
+| Retire resource | no active resource run, written reason, exact `RETIRE` confirmation | disabled schedule plus retained evidence, actor-stamped audit and pipeline events |
 | Retry workflow | failed, summary-failed, or OCR-ready | retry count/status update, audit event, queued task |
 | Record decision | staff, non-unchanged item, valid decision/rationale | new append-only `ComparisonReview` linked to its predecessor |
 | Generate summary | complete current review, at least one confirmed item, no active summary | audit event and bounded GPT task |
@@ -80,6 +81,11 @@ queue summaries, or publish events. POST actions call transactionally locked dom
 Failed or duplicate actions return an operator message without bypassing their invariant. A retry
 does not delete prior attempts. A changed decision appends a new review. Repeated publication skips
 an already published confirmation review rather than duplicating its event.
+
+Resource retirement is similarly idempotent. Repeating it does not replace the first actor or
+reason and does not duplicate events. Source-pack synchronization may refresh non-decision metadata
+but cannot re-enable a retired URL; restoring one therefore requires a future explicit governed
+workflow rather than a side effect of discovery.
 
 GPT output remains presentation data: the prompt receives only bounded before/after text for
 currently confirmed items, must preserve deterministic IDs and change types, and must assert that

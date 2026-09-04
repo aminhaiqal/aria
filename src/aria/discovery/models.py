@@ -236,6 +236,9 @@ class MonitoredResource(TimeStampedModel):
     is_approved = models.BooleanField(default=False, db_index=True)
     approval_basis = models.CharField(max_length=255, blank=True)
     is_enabled = models.BooleanField(default=True, db_index=True)
+    retired_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    retirement_reason = models.TextField(blank=True)
+    retirement_actor_identifier = models.CharField(max_length=255, blank=True)
     polling_interval_minutes = models.PositiveIntegerField(default=360)
     next_poll_at = models.DateTimeField(null=True, blank=True, db_index=True)
     last_checked_at = models.DateTimeField(null=True, blank=True)
@@ -261,6 +264,25 @@ class MonitoredResource(TimeStampedModel):
                 condition=models.Q(polling_interval_minutes__gte=1),
                 name="resource_poll_interval_at_least_one_minute",
             ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        retired_at__isnull=True,
+                        retirement_reason="",
+                        retirement_actor_identifier="",
+                    )
+                    | (
+                        models.Q(
+                            is_enabled=False,
+                            health_state="disabled",
+                            next_poll_at__isnull=True,
+                        )
+                        & ~models.Q(retirement_reason="")
+                        & ~models.Q(retirement_actor_identifier="")
+                    )
+                ),
+                name="monitored_resource_retirement_contract",
+            ),
         ]
         indexes = [
             models.Index(fields=("is_enabled", "is_approved", "next_poll_at")),
@@ -272,6 +294,28 @@ class MonitoredResource(TimeStampedModel):
             raise ValidationError("A monitored resource parent must belong to the same endpoint.")
         if self.parent_id and self.parent_id == self.id:
             raise ValidationError("A monitored resource cannot be its own parent.")
+        if self.retired_at:
+            errors = {}
+            if self.is_enabled:
+                errors["is_enabled"] = "A retired resource cannot remain enabled."
+            if self.health_state != self.HealthState.DISABLED:
+                errors["health_state"] = "A retired resource must have disabled health."
+            if self.next_poll_at is not None:
+                errors["next_poll_at"] = "A retired resource cannot have a next poll."
+            if not self.retirement_reason.strip():
+                errors["retirement_reason"] = "A retirement reason is required."
+            if not self.retirement_actor_identifier.strip():
+                errors["retirement_actor_identifier"] = "A retirement actor is required."
+            if errors:
+                raise ValidationError(errors)
+        elif self.retirement_reason or self.retirement_actor_identifier:
+            raise ValidationError(
+                "Retirement details cannot be recorded without a retirement timestamp."
+            )
+
+    @property
+    def is_retired(self) -> bool:
+        return self.retired_at is not None
 
     def __str__(self) -> str:
         return f"{self.get_resource_type_display()}: {self.url}"

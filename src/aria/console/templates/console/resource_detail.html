@@ -1,9 +1,77 @@
 {% extends "console/base.html" %}{% load console_extras %}
 {% block content %}
-<section class="page-heading"><div><a class="eyebrow" href="{% url 'console:source-detail' resource.endpoint_id %}">← {{ resource.endpoint.name }}</a><h1>{{ resource.title|default:resource.get_resource_type_display }}</h1><p class="source-url">{{ resource.url }}</p></div><div class="heading-actions"><span class="badge badge-{{ resource.health_state|status_tone }}">{{ resource.get_health_state_display }}</span><form method="post" action="{% url 'console:resource-poll' resource.id %}" data-confirm="Queue a fresh bounded check of this approved resource?">{% csrf_token %}<button class="button button-primary" type="submit" {% if not resource.is_enabled or not resource.is_approved or active_run %}disabled{% endif %}>Poll resource now</button></form></div></section>
-<div class="detail-grid"><div class="detail-stack">
-  <section class="panel"><header class="panel-head"><div><span class="eyebrow">Resource contract</span><h2>Monitoring state</h2></div></header><div class="definition-grid"><div class="definition"><small>Type</small><strong>{{ resource.get_resource_type_display }}</strong></div><div class="definition"><small>Approval</small><strong>{% if resource.is_approved %}Approved{% else %}Not approved{% endif %}</strong></div><div class="definition"><small>Enabled</small><strong>{{ resource.is_enabled|yesno:"Yes,No" }}</strong></div><div class="definition"><small>Cadence</small><strong>{{ resource.polling_interval_minutes }} minutes</strong></div><div class="definition"><small>Failures</small><strong>{{ resource.consecutive_failures }}</strong></div><div class="definition"><small>Next poll</small><span>{{ resource.next_poll_at|default:"Not scheduled" }}</span></div><div class="definition is-wide"><small>Approval basis</small><span>{{ resource.approval_basis|default:"No basis recorded" }}</span></div></div></section>
-  <section class="panel"><header class="panel-head"><div><span class="eyebrow">Immutable snapshots</span><h2>Recent observations</h2></div></header><div class="table-wrap"><table><thead><tr><th>Checked</th><th>HTTP</th><th>Outcome</th><th>Content</th><th>Links</th></tr></thead><tbody>{% for observation in observations %}<tr><td>{{ observation.checked_at }}</td><td>{{ observation.response_status }}</td><td><span class="badge badge-{{ observation.outcome|status_tone }}">{{ observation.get_outcome_display }}</span></td><td><span class="mono">{{ observation.content_sha256|short_hash }}</span><small>{{ observation.byte_size }} bytes</small></td><td>{{ observation.link_count }}<small>{{ observation.link_set_sha256|short_hash }}</small></td></tr>{% empty %}<tr><td colspan="5"><div class="empty-state"><span>No observations recorded.</span></div></td></tr>{% endfor %}</tbody></table></div></section>
-  {% if latest_observation %}<section class="panel"><header class="panel-head"><div><span class="eyebrow">Latest link disposition</span><h2>Observed official links</h2></div></header><div class="table-wrap"><table><thead><tr><th>Target</th><th>State</th><th>Disposition</th><th>Reason</th></tr></thead><tbody>{% for link in latest_observation.link_observations.all %}<tr><td><a class="primary-link" href="{{ link.target_url }}" rel="noopener noreferrer" target="_blank">{{ link.title|default:link.target_url|truncatechars:62 }}</a><small>{{ link.target_url }}</small></td><td>{{ link.get_state_display }}</td><td><span class="badge badge-{{ link.disposition|status_tone }}">{{ link.get_disposition_display }}</span></td><td>{{ link.quarantine_reason|default:"—" }}</td></tr>{% empty %}<tr><td colspan="4"><div class="empty-state"><span>No links in the latest snapshot.</span></div></td></tr>{% endfor %}</tbody></table></div></section>{% endif %}
-</div><aside class="detail-stack"><section class="action-card"><h3>Independent cadence</h3><p>This resource keeps its own validators, content hash, link-set hash, health, and immutable redirect evidence.</p>{% if active_run %}<span class="badge badge-info">{{ active_run.get_status_display }} run</span>{% else %}<span class="badge badge-positive">No active overlap</span>{% endif %}</section><section class="panel"><header class="panel-head"><div><span class="eyebrow">Execution history</span><h2>Recent runs</h2></div></header><ol class="activity-list">{% for run in runs %}<li><span class="activity-dot"></span><div><strong>{{ run.get_status_display }}</strong><small>{{ run.id|short_id }} · {{ run.get_trigger_display }}</small><time>{{ run.created_at|timesince }} ago</time></div></li>{% empty %}<li class="empty-state"><span>No runs recorded.</span></li>{% endfor %}</ol></section></aside></div>
+<section class="page-heading">
+  <div>
+    <a class="eyebrow" href="{% url 'console:source-detail' resource.endpoint_id %}">← {{ resource.endpoint.name }}</a>
+    <h1>{{ resource.title|default:resource.get_resource_type_display }}</h1>
+    <p class="source-url">{{ resource.url }}</p>
+  </div>
+  <div class="heading-actions">
+    {% if resource.is_retired %}<span class="badge badge-neutral">Retired</span>{% else %}<span class="badge badge-{{ resource.health_state|status_tone }}">{{ resource.get_health_state_display }}</span>{% endif %}
+    <form method="post" action="{% url 'console:resource-poll' resource.id %}" data-confirm="Queue a fresh bounded check of this approved resource?">
+      {% csrf_token %}
+      <button class="button button-primary" type="submit" {% if not resource.is_enabled or not resource.is_approved or active_run or resource.is_retired %}disabled{% endif %}>Poll resource now</button>
+    </form>
+  </div>
+</section>
+<div class="detail-grid">
+  <div class="detail-stack">
+    {% if resource.is_retired %}
+    <section class="attention-strip">
+      <div><span class="attention-mark">×</span><div><strong>Monitoring retired</strong><p>{{ resource.retirement_reason }}</p><small>Recorded {{ resource.retired_at }} by actor {{ resource.retirement_actor_identifier }}. Existing runs and observations remain available below.</small></div></div>
+    </section>
+    {% endif %}
+    <section class="panel">
+      <header class="panel-head"><div><span class="eyebrow">Resource contract</span><h2>Monitoring state</h2></div></header>
+      <div class="definition-grid">
+        <div class="definition"><small>Type</small><strong>{{ resource.get_resource_type_display }}</strong></div>
+        <div class="definition"><small>Approval</small><strong>{% if resource.is_approved %}Approved{% else %}Not approved{% endif %}</strong></div>
+        <div class="definition"><small>Enabled</small><strong>{{ resource.is_enabled|yesno:"Yes,No" }}</strong></div>
+        <div class="definition"><small>Cadence</small><strong>{{ resource.polling_interval_minutes }} minutes</strong></div>
+        <div class="definition"><small>Failures</small><strong>{{ resource.consecutive_failures }}</strong></div>
+        <div class="definition"><small>Next poll</small><span>{{ resource.next_poll_at|default:"Not scheduled" }}</span></div>
+        <div class="definition is-wide"><small>Approval basis</small><span>{{ resource.approval_basis|default:"No basis recorded" }}</span></div>
+      </div>
+    </section>
+    <section class="panel">
+      <header class="panel-head"><div><span class="eyebrow">Immutable snapshots</span><h2>Recent observations</h2></div></header>
+      <div class="table-wrap"><table><thead><tr><th>Checked</th><th>HTTP</th><th>Outcome</th><th>Content</th><th>Links</th></tr></thead><tbody>
+        {% for observation in observations %}<tr><td>{{ observation.checked_at }}</td><td>{{ observation.response_status }}</td><td><span class="badge badge-{{ observation.outcome|status_tone }}">{{ observation.get_outcome_display }}</span></td><td><span class="mono">{{ observation.content_sha256|short_hash }}</span><small>{{ observation.byte_size }} bytes</small></td><td>{{ observation.link_count }}<small>{{ observation.link_set_sha256|short_hash }}</small></td></tr>
+        {% empty %}<tr><td colspan="5"><div class="empty-state"><span>No observations recorded.</span></div></td></tr>{% endfor %}
+      </tbody></table></div>
+    </section>
+    {% if latest_observation %}
+    <section class="panel">
+      <header class="panel-head"><div><span class="eyebrow">Latest link disposition</span><h2>Observed official links</h2></div></header>
+      <div class="table-wrap"><table><thead><tr><th>Target</th><th>State</th><th>Disposition</th><th>Reason</th></tr></thead><tbody>
+        {% for link in latest_observation.link_observations.all %}<tr><td><a class="primary-link" href="{{ link.target_url }}" rel="noopener noreferrer" target="_blank">{{ link.title|default:link.target_url|truncatechars:62 }}</a><small>{{ link.target_url }}</small></td><td>{{ link.get_state_display }}</td><td><span class="badge badge-{{ link.disposition|status_tone }}">{{ link.get_disposition_display }}</span></td><td>{{ link.quarantine_reason|default:"—" }}</td></tr>
+        {% empty %}<tr><td colspan="4"><div class="empty-state"><span>No links in the latest snapshot.</span></div></td></tr>{% endfor %}
+      </tbody></table></div>
+    </section>
+    {% endif %}
+  </div>
+  <aside class="detail-stack">
+    <section class="action-card">
+      <h3>Independent cadence</h3>
+      <p>This resource keeps its own validators, content hash, link-set hash, health, and immutable redirect evidence.</p>
+      {% if active_run %}<span class="badge badge-info">{{ active_run.get_status_display }} run</span>{% elif resource.is_retired %}<span class="badge badge-neutral">Scheduling stopped</span>{% else %}<span class="badge badge-positive">No active overlap</span>{% endif %}
+    </section>
+    {% if not resource.is_retired %}
+    <section class="action-card danger-card">
+      <h3>Retire obsolete resource</h3>
+      <p>Stops future checks while retaining every observation, run, link snapshot, and audit record. Active work must finish first.</p>
+      <form method="post" action="{% url 'console:resource-retire' resource.id %}" data-confirm="Retire this monitored resource and preserve its history?">
+        {% csrf_token %}
+        <label>Reason {{ retirement_form.reason }}</label>
+        <label>Type RETIRE<input class="field-control" name="confirmation" autocomplete="off" placeholder="RETIRE"></label>
+        <button class="button button-danger" type="submit" {% if active_run %}disabled{% endif %}>Retire resource</button>
+      </form>
+    </section>
+    {% endif %}
+    <section class="panel">
+      <header class="panel-head"><div><span class="eyebrow">Execution history</span><h2>Recent runs</h2></div></header>
+      <ol class="activity-list">{% for run in runs %}<li><span class="activity-dot"></span><div><strong>{{ run.get_status_display }}</strong><small>{{ run.id|short_id }} · {{ run.get_trigger_display }}</small><time>{{ run.created_at|timesince }} ago</time></div></li>{% empty %}<li class="empty-state"><span>No runs recorded.</span></li>{% endfor %}</ol>
+    </section>
+  </aside>
+</div>
 {% endblock %}

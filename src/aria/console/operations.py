@@ -8,7 +8,11 @@ from aria.comparisons.models import ComparisonSummary, DocumentComparison
 from aria.comparisons.publications import publish_confirmed_comparison_changes
 from aria.comparisons.tasks import summarize_comparison
 from aria.discovery.models import MonitoredResource, ResourceRun, SourceRun
-from aria.discovery.services import create_resource_run, create_source_run
+from aria.discovery.services import (
+    create_resource_run,
+    create_source_run,
+    retire_monitored_resource,
+)
 from aria.discovery.tasks import execute_resource_run, execute_source_run
 from aria.events.services import record_audit_event
 from aria.orchestration.models import ChangeOrchestration
@@ -194,6 +198,8 @@ def queue_resource_poll(resource: MonitoredResource, *, user) -> ResourceRun:
     resource = (
         MonitoredResource.objects.select_for_update().select_related("endpoint").get(pk=resource.pk)
     )
+    if resource.retired_at is not None:
+        raise ConsoleOperationError("This resource is retired and cannot be polled.")
     if not resource.is_enabled or not resource.is_approved or not resource.endpoint.is_enabled:
         raise ConsoleOperationError("This resource is not enabled and explicitly approved.")
     overlap = resource.runs.filter(
@@ -215,6 +221,20 @@ def queue_resource_poll(resource: MonitoredResource, *, user) -> ResourceRun:
     )
     transaction.on_commit(lambda: execute_resource_run.delay(str(resource_run.id)))
     return resource_run
+
+
+def retire_resource(
+    resource: MonitoredResource, *, reason: str, user
+) -> tuple[MonitoredResource, bool]:
+    try:
+        return retire_monitored_resource(
+            resource,
+            reason=reason,
+            actor_type="user",
+            actor_identifier=_actor(user),
+        )
+    except ValueError as error:
+        raise ConsoleOperationError(str(error)) from error
 
 
 @transaction.atomic

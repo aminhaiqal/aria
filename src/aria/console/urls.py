@@ -64,6 +64,11 @@ urlpatterns = [
         views.resource_poll,
         name="resource-poll",
     ),
+    path(
+        "resources/<uuid:resource_id>/retire/",
+        views.resource_retire,
+        name="resource-retire",
+    ),
     path("workflows/", views.orchestration_list, name="orchestration-list"),
     path(
         "workflows/<uuid:orchestration_id>/",

@@ -62,6 +62,13 @@ duplicate feed identifiers that point to different URLs are quarantined. Officia
 entries outside `detail_resource_path_prefixes` are registered disabled for operator review.
 Removal is evidence, never deletion.
 
+When an official detail page or feed becomes obsolete, a staff operator can retire it from its
+console detail page. Retirement requires a written reason plus the exact `RETIRE` confirmation,
+records the actor and timestamp, disables health and future scheduling, and emits matching audit
+and pipeline events. It does not delete approval, runs, observations, discovered links, or artifact
+provenance. Registration and source-pack reapplication recognize the retirement state and cannot
+silently reactivate the URL.
+
 The default scheduler limits resource dispatch to five per minute, three per endpoint per batch,
 and 50 enabled resources per endpoint. New resources receive deterministic offsets across their
 polling interval, and a resource with a pending or running check cannot overlap itself. These can
@@ -137,6 +144,9 @@ reuse or rewrite historical response bytes.
 | Artifact observations | `/api/v1/artifact-observations/` |
 
 All APIs are administrator-only and read-only.
+
+The monitored-resource response includes `retired_at`, `retirement_reason`, and
+`retirement_actor_identifier`, making the scheduling decision inspectable outside the console.
 
 ## Interface sequence
 

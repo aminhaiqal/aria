@@ -92,10 +92,11 @@ class MonitoredResourceAdmin(admin.ModelAdmin):
         "endpoint",
         "is_approved",
         "is_enabled",
+        "retired_at",
         "health_state",
         "next_poll_at",
     )
-    list_filter = ("resource_type", "is_approved", "is_enabled", "health_state")
+    list_filter = ("resource_type", "is_approved", "is_enabled", "health_state", "retired_at")
     search_fields = ("url", "title", "fingerprint", "endpoint__name")
     autocomplete_fields = ("endpoint", "parent")
     readonly_fields = (
@@ -106,6 +107,9 @@ class MonitoredResourceAdmin(admin.ModelAdmin):
         "last_successful_run_at",
         "consecutive_failures",
         "health_state",
+        "retired_at",
+        "retirement_reason",
+        "retirement_actor_identifier",
         "created_at",
         "updated_at",
     )

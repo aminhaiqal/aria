@@ -32,6 +32,7 @@ from aria.console.forms import (
     AdmissionPromotionForm,
     ComparisonReviewForm,
     PublicationConfirmationForm,
+    ResourceRetirementForm,
     StaticAdmissionAssessmentForm,
 )
 from aria.console.operations import (
@@ -47,6 +48,7 @@ from aria.console.operations import (
     queue_static_source_pilot,
     record_admission_assessment,
     record_static_admission_assessment,
+    retire_resource,
 )
 from aria.discovery.models import MonitoredResource, ResourceRun, SourceRun
 from aria.events.models import AuditEvent, OutboxEvent, PipelineEvent
@@ -554,6 +556,7 @@ def resource_detail(request, resource_id):
             "observations": observations,
             "latest_observation": latest_observation,
             "active_run": active_run,
+            "retirement_form": ResourceRetirementForm(),
         },
     )
 
@@ -568,6 +571,33 @@ def resource_poll(request, resource_id):
         messages.error(request, str(error))
     else:
         messages.success(request, f"Resource check queued as run {run.id}.")
+    return redirect("console:resource-detail", resource_id=resource.id)
+
+
+@staff_required
+@require_POST
+def resource_retire(request, resource_id):
+    resource = get_object_or_404(MonitoredResource, pk=resource_id)
+    form = ResourceRetirementForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Retirement requires a reason and the exact RETIRE confirmation.")
+    else:
+        try:
+            _, created = retire_resource(
+                resource,
+                reason=form.cleaned_data["reason"],
+                user=request.user,
+            )
+        except ConsoleOperationError as error:
+            messages.error(request, str(error))
+        else:
+            if created:
+                messages.success(request, "Resource retired; its evidence history was preserved.")
+            else:
+                messages.info(
+                    request,
+                    "This resource was already retired; no duplicate event was created.",
+                )
     return redirect("console:resource-detail", resource_id=resource.id)
 
 

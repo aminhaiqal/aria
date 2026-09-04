@@ -50,6 +50,29 @@ class PublicationConfirmationForm(forms.Form):
         return value
 
 
+class ResourceRetirementForm(forms.Form):
+    reason = forms.CharField(
+        min_length=10,
+        max_length=2000,
+        widget=forms.Textarea(
+            attrs={
+                "class": "field-control",
+                "rows": 3,
+                "placeholder": (
+                    "Explain why this endpoint is no longer an active official resource."
+                ),
+            }
+        ),
+    )
+    confirmation = forms.CharField(max_length=16)
+
+    def clean_confirmation(self):
+        value = self.cleaned_data["confirmation"].strip()
+        if value != "RETIRE":
+            raise forms.ValidationError("Type RETIRE to confirm this action.")
+        return value
+
+
 class AdmissionAssessmentForm(forms.Form):
     required_captures = forms.TypedChoiceField(
         choices=((2, "2 captures"), (3, "3 captures"), (4, "4 captures"), (5, "5 captures")),

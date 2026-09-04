@@ -50,6 +50,73 @@ def monitored_resource_fingerprint(url: str) -> str:
 
 
 @transaction.atomic
+def retire_monitored_resource(
+    resource: MonitoredResource,
+    *,
+    reason: str,
+    actor_type: str,
+    actor_identifier: str,
+) -> tuple[MonitoredResource, bool]:
+    reason = reason.strip()
+    actor_type = actor_type.strip()
+    actor_identifier = actor_identifier.strip()
+    if len(reason) < 10:
+        raise ValueError("Provide at least 10 characters explaining why this resource is retired.")
+    if len(reason) > 2000:
+        raise ValueError("The retirement reason cannot exceed 2000 characters.")
+    if not actor_type or not actor_identifier:
+        raise ValueError("A retirement actor type and identifier are required.")
+
+    resource = MonitoredResource.objects.select_for_update().get(pk=resource.pk)
+    if resource.retired_at is not None:
+        return resource, False
+    if resource.runs.filter(
+        status__in=(ResourceRun.Status.PENDING, ResourceRun.Status.RUNNING)
+    ).exists():
+        raise ValueError("This resource has active work and cannot be retired yet.")
+
+    resource.retired_at = timezone.now()
+    resource.retirement_reason = reason
+    resource.retirement_actor_identifier = actor_identifier[:255]
+    resource.is_enabled = False
+    resource.health_state = MonitoredResource.HealthState.DISABLED
+    resource.next_poll_at = None
+    resource.full_clean()
+    resource.save(
+        update_fields=(
+            "retired_at",
+            "retirement_reason",
+            "retirement_actor_identifier",
+            "is_enabled",
+            "health_state",
+            "next_poll_at",
+            "updated_at",
+        )
+    )
+    details = {
+        "endpoint_id": str(resource.endpoint_id),
+        "url": resource.url,
+        "reason": reason,
+        "retired_at": resource.retired_at.isoformat(),
+    }
+    record_audit_event(
+        action="source.resource.retired",
+        target_type="monitored_resource",
+        target_id=resource.id,
+        actor_type=actor_type,
+        actor_identifier=actor_identifier[:255],
+        details=details,
+    )
+    record_pipeline_event(
+        event_type="source.resource.retired",
+        aggregate_type="monitored_resource",
+        aggregate_id=resource.id,
+        payload=details,
+    )
+    return resource, True
+
+
+@transaction.atomic
 def register_monitored_resource(
     endpoint: SourceEndpoint,
     *,
@@ -105,14 +172,22 @@ def register_monitored_resource(
         resource.url = normalized_url
         resource.title = title[:512] or resource.title
         resource.is_approved = resource.is_approved or is_approved
-        if is_approved and (resource.is_enabled or not at_capacity):
+        if resource.retired_at is not None:
+            resource.is_enabled = False
+            resource.health_state = MonitoredResource.HealthState.DISABLED
+            resource.next_poll_at = None
+        elif is_approved and (resource.is_enabled or not at_capacity):
             resource.is_enabled = True
         elif is_enabled is not None:
             resource.is_enabled = is_enabled
         resource.approval_basis = approval_basis[:255] or resource.approval_basis
         resource.polling_interval_minutes = interval
         resource.metadata = {**resource.metadata, **resource_metadata}
-        if resource.next_poll_at is None and next_poll_at is not None:
+        if (
+            resource.retired_at is None
+            and resource.next_poll_at is None
+            and next_poll_at is not None
+        ):
             resource.next_poll_at = next_poll_at
         resource.full_clean()
         resource.save()
@@ -247,6 +322,7 @@ def schedule_due_resource_runs() -> list[ResourceRun]:
     due = MonitoredResource.objects.filter(
         is_enabled=True,
         is_approved=True,
+        retired_at__isnull=True,
         next_poll_at__lte=now,
         endpoint__is_enabled=True,
         endpoint__collection__is_enabled=True,

@@ -33,9 +33,11 @@ from aria.discovery.services import (
     reconcile_resource_links,
     record_resource_observation,
     register_monitored_resource,
+    retire_monitored_resource,
     schedule_due_resource_runs,
 )
 from aria.discovery.tasks import execute_resource_run
+from aria.events.models import AuditEvent, PipelineEvent
 from aria.fetching.client import FetchResponse
 from aria.sources.models import SourceEndpoint
 
@@ -115,6 +117,87 @@ class ResourceMonitoringTestCase(TestCase):
             resource.fingerprint,
             hashlib.sha256(resource.url.encode("utf-8")).hexdigest(),
         )
+
+    def test_resource_retirement_is_audited_idempotent_and_not_reactivated(self) -> None:
+        resource, _ = register_monitored_resource(
+            self.endpoint,
+            resource_type=MonitoredResource.ResourceType.DETAIL_PAGE,
+            url="https://example.com/publications/obsolete/",
+            is_approved=True,
+            next_poll_at=timezone.now() - timedelta(minutes=1),
+        )
+
+        retired, created = retire_monitored_resource(
+            resource,
+            reason="The official page now redirects to the publication index.",
+            actor_type="user",
+            actor_identifier="operator-17",
+        )
+        same, replay_created = retire_monitored_resource(
+            retired,
+            reason="A duplicate request must not alter the first decision.",
+            actor_type="user",
+            actor_identifier="operator-18",
+        )
+        registered, registration_created = register_monitored_resource(
+            self.endpoint,
+            resource_type=MonitoredResource.ResourceType.DETAIL_PAGE,
+            url=resource.url,
+            is_approved=True,
+            is_enabled=True,
+            next_poll_at=timezone.now() - timedelta(minutes=1),
+        )
+
+        self.assertTrue(created)
+        self.assertFalse(replay_created)
+        self.assertFalse(registration_created)
+        self.assertEqual(same.id, resource.id)
+        self.assertTrue(registered.is_retired)
+        self.assertFalse(registered.is_enabled)
+        self.assertEqual(registered.health_state, MonitoredResource.HealthState.DISABLED)
+        self.assertIsNone(registered.next_poll_at)
+        self.assertEqual(registered.retirement_actor_identifier, "operator-17")
+        self.assertEqual(schedule_due_resource_runs(), [])
+        self.assertEqual(
+            AuditEvent.objects.filter(
+                action="source.resource.retired", target_id=resource.id
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            PipelineEvent.objects.filter(
+                event_type="source.resource.retired", aggregate_id=resource.id
+            ).count(),
+            1,
+        )
+
+    def test_resource_retirement_blocks_active_work_and_requires_reason(self) -> None:
+        resource, _ = register_monitored_resource(
+            self.endpoint,
+            resource_type=MonitoredResource.ResourceType.DETAIL_PAGE,
+            url="https://example.com/publications/active/",
+            is_approved=True,
+        )
+        self.create_resource_run(resource)
+
+        with self.assertRaisesMessage(ValueError, "active work"):
+            retire_monitored_resource(
+                resource,
+                reason="This is obsolete after the current check.",
+                actor_type="user",
+                actor_identifier="operator-17",
+            )
+        with self.assertRaisesMessage(ValueError, "at least 10 characters"):
+            retire_monitored_resource(
+                resource,
+                reason="short",
+                actor_type="user",
+                actor_identifier="operator-17",
+            )
+
+        resource.refresh_from_db()
+        self.assertFalse(resource.is_retired)
+        self.assertTrue(resource.is_enabled)
 
     def test_resource_observation_is_append_only_and_validates_ownership(self) -> None:
         resource, _ = register_monitored_resource(
