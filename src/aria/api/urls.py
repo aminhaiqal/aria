@@ -1,6 +1,8 @@
 from rest_framework.routers import DefaultRouter
 
 from aria.api.views import (
+    ApplicabilityTaxonomyViewSet,
+    ApplicabilityTermViewSet,
     ArtifactDerivativeViewSet,
     ArtifactObservationViewSet,
     AuthorityViewSet,
@@ -22,6 +24,7 @@ from aria.api.views import (
     GraphEdgeViewSet,
     GraphNodeViewSet,
     ImpactEvidenceViewSet,
+    ImpactTargetViewSet,
     KnowledgeSearchViewSet,
     MonitoredResourceViewSet,
     NormalizedSectionViewSet,
@@ -85,6 +88,9 @@ router.register("comparison-summaries", ComparisonSummaryViewSet)
 router.register("reviewed-change-publications", ReviewedChangePublicationViewSet)
 router.register("regulatory-impacts", RegulatoryImpactViewSet)
 router.register("impact-evidence", ImpactEvidenceViewSet)
+router.register("applicability-taxonomies", ApplicabilityTaxonomyViewSet)
+router.register("applicability-terms", ApplicabilityTermViewSet)
+router.register("impact-targets", ImpactTargetViewSet)
 router.register("change-orchestrations", ChangeOrchestrationViewSet)
 
 urlpatterns = router.urls

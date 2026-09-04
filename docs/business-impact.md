@@ -6,7 +6,7 @@ Phase 4C turns confirmed textual changes into reviewable business-impact intelli
 turn model output into law, infer legal effect automatically, or treat semantic similarity as proof
 that a business is regulated.
 
-The first implemented slice, Phase 4C.1, establishes two append-only records:
+Phase 4C.1 establishes two append-only records:
 
 - `RegulatoryImpact` records a candidate statement, its type and origin, the exact comparison item,
   and the human confirmation review that made impact analysis eligible; and
@@ -24,6 +24,35 @@ publication or delivery event. Later slices add controlled applicability terms, 
 separate human impact review, deterministic profile matching, reader presentation, and reviewed
 delivery in that order.
 
+## Versioned applicability vocabulary
+
+Phase 4C.2 adds the repository-backed `aria-my-business-applicability` taxonomy. Every applied
+version stores its canonical JSON definition and SHA-256 checksum. Its append-only terms cover six
+explicit dimensions: jurisdiction, sector, organization type, regulated role, activity, and size.
+An `ImpactTarget` may reference only one of these versioned terms and must retain an included or
+excluded disposition, its origin, and a written rationale. Free-text target labels cannot enter the
+matching path.
+
+The initial vocabulary is deliberately small and ARIA-maintained. Its stored disclaimer states
+that it is not an official legal classification. A changed definition cannot replace an installed
+`slug + version`; maintainers must publish a new version, which preserves the exact terms used by
+older impact candidates.
+
+Validate and preview the repository definition without writing:
+
+```bash
+make plan-impact-taxonomy
+```
+
+Apply it through the explicit gate:
+
+```bash
+make apply-impact-taxonomy
+```
+
+The underlying command requires both `--apply` and the exact `--confirm APPLY`. Reapplication of
+identical bytes is idempotent and does not duplicate taxonomy terms or its audit event.
+
 ## Candidate types
 
 The controlled first vocabulary is: obligation, reporting, registration, deadline, prohibition,
@@ -38,6 +67,9 @@ Staff can inspect the append-only records in Django Admin or the administrator-o
 |---|---|
 | Impact candidates with nested evidence | `/api/v1/regulatory-impacts/` |
 | Individual evidence snapshots | `/api/v1/impact-evidence/` |
+| Versioned taxonomy snapshots | `/api/v1/applicability-taxonomies/` |
+| Controlled applicability terms | `/api/v1/applicability-terms/` |
+| Candidate-to-term links | `/api/v1/impact-targets/` |
 
 Both endpoints are read-only. The supported write path is the transactional domain service, which
 locks the comparison item, verifies its current human confirmation, validates every evidence

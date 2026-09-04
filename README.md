@@ -78,6 +78,7 @@ outputs are explicit derivatives and never replace or mutate the official source
 - Phase 4B self-hosted React, TypeScript, Vite, and shadcn reader: implemented
 - Phase 4C.0 audited monitored-resource retirement: implemented
 - Phase 4C.1 evidence-bound regulatory impact records: implemented
+- Phase 4C.2 versioned business applicability taxonomy: implemented
 - Phase 2 source breadth: JPDP, AGC Updated Principal Acts, and Parliament Dewan Rakyat bills are
   operational with complete R2, extraction, graph, local-vector, and OpenAI-vector coverage
 - Operational acceptance still pending: observe the first autonomous AGC and Parliament daily

@@ -10,6 +10,8 @@ from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet, ReadOnlyModelViewSet
 
 from aria.api.serializers import (
+    ApplicabilityTaxonomySerializer,
+    ApplicabilityTermSerializer,
     ArtifactDerivativeSerializer,
     ArtifactObservationSerializer,
     AuthoritySerializer,
@@ -31,6 +33,7 @@ from aria.api.serializers import (
     GraphEdgeSerializer,
     GraphNodeSerializer,
     ImpactEvidenceSerializer,
+    ImpactTargetSerializer,
     MonitoredResourceSerializer,
     NormalizedSectionSerializer,
     OCRRunSerializer,
@@ -81,7 +84,13 @@ from aria.discovery.models import (
 from aria.documents.models import DocumentIdentity, DocumentVersion, NormalizedSection
 from aria.extraction.models import ExtractedDocument, ExtractionRun
 from aria.fetching.models import FetchAttempt
-from aria.impacts.models import ImpactEvidence, RegulatoryImpact
+from aria.impacts.models import (
+    ApplicabilityTaxonomy,
+    ApplicabilityTerm,
+    ImpactEvidence,
+    ImpactTarget,
+    RegulatoryImpact,
+)
 from aria.knowledge.embedding_services import current_sections_queryset
 from aria.knowledge.embeddings import (
     SUPPORTED_PROVIDERS,
@@ -372,6 +381,9 @@ class RegulatoryImpactViewSet(ReadOnlyModelViewSet):
         "evidence_records__structural_anchor",
         "evidence_records__normalized_section",
         "evidence_records__source_artifact",
+        "targets",
+        "targets__term",
+        "targets__term__taxonomy",
     )
     serializer_class = RegulatoryImpactSerializer
 
@@ -381,6 +393,21 @@ class ImpactEvidenceViewSet(ReadOnlyModelViewSet):
         "impact", "structural_anchor", "normalized_section", "source_artifact"
     )
     serializer_class = ImpactEvidenceSerializer
+
+
+class ApplicabilityTaxonomyViewSet(ReadOnlyModelViewSet):
+    queryset = ApplicabilityTaxonomy.objects.prefetch_related("terms")
+    serializer_class = ApplicabilityTaxonomySerializer
+
+
+class ApplicabilityTermViewSet(ReadOnlyModelViewSet):
+    queryset = ApplicabilityTerm.objects.select_related("taxonomy", "parent")
+    serializer_class = ApplicabilityTermSerializer
+
+
+class ImpactTargetViewSet(ReadOnlyModelViewSet):
+    queryset = ImpactTarget.objects.select_related("impact", "term", "term__taxonomy")
+    serializer_class = ImpactTargetSerializer
 
 
 class ChangeOrchestrationViewSet(ReadOnlyModelViewSet):

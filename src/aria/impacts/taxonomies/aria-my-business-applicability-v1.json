@@ -1,0 +1,207 @@
+{
+  "schema_version": 1,
+  "slug": "aria-my-business-applicability",
+  "version": 1,
+  "name": "ARIA Malaysia business applicability",
+  "description": "Controlled operational terms for explaining which Malaysian business profiles may need to review a confirmed regulatory change.",
+  "jurisdiction": "Malaysia",
+  "disclaimer": "This ARIA-maintained vocabulary is not an official legal classification and does not determine whether an organization is legally regulated.",
+  "terms": [
+    {
+      "dimension": "jurisdiction",
+      "code": "malaysia",
+      "label": "Malaysia",
+      "description": "Organizations, operations, or regulated activity connected to Malaysia.",
+      "aliases": ["MY", "Malaysian"]
+    },
+    {
+      "dimension": "sector",
+      "code": "cross-sector",
+      "label": "Cross-sector",
+      "description": "Requirements that are not limited to a named industry sector.",
+      "aliases": ["all sectors"]
+    },
+    {
+      "dimension": "sector",
+      "code": "financial-services",
+      "label": "Financial services",
+      "description": "Banking, insurance, payments, capital-market, and related financial services.",
+      "aliases": ["finance", "banking", "insurance"]
+    },
+    {
+      "dimension": "sector",
+      "code": "digital-services",
+      "label": "Digital services",
+      "description": "Online platforms, software, data, and internet-delivered services.",
+      "aliases": ["technology", "online platform", "software"]
+    },
+    {
+      "dimension": "sector",
+      "code": "healthcare",
+      "label": "Healthcare",
+      "description": "Healthcare providers, health services, and related operations.",
+      "aliases": ["health", "medical"]
+    },
+    {
+      "dimension": "sector",
+      "code": "education",
+      "label": "Education",
+      "description": "Education providers and learning services.",
+      "aliases": ["school", "university", "training"]
+    },
+    {
+      "dimension": "sector",
+      "code": "retail-ecommerce",
+      "label": "Retail and e-commerce",
+      "description": "Physical or online sale of goods and consumer services.",
+      "aliases": ["retail", "e-commerce", "marketplace"]
+    },
+    {
+      "dimension": "sector",
+      "code": "telecommunications",
+      "label": "Telecommunications",
+      "description": "Electronic communications networks and services.",
+      "aliases": ["telecoms", "communications provider"]
+    },
+    {
+      "dimension": "sector",
+      "code": "professional-services",
+      "label": "Professional services",
+      "description": "Advisory, legal, accounting, consulting, and comparable services.",
+      "aliases": ["consulting", "advisory"]
+    },
+    {
+      "dimension": "sector",
+      "code": "manufacturing",
+      "label": "Manufacturing",
+      "description": "Production, assembly, and industrial operations.",
+      "aliases": ["industrial"]
+    },
+    {
+      "dimension": "sector",
+      "code": "public-sector",
+      "label": "Public sector",
+      "description": "Government departments, agencies, statutory bodies, and public services.",
+      "aliases": ["government"]
+    },
+    {
+      "dimension": "organization_type",
+      "code": "company",
+      "label": "Company",
+      "description": "A company or other incorporated commercial organization.",
+      "aliases": ["corporation", "business"]
+    },
+    {
+      "dimension": "organization_type",
+      "code": "public-body",
+      "label": "Public body",
+      "description": "A government entity, statutory body, or other public authority.",
+      "aliases": ["government body", "authority"]
+    },
+    {
+      "dimension": "organization_type",
+      "code": "non-profit",
+      "label": "Non-profit organization",
+      "description": "A charity, society, foundation, or other non-profit organization.",
+      "aliases": ["charity", "NGO"]
+    },
+    {
+      "dimension": "regulated_role",
+      "code": "data-user",
+      "label": "Data user",
+      "description": "An organization acting in the data-user role described by Malaysian personal-data material.",
+      "aliases": ["data controller", "controller"]
+    },
+    {
+      "dimension": "regulated_role",
+      "code": "data-processor",
+      "label": "Data processor",
+      "description": "An organization processing personal data for another organization.",
+      "aliases": ["processor"]
+    },
+    {
+      "dimension": "regulated_role",
+      "code": "employer",
+      "label": "Employer",
+      "description": "An organization acting as an employer.",
+      "aliases": []
+    },
+    {
+      "dimension": "regulated_role",
+      "code": "service-provider",
+      "label": "Service provider",
+      "description": "An organization supplying services to another person or organization.",
+      "aliases": ["provider", "vendor"]
+    },
+    {
+      "dimension": "activity",
+      "code": "process-personal-data",
+      "label": "Processes personal data",
+      "description": "Collects, records, stores, uses, discloses, or otherwise processes personal data.",
+      "aliases": ["personal data processing"]
+    },
+    {
+      "dimension": "activity",
+      "code": "direct-marketing",
+      "label": "Conducts direct marketing",
+      "description": "Uses contact or personal information for direct marketing activity.",
+      "aliases": ["marketing"]
+    },
+    {
+      "dimension": "activity",
+      "code": "cross-border-transfer",
+      "label": "Transfers data across borders",
+      "description": "Transfers or makes personal data available outside Malaysia.",
+      "aliases": ["international data transfer", "overseas transfer"]
+    },
+    {
+      "dimension": "activity",
+      "code": "employ-workers",
+      "label": "Employs workers",
+      "description": "Engages employees or other workers.",
+      "aliases": ["employment"]
+    },
+    {
+      "dimension": "activity",
+      "code": "operate-digital-service",
+      "label": "Operates a digital service",
+      "description": "Provides or operates software, an online platform, or another digital service.",
+      "aliases": ["online service", "platform operation"]
+    },
+    {
+      "dimension": "size",
+      "code": "micro",
+      "label": "Micro organization",
+      "description": "Profile declares itself in its applicable micro-size category.",
+      "aliases": []
+    },
+    {
+      "dimension": "size",
+      "code": "small",
+      "label": "Small organization",
+      "description": "Profile declares itself in its applicable small-size category.",
+      "aliases": ["small business"]
+    },
+    {
+      "dimension": "size",
+      "code": "medium",
+      "label": "Medium organization",
+      "description": "Profile declares itself in its applicable medium-size category.",
+      "aliases": ["mid-sized"]
+    },
+    {
+      "dimension": "size",
+      "code": "large",
+      "label": "Large organization",
+      "description": "Profile declares itself in its applicable large-size category.",
+      "aliases": ["enterprise"]
+    },
+    {
+      "dimension": "size",
+      "code": "any-size",
+      "label": "Any organization size",
+      "description": "The candidate is not limited to a particular organization size.",
+      "aliases": ["all sizes"]
+    }
+  ]
+}

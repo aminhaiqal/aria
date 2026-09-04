@@ -6,7 +6,13 @@ from django.db import transaction
 
 from aria.comparisons.models import ComparisonItem, ComparisonReview
 from aria.events.services import record_audit_event
-from aria.impacts.models import ImpactEvidence, RegulatoryImpact
+from aria.impacts.models import (
+    ApplicabilityTaxonomy,
+    ImpactEvidence,
+    ImpactTarget,
+    RegulatoryImpact,
+)
+from aria.impacts.taxonomies import resolve_taxonomy_term
 
 
 def _fingerprint(*, item: ComparisonItem, confirmation: ComparisonReview, payload: dict) -> str:
@@ -113,3 +119,59 @@ def create_regulatory_impact(
         },
     )
     return impact, True
+
+
+@transaction.atomic
+def add_impact_target(
+    impact: RegulatoryImpact,
+    taxonomy: ApplicabilityTaxonomy,
+    *,
+    dimension: str,
+    code: str,
+    disposition: str,
+    origin: str,
+    rationale: str,
+    actor_type: str = "system",
+    actor_identifier: str = "",
+) -> tuple[ImpactTarget, bool]:
+    impact = RegulatoryImpact.objects.select_for_update().get(pk=impact.pk)
+    if disposition not in ImpactTarget.Disposition.values:
+        raise ValidationError("Unsupported target disposition.")
+    if origin not in ImpactTarget.Origin.values:
+        raise ValidationError("Unsupported target origin.")
+    term = resolve_taxonomy_term(taxonomy, dimension=dimension, code=code)
+    if impact.targets.exclude(term__taxonomy=taxonomy).exists():
+        raise ValidationError("One impact candidate cannot mix taxonomy versions.")
+    existing = ImpactTarget.objects.filter(impact=impact, term=term).first()
+    if existing is not None:
+        if existing.disposition != disposition:
+            raise ValidationError(
+                "This candidate already has a different disposition for the applicability term."
+            )
+        return existing, False
+    target = ImpactTarget(
+        impact=impact,
+        term=term,
+        disposition=disposition,
+        origin=origin,
+        rationale=rationale.strip(),
+    )
+    target.full_clean()
+    target.save()
+    record_audit_event(
+        action="impact.target_created",
+        target_type="impact_target",
+        target_id=target.id,
+        actor_type=actor_type,
+        actor_identifier=actor_identifier[:255],
+        details={
+            "impact_id": str(impact.id),
+            "taxonomy_id": str(taxonomy.id),
+            "taxonomy_checksum": taxonomy.checksum,
+            "dimension": dimension,
+            "code": code,
+            "disposition": disposition,
+            "origin": origin,
+        },
+    )
+    return target, True

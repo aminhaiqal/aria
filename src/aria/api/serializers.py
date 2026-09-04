@@ -30,7 +30,13 @@ from aria.discovery.models import (
 from aria.documents.models import DocumentIdentity, DocumentVersion, NormalizedSection
 from aria.extraction.models import ExtractedDocument, ExtractionRun
 from aria.fetching.models import FetchAttempt
-from aria.impacts.models import ImpactEvidence, RegulatoryImpact
+from aria.impacts.models import (
+    ApplicabilityTaxonomy,
+    ApplicabilityTerm,
+    ImpactEvidence,
+    ImpactTarget,
+    RegulatoryImpact,
+)
 from aria.knowledge.models import GraphEdge, GraphNode, SectionEmbedding
 from aria.ocr.models import OCRRun
 from aria.orchestration.models import ChangeOrchestration, OrchestrationStepAttempt
@@ -987,8 +993,70 @@ class ImpactEvidenceSerializer(serializers.ModelSerializer):
         )
 
 
+class ApplicabilityTaxonomySerializer(serializers.ModelSerializer):
+    term_count = serializers.IntegerField(source="terms.count", read_only=True)
+
+    class Meta:
+        model = ApplicabilityTaxonomy
+        fields = (
+            "id",
+            "slug",
+            "schema_version",
+            "version",
+            "name",
+            "description",
+            "jurisdiction",
+            "disclaimer",
+            "checksum",
+            "definition",
+            "term_count",
+            "applied_at",
+        )
+
+
+class ApplicabilityTermSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ApplicabilityTerm
+        fields = (
+            "id",
+            "taxonomy",
+            "dimension",
+            "code",
+            "label",
+            "description",
+            "parent",
+            "aliases",
+            "metadata",
+            "created_at",
+        )
+
+
+class ImpactTargetSerializer(serializers.ModelSerializer):
+    dimension = serializers.CharField(source="term.dimension", read_only=True)
+    code = serializers.CharField(source="term.code", read_only=True)
+    label = serializers.CharField(source="term.label", read_only=True)
+    taxonomy_checksum = serializers.CharField(source="term.taxonomy.checksum", read_only=True)
+
+    class Meta:
+        model = ImpactTarget
+        fields = (
+            "id",
+            "impact",
+            "term",
+            "dimension",
+            "code",
+            "label",
+            "taxonomy_checksum",
+            "disposition",
+            "origin",
+            "rationale",
+            "created_at",
+        )
+
+
 class RegulatoryImpactSerializer(serializers.ModelSerializer):
     evidence_records = ImpactEvidenceSerializer(many=True, read_only=True)
+    targets = ImpactTargetSerializer(many=True, read_only=True)
 
     class Meta:
         model = RegulatoryImpact
@@ -1005,6 +1073,7 @@ class RegulatoryImpactSerializer(serializers.ModelSerializer):
             "legal_effect_assessed",
             "input_fingerprint",
             "evidence_records",
+            "targets",
             "created_at",
         )
 

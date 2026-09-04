@@ -190,3 +190,159 @@ class ImpactEvidence(AppendOnlyModel):
 
     def __str__(self) -> str:
         return f"{self.impact_id}:{self.side}"
+
+
+class ApplicabilityTaxonomy(AppendOnlyModel):
+    slug = models.SlugField(max_length=128)
+    schema_version = models.PositiveIntegerField()
+    version = models.PositiveIntegerField()
+    name = models.CharField(max_length=255)
+    description = models.TextField()
+    jurisdiction = models.CharField(max_length=128)
+    disclaimer = models.TextField()
+    checksum = models.CharField(
+        max_length=64,
+        unique=True,
+        validators=[RegexValidator(r"^[0-9a-f]{64}$")],
+    )
+    definition = models.JSONField()
+    applied_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ("slug", "-version")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("slug", "version"),
+                name="unique_applicability_taxonomy_version",
+            )
+        ]
+
+    def clean(self) -> None:
+        if not isinstance(self.definition, dict):
+            raise ValidationError("Taxonomy snapshots require an object definition.")
+        expected = {
+            "slug": self.slug,
+            "schema_version": self.schema_version,
+            "version": self.version,
+        }
+        if any(self.definition.get(key) != value for key, value in expected.items()):
+            raise ValidationError("Taxonomy identity must match its definition snapshot.")
+
+    def __str__(self) -> str:
+        return f"{self.name} v{self.version}"
+
+
+class ApplicabilityTerm(AppendOnlyModel):
+    class Dimension(models.TextChoices):
+        SECTOR = "sector", "Sector"
+        ORGANIZATION_TYPE = "organization_type", "Organization type"
+        REGULATED_ROLE = "regulated_role", "Regulated role"
+        ACTIVITY = "activity", "Activity"
+        JURISDICTION = "jurisdiction", "Jurisdiction"
+        SIZE = "size", "Size"
+
+    taxonomy = models.ForeignKey(
+        ApplicabilityTaxonomy,
+        on_delete=models.PROTECT,
+        related_name="terms",
+    )
+    dimension = models.CharField(max_length=32, choices=Dimension.choices, db_index=True)
+    code = models.SlugField(max_length=128)
+    label = models.CharField(max_length=255)
+    description = models.TextField()
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        related_name="children",
+        null=True,
+        blank=True,
+    )
+    aliases = models.JSONField(default=list, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ("taxonomy", "dimension", "code")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("taxonomy", "dimension", "code"),
+                name="unique_term_per_taxonomy_dimension",
+            )
+        ]
+        indexes = [
+            models.Index(fields=("dimension", "code"), name="impact_term_dimension_code_idx")
+        ]
+
+    def clean(self) -> None:
+        errors = {}
+        if not isinstance(self.aliases, list) or any(
+            not isinstance(alias, str) or not alias.strip() for alias in self.aliases
+        ):
+            errors["aliases"] = "Aliases must be a list of non-empty strings."
+        if self.parent_id:
+            if self.parent.taxonomy_id != self.taxonomy_id:
+                errors["parent"] = "A parent term must use the same taxonomy version."
+            elif self.parent.dimension != self.dimension:
+                errors["parent"] = "A parent term must use the same applicability dimension."
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self) -> str:
+        return f"{self.get_dimension_display()}: {self.label}"
+
+
+class ImpactTarget(AppendOnlyModel):
+    class Disposition(models.TextChoices):
+        INCLUDED = "included", "Included"
+        EXCLUDED = "excluded", "Excluded"
+
+    class Origin(models.TextChoices):
+        DETERMINISTIC = "deterministic", "Deterministic"
+        GPT = "gpt", "GPT candidate"
+        HUMAN = "human", "Human"
+
+    impact = models.ForeignKey(
+        RegulatoryImpact,
+        on_delete=models.PROTECT,
+        related_name="targets",
+    )
+    term = models.ForeignKey(
+        ApplicabilityTerm,
+        on_delete=models.PROTECT,
+        related_name="impact_targets",
+    )
+    disposition = models.CharField(max_length=16, choices=Disposition.choices)
+    origin = models.CharField(max_length=16, choices=Origin.choices)
+    rationale = models.TextField()
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ("impact", "term__dimension", "term__code")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("impact", "term"),
+                name="unique_applicability_term_per_impact",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=("term", "disposition", "created_at"),
+                name="impact_target_term_state_idx",
+            )
+        ]
+
+    def clean(self) -> None:
+        errors = {}
+        if not self.rationale.strip():
+            errors["rationale"] = "A target rationale is required."
+        if (
+            self.impact_id
+            and self.term_id
+            and self.impact.targets.exclude(term__taxonomy_id=self.term.taxonomy_id).exists()
+        ):
+            errors["term"] = "One impact candidate cannot mix taxonomy versions."
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self) -> str:
+        return f"{self.impact_id}:{self.term_id} [{self.disposition}]"

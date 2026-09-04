@@ -1,6 +1,12 @@
 from django.contrib import admin
 
-from aria.impacts.models import ImpactEvidence, RegulatoryImpact
+from aria.impacts.models import (
+    ApplicabilityTaxonomy,
+    ApplicabilityTerm,
+    ImpactEvidence,
+    ImpactTarget,
+    RegulatoryImpact,
+)
 
 
 class ReadOnlyImpactAdmin(admin.ModelAdmin):
@@ -38,3 +44,23 @@ class ImpactEvidenceAdmin(ReadOnlyImpactAdmin):
     list_display = ("impact", "side", "structural_anchor", "source_artifact", "created_at")
     list_filter = ("side", "impact__impact_type")
     search_fields = ("impact__title", "artifact_sha256", "anchor_text_sha256")
+
+
+@admin.register(ApplicabilityTaxonomy)
+class ApplicabilityTaxonomyAdmin(ReadOnlyImpactAdmin):
+    list_display = ("name", "version", "jurisdiction", "checksum", "applied_at")
+    search_fields = ("name", "slug", "checksum")
+
+
+@admin.register(ApplicabilityTerm)
+class ApplicabilityTermAdmin(ReadOnlyImpactAdmin):
+    list_display = ("label", "dimension", "code", "taxonomy", "parent")
+    list_filter = ("dimension", "taxonomy")
+    search_fields = ("label", "code", "description")
+
+
+@admin.register(ImpactTarget)
+class ImpactTargetAdmin(ReadOnlyImpactAdmin):
+    list_display = ("impact", "term", "disposition", "origin", "created_at")
+    list_filter = ("disposition", "origin", "term__dimension")
+    search_fields = ("impact__title", "term__label", "rationale")
