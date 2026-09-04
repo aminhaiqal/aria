@@ -30,6 +30,7 @@ from aria.discovery.models import (
 from aria.documents.models import DocumentIdentity, DocumentVersion, NormalizedSection
 from aria.extraction.models import ExtractedDocument, ExtractionRun
 from aria.fetching.models import FetchAttempt
+from aria.impacts.models import ImpactEvidence, RegulatoryImpact
 from aria.knowledge.models import GraphEdge, GraphNode, SectionEmbedding
 from aria.ocr.models import OCRRun
 from aria.orchestration.models import ChangeOrchestration, OrchestrationStepAttempt
@@ -963,6 +964,47 @@ class ReviewedChangePublicationSerializer(serializers.ModelSerializer):
             "comparison_item",
             "confirmation_review",
             "pipeline_event",
+            "created_at",
+        )
+
+
+class ImpactEvidenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ImpactEvidence
+        fields = (
+            "id",
+            "impact",
+            "side",
+            "structural_anchor",
+            "normalized_section",
+            "source_artifact",
+            "artifact_sha256",
+            "anchor_text",
+            "anchor_text_sha256",
+            "section_text_sha256",
+            "source_locator",
+            "created_at",
+        )
+
+
+class RegulatoryImpactSerializer(serializers.ModelSerializer):
+    evidence_records = ImpactEvidenceSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = RegulatoryImpact
+        fields = (
+            "id",
+            "comparison_item",
+            "confirmation_review",
+            "impact_type",
+            "origin",
+            "title",
+            "statement",
+            "rationale",
+            "effective_date_text",
+            "legal_effect_assessed",
+            "input_fingerprint",
+            "evidence_records",
             "created_at",
         )
 

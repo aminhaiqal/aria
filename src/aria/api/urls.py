@@ -21,6 +21,7 @@ from aria.api.views import (
     FetchAttemptViewSet,
     GraphEdgeViewSet,
     GraphNodeViewSet,
+    ImpactEvidenceViewSet,
     KnowledgeSearchViewSet,
     MonitoredResourceViewSet,
     NormalizedSectionViewSet,
@@ -29,6 +30,7 @@ from aria.api.views import (
     QualityAssessmentRunViewSet,
     QualityFindingViewSet,
     RawArtifactViewSet,
+    RegulatoryImpactViewSet,
     ResourceObservationViewSet,
     ResourceRunViewSet,
     ReviewedChangePublicationViewSet,
@@ -81,6 +83,8 @@ router.register("comparison-items", ComparisonItemViewSet)
 router.register("comparison-reviews", ComparisonReviewViewSet)
 router.register("comparison-summaries", ComparisonSummaryViewSet)
 router.register("reviewed-change-publications", ReviewedChangePublicationViewSet)
+router.register("regulatory-impacts", RegulatoryImpactViewSet)
+router.register("impact-evidence", ImpactEvidenceViewSet)
 router.register("change-orchestrations", ChangeOrchestrationViewSet)
 
 urlpatterns = router.urls

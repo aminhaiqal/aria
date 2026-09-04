@@ -30,6 +30,7 @@ from aria.api.serializers import (
     FetchAttemptSerializer,
     GraphEdgeSerializer,
     GraphNodeSerializer,
+    ImpactEvidenceSerializer,
     MonitoredResourceSerializer,
     NormalizedSectionSerializer,
     OCRRunSerializer,
@@ -37,6 +38,7 @@ from aria.api.serializers import (
     QualityAssessmentRunSerializer,
     QualityFindingSerializer,
     RawArtifactSerializer,
+    RegulatoryImpactSerializer,
     ResourceObservationSerializer,
     ResourceRunSerializer,
     ReviewedChangePublicationSerializer,
@@ -79,6 +81,7 @@ from aria.discovery.models import (
 from aria.documents.models import DocumentIdentity, DocumentVersion, NormalizedSection
 from aria.extraction.models import ExtractedDocument, ExtractionRun
 from aria.fetching.models import FetchAttempt
+from aria.impacts.models import ImpactEvidence, RegulatoryImpact
 from aria.knowledge.embedding_services import current_sections_queryset
 from aria.knowledge.embeddings import (
     SUPPORTED_PROVIDERS,
@@ -358,6 +361,26 @@ class ReviewedChangePublicationViewSet(ReadOnlyModelViewSet):
         "comparison_item", "confirmation_review", "pipeline_event"
     )
     serializer_class = ReviewedChangePublicationSerializer
+
+
+class RegulatoryImpactViewSet(ReadOnlyModelViewSet):
+    queryset = RegulatoryImpact.objects.select_related(
+        "comparison_item",
+        "confirmation_review",
+    ).prefetch_related(
+        "evidence_records",
+        "evidence_records__structural_anchor",
+        "evidence_records__normalized_section",
+        "evidence_records__source_artifact",
+    )
+    serializer_class = RegulatoryImpactSerializer
+
+
+class ImpactEvidenceViewSet(ReadOnlyModelViewSet):
+    queryset = ImpactEvidence.objects.select_related(
+        "impact", "structural_anchor", "normalized_section", "source_artifact"
+    )
+    serializer_class = ImpactEvidenceSerializer
 
 
 class ChangeOrchestrationViewSet(ReadOnlyModelViewSet):

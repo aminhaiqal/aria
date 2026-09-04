@@ -76,6 +76,8 @@ outputs are explicit derivatives and never replace or mutate the official source
 - Phase 3G measured hybrid semantic retrieval: implemented
 - Phase 4A authenticated reader search and evidence interface: implemented
 - Phase 4B self-hosted React, TypeScript, Vite, and shadcn reader: implemented
+- Phase 4C.0 audited monitored-resource retirement: implemented
+- Phase 4C.1 evidence-bound regulatory impact records: implemented
 - Phase 2 source breadth: JPDP, AGC Updated Principal Acts, and Parliament Dewan Rakyat bills are
   operational with complete R2, extraction, graph, local-vector, and OpenAI-vector coverage
 - Operational acceptance still pending: observe the first autonomous AGC and Parliament daily
@@ -217,5 +219,6 @@ See [Foundation architecture](docs/foundation.md), [Phase 2 retrieval](docs/retr
 [Phase 3D.9 source admission](docs/source-admission.md),
 [Phase F self-hosted OCR](docs/ocr.md), and
 [Phase G hybrid embeddings](docs/embeddings.md), and
-[Phase 4 reader interface](docs/reader-interface.md) for design decisions and operating
+[Phase 4 reader interface](docs/reader-interface.md), and
+[Phase 4C regulatory impact intelligence](docs/business-impact.md) for design decisions and operating
 instructions.

@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     "aria.documents",
     "aria.knowledge",
     "aria.comparisons",
+    "aria.impacts",
     "aria.quality",
     "aria.orchestration",
     "aria.browser",
