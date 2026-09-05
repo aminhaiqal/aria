@@ -1,20 +1,25 @@
+import hashlib
+import hmac
 import json
 from dataclasses import replace
 from io import StringIO
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import httpx
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from aria.comparisons.models import ComparisonItem, ComparisonReview
 from aria.comparisons.reviews import record_comparison_review
 from aria.comparisons.services import compare_document_versions
-from aria.events.models import AuditEvent
+from aria.events.delivery import ImpactWebhookClient, deliver_impact_outbox_event
+from aria.events.models import AuditEvent, OutboxEvent, PipelineEvent
 from aria.impacts.generation import (
     ImpactGenerationEligibilityError,
     ImpactGenerationError,
@@ -33,8 +38,10 @@ from aria.impacts.models import (
     ImpactTarget,
     ProfileImpactMatch,
     RegulatoryImpact,
+    ReviewedImpactPublication,
 )
 from aria.impacts.profiles import match_business_profile, save_business_profile
+from aria.impacts.publications import publish_reviewed_impact
 from aria.impacts.reviews import record_impact_review
 from aria.impacts.services import add_impact_target, create_regulatory_impact
 from aria.impacts.taxonomies import (
@@ -890,3 +897,241 @@ class BusinessProfileMatchingTestCase(ImpactFixtureMixin, Phase3CFixture):
         )
         self.assertEqual(hidden.status_code, 200)
         self.assertEqual(hidden.json()["reviewed_impacts"], [])
+
+
+class ReviewedImpactPublicationTestCase(ImpactFixtureMixin, Phase3CFixture):
+    def setUp(self) -> None:
+        super().setUp()
+        self.confirm_change()
+        self.taxonomy, _ = apply_taxonomy_definition(load_taxonomy_definition())
+        result = generate_impact_candidates(self.item, self.taxonomy)
+        self.impact = result.generation.generated_impacts.get()
+        self.review = record_impact_review(
+            self.impact,
+            decision=ImpactReview.Decision.APPROVED,
+            reviewer=self.reviewer,
+            rationale="Approved for explicit reviewed-impact publication.",
+        )
+
+    def test_publication_is_explicit_evidence_complete_and_idempotent(self):
+        result = publish_reviewed_impact(self.review, publisher=self.reviewer)
+        replay = publish_reviewed_impact(self.review, publisher=self.reviewer)
+
+        self.assertTrue(result.created)
+        self.assertFalse(replay.created)
+        self.assertEqual(result.publication, replay.publication)
+        self.assertEqual(ReviewedImpactPublication.objects.count(), 1)
+        self.assertEqual(OutboxEvent.objects.count(), 1)
+        outbox = OutboxEvent.objects.get()
+        self.assertEqual(outbox.topic, "regulatory.impact.confirmed")
+        payload = outbox.payload["data"]
+        self.assertEqual(payload["impact_review_id"], str(self.review.id))
+        self.assertFalse(payload["legal_effect_assessed"])
+        self.assertEqual(len(payload["evidence"]), 2)
+        self.assertEqual(payload["targets"][0]["taxonomy_checksum"], self.taxonomy.checksum)
+        self.assertNotIn("business_profiles", json.dumps(payload))
+        self.assertEqual(
+            AuditEvent.objects.filter(action="impact.review_published").count(),
+            1,
+        )
+
+        self.client.force_login(self.reviewer)
+        api = self.client.get(
+            reverse("reviewedimpactpublication-detail", args=[result.publication.id])
+        )
+        self.assertEqual(api.status_code, 200)
+        self.assertEqual(api.json()["impact_review"], str(self.review.id))
+        self.assertEqual(
+            self.client.post(reverse("reviewedimpactpublication-list"), {}).status_code,
+            405,
+        )
+
+    def test_stale_or_nonapproved_reviews_cannot_publish(self):
+        context_review = record_impact_review(
+            self.impact,
+            decision=ImpactReview.Decision.NEEDS_CONTEXT,
+            reviewer=self.reviewer,
+            rationale="A commencement instrument must be checked before publication.",
+        )
+        with self.assertRaisesMessage(ValidationError, "latest impact review"):
+            publish_reviewed_impact(self.review, publisher=self.reviewer)
+        with self.assertRaisesMessage(ValidationError, "approved or amended"):
+            publish_reviewed_impact(context_review, publisher=self.reviewer)
+        restored = record_impact_review(
+            self.impact,
+            decision=ImpactReview.Decision.APPROVED,
+            reviewer=self.reviewer,
+            rationale="Approved again before the source confirmation changes.",
+        )
+        record_comparison_review(
+            self.item,
+            decision=ComparisonReview.Decision.REJECTED,
+            reviewer=self.reviewer,
+            rationale="The underlying textual-change confirmation was withdrawn.",
+        )
+        with self.assertRaisesMessage(ValidationError, "source confirmation"):
+            publish_reviewed_impact(restored, publisher=self.reviewer)
+        self.assertEqual(ReviewedImpactPublication.objects.count(), 0)
+        self.assertEqual(OutboxEvent.objects.count(), 0)
+
+    def test_console_and_command_require_exact_publication_confirmation(self):
+        self.client.force_login(self.reviewer)
+        detail_route = reverse("console:impact-detail", args=[self.impact.id])
+        publish_route = reverse("console:impact-publish", args=[self.impact.id])
+        self.assertContains(self.client.get(detail_route), "Publish reviewed impact")
+        self.assertEqual(self.client.get(publish_route).status_code, 405)
+
+        rejected = self.client.post(publish_route, {"confirmation": "publish"})
+        self.assertRedirects(rejected, detail_route)
+        self.assertEqual(ReviewedImpactPublication.objects.count(), 0)
+        accepted = self.client.post(publish_route, {"confirmation": "PUBLISH"})
+        self.assertRedirects(accepted, detail_route)
+        publication = ReviewedImpactPublication.objects.get()
+
+        output = StringIO()
+        call_command(
+            "publish_reviewed_impact",
+            str(self.review.id),
+            publisher=self.reviewer.username,
+            confirm="PUBLISH",
+            stdout=output,
+        )
+        self.assertFalse(json.loads(output.getvalue())["created"])
+        self.assertEqual(ReviewedImpactPublication.objects.count(), 1)
+        self.assertEqual(publication.impact_review, self.review)
+
+        with self.assertRaisesMessage(CommandError, "--confirm PUBLISH"):
+            call_command(
+                "publish_reviewed_impact",
+                str(self.review.id),
+                publisher=self.reviewer.username,
+                confirm="publish",
+            )
+
+    @override_settings(
+        IMPACT_WEBHOOK_URL="https://hooks.example.test/aria/impact",
+        IMPACT_WEBHOOK_ALLOWED_DOMAINS=["hooks.example.test"],
+        IMPACT_WEBHOOK_SECRET="test-secret-with-at-least-thirty-two-characters",
+        IMPACT_WEBHOOK_MAX_ATTEMPTS=3,
+        IMPACT_WEBHOOK_STALE_MINUTES=15,
+    )
+    def test_delivery_pins_public_https_and_signs_canonical_payload(self):
+        publication = publish_reviewed_impact(self.review, publisher=self.reviewer).publication
+        outbox = publication.pipeline_event.outbox_event
+        captured = {}
+
+        def handler(request):
+            captured["request"] = request
+            return httpx.Response(204)
+
+        client = ImpactWebhookClient(
+            resolver=lambda _hostname, _port: ["8.8.8.8"],
+            transport=httpx.MockTransport(handler),
+        )
+        self.addCleanup(client.close)
+
+        delivered = deliver_impact_outbox_event(outbox.id, client=client)
+
+        self.assertEqual(delivered.status, OutboxEvent.Status.PUBLISHED)
+        self.assertEqual(delivered.attempts, 1)
+        request = captured["request"]
+        self.assertEqual(request.url.host, "8.8.8.8")
+        self.assertEqual(request.headers["host"], "hooks.example.test")
+        self.assertEqual(json.loads(request.content), outbox.payload)
+        timestamp = request.headers["x-aria-timestamp"]
+        expected = hmac.new(
+            b"test-secret-with-at-least-thirty-two-characters",
+            timestamp.encode() + b"." + request.content,
+            hashlib.sha256,
+        ).hexdigest()
+        self.assertEqual(request.headers["x-aria-signature"], f"sha256={expected}")
+        self.assertEqual(request.headers["x-aria-event-id"], str(publication.pipeline_event_id))
+
+    @override_settings(
+        IMPACT_WEBHOOK_URL="https://hooks.example.test/aria/impact",
+        IMPACT_WEBHOOK_ALLOWED_DOMAINS=["hooks.example.test"],
+        IMPACT_WEBHOOK_SECRET="test-secret-with-at-least-thirty-two-characters",
+        IMPACT_WEBHOOK_MAX_ATTEMPTS=3,
+        IMPACT_WEBHOOK_STALE_MINUTES=15,
+    )
+    def test_delivery_retries_transient_failure_and_rejects_private_dns(self):
+        publication = publish_reviewed_impact(self.review, publisher=self.reviewer).publication
+        outbox = publication.pipeline_event.outbox_event
+        retry_client = ImpactWebhookClient(
+            resolver=lambda _hostname, _port: ["8.8.8.8"],
+            transport=httpx.MockTransport(lambda _request: httpx.Response(503)),
+        )
+        self.addCleanup(retry_client.close)
+
+        failed = deliver_impact_outbox_event(outbox.id, client=retry_client)
+
+        self.assertEqual(failed.status, OutboxEvent.Status.FAILED)
+        self.assertEqual(failed.attempts, 1)
+        self.assertIn("retryable status 503", failed.last_error)
+        OutboxEvent.objects.filter(pk=failed.id).update(available_at=timezone.now())
+        success_client = ImpactWebhookClient(
+            resolver=lambda _hostname, _port: ["8.8.8.8"],
+            transport=httpx.MockTransport(lambda _request: httpx.Response(202)),
+        )
+        self.addCleanup(success_client.close)
+        delivered = deliver_impact_outbox_event(outbox.id, client=success_client)
+        self.assertEqual(delivered.status, OutboxEvent.Status.PUBLISHED)
+        self.assertEqual(delivered.attempts, 2)
+
+        second_impact = self.impact
+        next_review = record_impact_review(
+            second_impact,
+            decision=ImpactReview.Decision.AMENDED,
+            reviewer=self.reviewer,
+            rationale="Publish a separately amended, evidence-bounded review.",
+            amended_title=self.impact.title,
+            amended_statement=self.impact.statement,
+            target_specs=[
+                {
+                    "term": target.term,
+                    "disposition": target.disposition,
+                    "rationale": target.rationale,
+                }
+                for target in self.impact.targets.all()
+            ],
+        )
+        unsafe_outbox = publish_reviewed_impact(
+            next_review,
+            publisher=self.reviewer,
+        ).publication.pipeline_event.outbox_event
+        unsafe_client = ImpactWebhookClient(
+            resolver=lambda _hostname, _port: ["127.0.0.1"],
+            transport=httpx.MockTransport(lambda _request: httpx.Response(204)),
+        )
+        self.addCleanup(unsafe_client.close)
+        rejected = deliver_impact_outbox_event(unsafe_outbox.id, client=unsafe_client)
+        self.assertEqual(rejected.status, OutboxEvent.Status.FAILED)
+        self.assertEqual(rejected.attempts, 3)
+        self.assertIn("non-public address", rejected.last_error)
+
+    @override_settings(
+        IMPACT_WEBHOOK_URL="",
+        IMPACT_WEBHOOK_ALLOWED_DOMAINS=[],
+        IMPACT_WEBHOOK_SECRET="",
+    )
+    def test_disabled_delivery_leaves_publication_pending_and_forged_events_are_ignored(self):
+        publication = publish_reviewed_impact(self.review, publisher=self.reviewer).publication
+        outbox = publication.pipeline_event.outbox_event
+        self.assertIsNone(deliver_impact_outbox_event(outbox.id))
+        outbox.refresh_from_db()
+        self.assertEqual(outbox.status, OutboxEvent.Status.PENDING)
+
+        forged_event = PipelineEvent.objects.create(
+            event_type="regulatory.impact.confirmed",
+            aggregate_type="regulatory_impact",
+            aggregate_id=self.impact.id,
+            payload={},
+        )
+        forged = OutboxEvent.objects.create(
+            pipeline_event=forged_event,
+            topic="regulatory.impact.confirmed",
+            payload={"forged": True},
+        )
+        client = MagicMock()
+        self.assertIsNone(deliver_impact_outbox_event(forged.id, client=client))
+        client.deliver.assert_not_called()

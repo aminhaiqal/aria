@@ -41,6 +41,7 @@ from aria.impacts.models import (
     ImpactTarget,
     ProfileImpactMatch,
     RegulatoryImpact,
+    ReviewedImpactPublication,
 )
 from aria.knowledge.models import GraphEdge, GraphNode, SectionEmbedding
 from aria.ocr.models import OCRRun
@@ -1169,6 +1170,18 @@ class ProfileImpactMatchSerializer(serializers.ModelSerializer):
             "unmet_dimensions",
             "unresolved_dimensions",
             "explanation",
+            "created_at",
+        )
+
+
+class ReviewedImpactPublicationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ReviewedImpactPublication
+        fields = (
+            "id",
+            "impact_review",
+            "pipeline_event",
+            "published_by",
             "created_at",
         )
 

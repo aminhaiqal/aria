@@ -166,6 +166,21 @@ HTTP_MAX_RESPONSE_BYTES = int(os.getenv("ARIA_HTTP_MAX_RESPONSE_BYTES", str(25 *
 HTTP_MAX_REDIRECTS = int(os.getenv("ARIA_HTTP_MAX_REDIRECTS", "5"))
 HTTP_MIN_DOMAIN_INTERVAL_SECONDS = float(os.getenv("ARIA_HTTP_MIN_DOMAIN_INTERVAL_SECONDS", "1"))
 HTTP_SUPPLEMENTAL_CA_BUNDLE = os.getenv("ARIA_HTTP_SUPPLEMENTAL_CA_BUNDLE", "")
+IMPACT_WEBHOOK_URL = os.getenv("ARIA_IMPACT_WEBHOOK_URL", "").strip()
+IMPACT_WEBHOOK_ALLOWED_DOMAINS = env_list("ARIA_IMPACT_WEBHOOK_ALLOWED_DOMAINS")
+IMPACT_WEBHOOK_SECRET = os.getenv("ARIA_IMPACT_WEBHOOK_SECRET", "")
+IMPACT_WEBHOOK_MAX_ATTEMPTS = min(
+    10,
+    max(1, int(os.getenv("ARIA_IMPACT_WEBHOOK_MAX_ATTEMPTS", "5"))),
+)
+IMPACT_WEBHOOK_BATCH_SIZE = min(
+    100,
+    max(1, int(os.getenv("ARIA_IMPACT_WEBHOOK_BATCH_SIZE", "10"))),
+)
+IMPACT_WEBHOOK_STALE_MINUTES = min(
+    60,
+    max(5, int(os.getenv("ARIA_IMPACT_WEBHOOK_STALE_MINUTES", "15"))),
+)
 BROWSER_PROFILE_NAME = os.getenv("ARIA_BROWSER_PROFILE_NAME", "bounded-chromium")
 BROWSER_PROFILE_VERSION = os.getenv("ARIA_BROWSER_PROFILE_VERSION", "1")
 BROWSER_NAVIGATION_TIMEOUT_SECONDS = max(
@@ -358,6 +373,10 @@ CELERY_BEAT_SCHEDULE = {
     "assess-source-reliability": {
         "task": "aria.reliability.tasks.assess_enabled_sources",
         "schedule": crontab(minute="*/15"),
+    },
+    "deliver-reviewed-impact-webhooks": {
+        "task": "aria.events.tasks.deliver_reviewed_impact_webhooks",
+        "schedule": crontab(minute="*"),
     },
 }
 

@@ -50,6 +50,7 @@ from aria.api.serializers import (
     ResourceObservationSerializer,
     ResourceRunSerializer,
     ReviewedChangePublicationSerializer,
+    ReviewedImpactPublicationSerializer,
     SourceAdmissionAssessmentSerializer,
     SourceAdmissionPromotionSerializer,
     SourceEndpointSerializer,
@@ -100,6 +101,7 @@ from aria.impacts.models import (
     ImpactTarget,
     ProfileImpactMatch,
     RegulatoryImpact,
+    ReviewedImpactPublication,
 )
 from aria.knowledge.embedding_services import current_sections_queryset
 from aria.knowledge.embeddings import (
@@ -456,6 +458,13 @@ class ProfileImpactMatchViewSet(ReadOnlyModelViewSet):
         "profile", "impact_review", "impact_review__impact"
     )
     serializer_class = ProfileImpactMatchSerializer
+
+
+class ReviewedImpactPublicationViewSet(ReadOnlyModelViewSet):
+    queryset = ReviewedImpactPublication.objects.select_related(
+        "impact_review", "pipeline_event", "published_by"
+    )
+    serializer_class = ReviewedImpactPublicationSerializer
 
 
 class ChangeOrchestrationViewSet(ReadOnlyModelViewSet):

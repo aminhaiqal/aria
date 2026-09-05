@@ -47,6 +47,11 @@
 
   <aside class="detail-stack">
     <section class="action-card boundary-card"><h3>Impact is not legal advice</h3><p>Approve only the evidence-bounded candidate. Applicability still depends on the eventual business profile and may require professional interpretation.</p><span class="badge badge-warning">No legal effect asserted</span></section>
+    {% if current_publication %}
+    <section class="action-card"><span class="eyebrow">Reviewed publication</span><h3>Impact event published</h3><p>This exact review produced one durable outbox event. Repeating the action will not duplicate it.</p><span class="badge badge-positive">Published {{ current_publication.created_at }}</span><small class="mono">event {{ current_publication.pipeline_event_id }}</small></section>
+    {% elif impact_publishable %}
+    <section class="action-card"><span class="eyebrow">Explicit release gate</span><h3>Publish reviewed impact</h3><p>This creates a signed-delivery-eligible event containing reviewed wording, controlled targets, and exact evidence. Business profiles remain private and are not included.</p><form method="post" action="{% url 'console:impact-publish' impact.id %}">{% csrf_token %}<div class="form-field"><label for="{{ publication_form.confirmation.id_for_label }}">Type PUBLISH</label>{{ publication_form.confirmation }}</div><button class="button button-primary button-wide" type="submit">Publish exact review</button></form></section>
+    {% endif %}
     <section class="panel review-desk">
       <header class="panel-head"><div><span class="eyebrow">Reviewer desk</span><h2>Record a decision</h2></div></header>
       <form method="post" action="{% url 'console:impact-review' impact.id %}">{% csrf_token %}

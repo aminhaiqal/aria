@@ -12,6 +12,7 @@ from aria.impacts.models import (
     ImpactTarget,
     ProfileImpactMatch,
     RegulatoryImpact,
+    ReviewedImpactPublication,
 )
 
 
@@ -123,4 +124,14 @@ class ProfileImpactMatchAdmin(ReadOnlyImpactAdmin):
         "impact_review__impact__title",
         "input_fingerprint",
         "explanation",
+    )
+
+
+@admin.register(ReviewedImpactPublication)
+class ReviewedImpactPublicationAdmin(ReadOnlyImpactAdmin):
+    list_display = ("impact_review", "pipeline_event", "published_by", "created_at")
+    search_fields = (
+        "impact_review__impact__title",
+        "pipeline_event__event_type",
+        "published_by__username",
     )

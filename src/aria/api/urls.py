@@ -42,6 +42,7 @@ from aria.api.views import (
     ResourceObservationViewSet,
     ResourceRunViewSet,
     ReviewedChangePublicationViewSet,
+    ReviewedImpactPublicationViewSet,
     SourceAdmissionAssessmentViewSet,
     SourceAdmissionPromotionViewSet,
     SourceEndpointViewSet,
@@ -101,6 +102,7 @@ router.register("impact-reviews", ImpactReviewViewSet)
 router.register("impact-review-targets", ImpactReviewTargetViewSet)
 router.register("business-profiles", BusinessProfileViewSet)
 router.register("profile-impact-matches", ProfileImpactMatchViewSet)
+router.register("reviewed-impact-publications", ReviewedImpactPublicationViewSet)
 router.register("change-orchestrations", ChangeOrchestrationViewSet)
 
 urlpatterns = router.urls

@@ -143,6 +143,42 @@ source locators. Without a profile, current approved/amended impacts remain insp
 presented as organization-specific matches. Stale source confirmation or a later rejection or
 needs-context review removes the impact from reader presentation without deleting its history.
 
+## Reviewed publication and optional delivery
+
+Phase 4C.7 adds a second explicit release boundary after review. A staff operator must type
+`PUBLISH` for the latest approved/amended review while its source confirmation is still current.
+The transaction creates one append-only `ReviewedImpactPublication`, one
+`regulatory.impact.confirmed` pipeline event, one durable outbox row, and one actor-attributed audit
+record. Repeating the exact action is idempotent. A later amended review is a new decision and may
+produce its own publication without replacing the earlier record.
+
+The event snapshots reviewed wording, the comparison and version identifiers/hashes, every
+controlled target and taxonomy checksum, and exact before/after anchor text, hashes, and locators.
+`legal_effect_assessed` remains false. Owner-scoped business profiles and match snapshots are
+deliberately excluded from the outbound payload.
+
+Webhook delivery is self-hosted and disabled by default. When configured, the ordinary worker and
+beat services claim only outbox rows backed by a `ReviewedImpactPublication`. Delivery uses a public
+HTTPS allowlist, pins the validated DNS address while preserving TLS SNI, rejects credentials,
+non-standard ports, redirects, and private/non-global addresses, and ignores forged lookalike
+topics. The canonical JSON body is signed with HMAC-SHA256 using the event timestamp and includes a
+stable event ID for receiver deduplication. Transient failures retry with bounded backoff; permanent
+or unsafe destinations exhaust the configured attempt budget.
+
+```dotenv
+ARIA_IMPACT_WEBHOOK_URL=https://hooks.example.com/aria/impact
+ARIA_IMPACT_WEBHOOK_ALLOWED_DOMAINS=hooks.example.com
+ARIA_IMPACT_WEBHOOK_SECRET=replace-with-at-least-32-random-characters
+```
+
+The destination should return any 2xx status only after durably accepting the event. Leaving the URL
+blank keeps publication events pending without generating delivery failures. The same explicit
+publication can be invoked from the command line with:
+
+```bash
+make publish-impact REVIEW_ID=<approved-review-uuid> PUBLISHER=<active-username>
+```
+
 ## Candidate types
 
 The controlled first vocabulary is: obligation, reporting, registration, deadline, prohibition,
@@ -165,6 +201,7 @@ Staff can inspect the append-only records in Django Admin or the administrator-o
 | Reviewed controlled-term snapshots | `/api/v1/impact-review-targets/` |
 | Business profiles with controlled terms | `/api/v1/business-profiles/` |
 | Append-only deterministic evaluations | `/api/v1/profile-impact-matches/` |
+| Explicit reviewed-impact publications | `/api/v1/reviewed-impact-publications/` |
 
 These endpoints are read-only. The supported write paths are transactional domain services, which
 lock their subject, verify current human confirmation, validate every evidence relationship, and

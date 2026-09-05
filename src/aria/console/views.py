@@ -41,6 +41,7 @@ from aria.console.operations import (
     promote_source_admission,
     promote_static_source_admission,
     publish_reviewed_comparison,
+    publish_reviewed_impact,
     queue_admission_capture,
     queue_comparison_summary,
     queue_endpoint_poll,
@@ -998,6 +999,17 @@ def impact_detail(request, impact_id):
         and latest_change_review.id == impact.confirmation_review_id
         and latest_change_review.decision == ComparisonReview.Decision.CONFIRMED
     )
+    current_publication = (
+        current_review.publication
+        if current_review and hasattr(current_review, "publication")
+        else None
+    )
+    impact_publishable = bool(
+        current_review
+        and current_review.decision
+        in (ImpactReview.Decision.APPROVED, ImpactReview.Decision.AMENDED)
+        and source_confirmation_current
+    )
     return render(
         request,
         "console/impact_detail.html",
@@ -1011,6 +1023,9 @@ def impact_detail(request, impact_id):
             "current_review": current_review,
             "review_history": impact.reviews.all(),
             "source_confirmation_current": source_confirmation_current,
+            "current_publication": current_publication,
+            "impact_publishable": impact_publishable,
+            "publication_form": PublicationConfirmationForm(),
             "review_form": ImpactReviewForm(
                 impact=impact,
                 initial=_impact_review_initial(impact, current_review),
@@ -1049,6 +1064,34 @@ def impact_review(request, impact_id):
             messages.error(request, str(error))
         else:
             messages.success(request, "Append-only impact decision recorded.")
+    return redirect("console:impact-detail", impact_id=impact.id)
+
+
+@staff_required
+@require_POST
+def impact_publish(request, impact_id):
+    impact = get_object_or_404(RegulatoryImpact, pk=impact_id)
+    form = PublicationConfirmationForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Impact publication not confirmed. Type PUBLISH exactly.")
+    else:
+        current_review = impact.reviews.order_by("-created_at", "-id").first()
+        if current_review is None:
+            messages.error(request, "This impact has no review to publish.")
+        else:
+            try:
+                publication, created = publish_reviewed_impact(
+                    current_review,
+                    user=request.user,
+                )
+            except ConsoleOperationError as error:
+                messages.error(request, str(error))
+            else:
+                outcome = "Published" if created else "Already published"
+                messages.success(
+                    request,
+                    f"{outcome} reviewed impact {publication.id}.",
+                )
     return redirect("console:impact-detail", impact_id=impact.id)
 
 

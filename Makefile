@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help ensure-env start start-workers start-ocr start-browser start-all stop stop-heavy status health logs-core bootstrap build up down logs migrate makemigrations test check frontend-build frontend-test frontend-format reader-e2e shell superuser list-source-packs plan-source-pack apply-source-pack plan-impact-taxonomy apply-impact-taxonomy extract-impacts pilot-source audit-static promote-static source-confidence source-soak poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings evaluate-reader quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage
+.PHONY: help ensure-env start start-workers start-ocr start-browser start-all stop stop-heavy status health logs-core bootstrap build up down logs migrate makemigrations test check frontend-build frontend-test frontend-format reader-e2e shell superuser list-source-packs plan-source-pack apply-source-pack plan-impact-taxonomy apply-impact-taxonomy extract-impacts publish-impact pilot-source audit-static promote-static source-confidence source-soak poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings evaluate-reader quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage
 
 help:
 	@printf '%s\n' \
@@ -117,6 +117,11 @@ apply-impact-taxonomy:
 extract-impacts:
 	@test -n "$(ITEM_ID)" || (echo "Set ITEM_ID=<confirmed-comparison-item-uuid>" && exit 1)
 	docker compose exec -T api python manage.py extract_impact_candidates $(ITEM_ID) --provider $(or $(PROVIDER),deterministic) --sync
+
+publish-impact:
+	@test -n "$(REVIEW_ID)" || (echo "Set REVIEW_ID=<approved-impact-review-uuid>" && exit 1)
+	@test -n "$(PUBLISHER)" || (echo "Set PUBLISHER=<active-username>" && exit 1)
+	docker compose exec -T api python manage.py publish_reviewed_impact $(REVIEW_ID) --publisher $(PUBLISHER) --confirm PUBLISH
 
 pilot-source:
 	@test -n "$(SOURCE)" || (echo "Set SOURCE=<source-pack-slug-or-endpoint-uuid>" && exit 1)

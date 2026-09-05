@@ -16,7 +16,13 @@ from aria.discovery.services import (
 )
 from aria.discovery.tasks import execute_resource_run, execute_source_run
 from aria.events.services import record_audit_event
-from aria.impacts.models import ImpactReview, ImpactTarget, RegulatoryImpact
+from aria.impacts.models import (
+    ImpactReview,
+    ImpactTarget,
+    RegulatoryImpact,
+    ReviewedImpactPublication,
+)
+from aria.impacts.publications import publish_reviewed_impact as publish_impact
 from aria.impacts.reviews import record_impact_review
 from aria.orchestration.models import ChangeOrchestration
 from aria.orchestration.services import comparison_review_state, prepare_orchestration_retry
@@ -282,6 +288,18 @@ def record_impact_decision(
         )
     except ValidationError as error:
         raise ConsoleOperationError("; ".join(error.messages)) from error
+
+
+def publish_reviewed_impact(
+    impact_review: ImpactReview,
+    *,
+    user,
+) -> tuple[ReviewedImpactPublication, bool]:
+    try:
+        result = publish_impact(impact_review, publisher=user)
+    except ValidationError as error:
+        raise ConsoleOperationError("; ".join(error.messages)) from error
+    return result.publication, result.created
 
 
 @transaction.atomic

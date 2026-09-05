@@ -8,6 +8,7 @@ from aria.artifacts.models import RawArtifact
 from aria.common.models import AppendOnlyModel, TimeStampedModel
 from aria.comparisons.models import ComparisonItem, ComparisonReview, StructuralAnchor
 from aria.documents.models import NormalizedSection
+from aria.events.models import PipelineEvent
 
 
 class RegulatoryImpact(AppendOnlyModel):
@@ -683,3 +684,45 @@ class ProfileImpactMatch(AppendOnlyModel):
 
     def __str__(self) -> str:
         return f"{self.profile_id}:{self.impact_review_id} [{self.outcome}]"
+
+
+class ReviewedImpactPublication(AppendOnlyModel):
+    impact_review = models.OneToOneField(
+        ImpactReview,
+        on_delete=models.PROTECT,
+        related_name="publication",
+    )
+    pipeline_event = models.OneToOneField(
+        PipelineEvent,
+        on_delete=models.PROTECT,
+        related_name="reviewed_impact_publication",
+    )
+    published_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="reviewed_impact_publications",
+    )
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+
+    def clean(self) -> None:
+        errors = {}
+        if self.impact_review_id and self.impact_review.decision not in (
+            ImpactReview.Decision.APPROVED,
+            ImpactReview.Decision.AMENDED,
+        ):
+            errors["impact_review"] = "Only an approved or amended impact review can be published."
+        if self.pipeline_event_id and self.impact_review_id:
+            if self.pipeline_event.event_type != "regulatory.impact.confirmed":
+                errors["pipeline_event"] = "The publication event type is invalid."
+            elif self.pipeline_event.aggregate_id != self.impact_review.impact_id:
+                errors["pipeline_event"] = (
+                    "The publication event must identify the reviewed impact."
+                )
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self) -> str:
+        return f"{self.impact_review_id} -> {self.pipeline_event_id}"

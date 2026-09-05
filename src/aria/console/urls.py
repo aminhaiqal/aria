@@ -108,5 +108,10 @@ urlpatterns = [
         views.impact_review,
         name="impact-review",
     ),
+    path(
+        "impacts/<uuid:impact_id>/publish/",
+        views.impact_publish,
+        name="impact-publish",
+    ),
     path("audit/", views.audit_list, name="audit-list"),
 ]
