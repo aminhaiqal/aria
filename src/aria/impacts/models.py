@@ -543,3 +543,143 @@ class ImpactReviewTarget(AppendOnlyModel):
 
     def __str__(self) -> str:
         return f"{self.impact_review_id}:{self.term_id} [{self.disposition}]"
+
+
+class BusinessProfile(TimeStampedModel):
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="business_profiles",
+    )
+    taxonomy = models.ForeignKey(
+        ApplicabilityTaxonomy,
+        on_delete=models.PROTECT,
+        related_name="business_profiles",
+    )
+    name = models.CharField(max_length=255)
+    notes = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    terms = models.ManyToManyField(
+        ApplicabilityTerm,
+        through="BusinessProfileTerm",
+        related_name="business_profiles",
+    )
+
+    class Meta:
+        ordering = ("owner", "name", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("owner", "name"),
+                name="unique_business_profile_name_per_owner",
+            )
+        ]
+
+    def clean(self) -> None:
+        if not self.name.strip():
+            raise ValidationError({"name": "A business profile name is required."})
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class BusinessProfileTerm(TimeStampedModel):
+    profile = models.ForeignKey(
+        BusinessProfile,
+        on_delete=models.CASCADE,
+        related_name="profile_terms",
+    )
+    term = models.ForeignKey(
+        ApplicabilityTerm,
+        on_delete=models.PROTECT,
+        related_name="profile_assignments",
+    )
+
+    class Meta:
+        ordering = ("profile", "term__dimension", "term__code")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("profile", "term"),
+                name="unique_term_per_business_profile",
+            )
+        ]
+
+    def clean(self) -> None:
+        if (
+            self.profile_id
+            and self.term_id
+            and self.profile.taxonomy_id != self.term.taxonomy_id
+        ):
+            raise ValidationError(
+                {"term": "Business-profile terms must use the profile taxonomy version."}
+            )
+
+    def __str__(self) -> str:
+        return f"{self.profile_id}:{self.term_id}"
+
+
+class ProfileImpactMatch(AppendOnlyModel):
+    class Outcome(models.TextChoices):
+        MATCHED = "matched", "Matched"
+        NOT_MATCHED = "not_matched", "Not matched"
+        INSUFFICIENT_CONTEXT = "insufficient_context", "Insufficient profile context"
+
+    profile = models.ForeignKey(
+        BusinessProfile,
+        on_delete=models.PROTECT,
+        related_name="impact_matches",
+    )
+    impact_review = models.ForeignKey(
+        ImpactReview,
+        on_delete=models.PROTECT,
+        related_name="profile_matches",
+    )
+    outcome = models.CharField(max_length=24, choices=Outcome.choices, db_index=True)
+    ruleset = models.CharField(max_length=128)
+    input_fingerprint = models.CharField(
+        max_length=64,
+        unique=True,
+        validators=[RegexValidator(r"^[0-9a-f]{64}$")],
+    )
+    profile_snapshot = models.JSONField()
+    impact_review_snapshot = models.JSONField()
+    matched_terms = models.JSONField(default=list, blank=True)
+    excluded_terms = models.JSONField(default=list, blank=True)
+    unmet_dimensions = models.JSONField(default=list, blank=True)
+    unresolved_dimensions = models.JSONField(default=list, blank=True)
+    explanation = models.TextField()
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(
+                fields=("profile", "outcome", "created_at"),
+                name="profile_match_outcome_idx",
+            ),
+            models.Index(
+                fields=("impact_review", "outcome"),
+                name="review_match_outcome_idx",
+            ),
+        ]
+
+    def clean(self) -> None:
+        errors = {}
+        if self.profile_id and self.impact_review_id:
+            target = self.impact_review.reviewed_targets.select_related("term").first()
+            if target and target.term.taxonomy_id != self.profile.taxonomy_id:
+                errors["profile"] = "The profile and reviewed impact must use one taxonomy version."
+        if not self.explanation.strip():
+            errors["explanation"] = "A deterministic match explanation is required."
+        for field in (
+            "matched_terms",
+            "excluded_terms",
+            "unmet_dimensions",
+            "unresolved_dimensions",
+        ):
+            if not isinstance(getattr(self, field), list):
+                errors[field] = "Deterministic match details must be stored as a list."
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self) -> str:
+        return f"{self.profile_id}:{self.impact_review_id} [{self.outcome}]"

@@ -8,6 +8,7 @@ from aria.api.views import (
     AuthorityViewSet,
     BrowserCaptureViewSet,
     BrowserNetworkExchangeViewSet,
+    BusinessProfileViewSet,
     ChangeOrchestrationViewSet,
     ComparisonItemViewSet,
     ComparisonReviewViewSet,
@@ -32,6 +33,7 @@ from aria.api.views import (
     MonitoredResourceViewSet,
     NormalizedSectionViewSet,
     OCRRunViewSet,
+    ProfileImpactMatchViewSet,
     PublicationCollectionViewSet,
     QualityAssessmentRunViewSet,
     QualityFindingViewSet,
@@ -97,6 +99,8 @@ router.register("impact-targets", ImpactTargetViewSet)
 router.register("impact-generations", ImpactGenerationViewSet)
 router.register("impact-reviews", ImpactReviewViewSet)
 router.register("impact-review-targets", ImpactReviewTargetViewSet)
+router.register("business-profiles", BusinessProfileViewSet)
+router.register("profile-impact-matches", ProfileImpactMatchViewSet)
 router.register("change-orchestrations", ChangeOrchestrationViewSet)
 
 urlpatterns = router.urls

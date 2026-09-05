@@ -81,6 +81,7 @@ outputs are explicit derivatives and never replace or mutate the official source
 - Phase 4C.2 versioned business applicability taxonomy: implemented
 - Phase 4C.3 deterministic and GPT impact candidates: implemented
 - Phase 4C.4 append-only human impact review console: implemented
+- Phase 4C.5 deterministic business-profile matching: implemented
 - Phase 2 source breadth: JPDP, AGC Updated Principal Acts, and Parliament Dewan Rakyat bills are
   operational with complete R2, extraction, graph, local-vector, and OpenAI-vector coverage
 - Operational acceptance still pending: observe the first autonomous AGC and Parliament daily

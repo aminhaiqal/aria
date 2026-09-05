@@ -3,11 +3,14 @@ from django.contrib import admin
 from aria.impacts.models import (
     ApplicabilityTaxonomy,
     ApplicabilityTerm,
+    BusinessProfile,
+    BusinessProfileTerm,
     ImpactEvidence,
     ImpactGeneration,
     ImpactReview,
     ImpactReviewTarget,
     ImpactTarget,
+    ProfileImpactMatch,
     RegulatoryImpact,
 )
 
@@ -95,3 +98,29 @@ class ImpactReviewTargetAdmin(ReadOnlyImpactAdmin):
     list_display = ("impact_review", "term", "disposition", "source_target", "created_at")
     list_filter = ("disposition", "term__dimension")
     search_fields = ("impact_review__impact__title", "term__label", "rationale")
+
+
+@admin.register(BusinessProfile)
+class BusinessProfileAdmin(ReadOnlyImpactAdmin):
+    list_display = ("name", "owner", "taxonomy", "is_active", "updated_at")
+    list_filter = ("is_active", "taxonomy")
+    search_fields = ("name", "owner__username", "notes")
+
+
+@admin.register(BusinessProfileTerm)
+class BusinessProfileTermAdmin(ReadOnlyImpactAdmin):
+    list_display = ("profile", "term", "created_at")
+    list_filter = ("term__dimension", "profile__taxonomy")
+    search_fields = ("profile__name", "term__label")
+
+
+@admin.register(ProfileImpactMatch)
+class ProfileImpactMatchAdmin(ReadOnlyImpactAdmin):
+    list_display = ("profile", "impact_review", "outcome", "ruleset", "created_at")
+    list_filter = ("outcome", "ruleset", "profile__taxonomy")
+    search_fields = (
+        "profile__name",
+        "impact_review__impact__title",
+        "input_fingerprint",
+        "explanation",
+    )

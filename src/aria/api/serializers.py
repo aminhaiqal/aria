@@ -33,11 +33,13 @@ from aria.fetching.models import FetchAttempt
 from aria.impacts.models import (
     ApplicabilityTaxonomy,
     ApplicabilityTerm,
+    BusinessProfile,
     ImpactEvidence,
     ImpactGeneration,
     ImpactReview,
     ImpactReviewTarget,
     ImpactTarget,
+    ProfileImpactMatch,
     RegulatoryImpact,
 )
 from aria.knowledge.models import GraphEdge, GraphNode, SectionEmbedding
@@ -1126,6 +1128,47 @@ class ImpactReviewSerializer(serializers.ModelSerializer):
             "reviewer_username",
             "previous_review",
             "reviewed_targets",
+            "created_at",
+        )
+
+
+class BusinessProfileSerializer(serializers.ModelSerializer):
+    owner_username = serializers.CharField(source="owner.username", read_only=True)
+    terms = ApplicabilityTermSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = BusinessProfile
+        fields = (
+            "id",
+            "owner",
+            "owner_username",
+            "taxonomy",
+            "name",
+            "notes",
+            "is_active",
+            "terms",
+            "created_at",
+            "updated_at",
+        )
+
+
+class ProfileImpactMatchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProfileImpactMatch
+        fields = (
+            "id",
+            "profile",
+            "impact_review",
+            "outcome",
+            "ruleset",
+            "input_fingerprint",
+            "profile_snapshot",
+            "impact_review_snapshot",
+            "matched_terms",
+            "excluded_terms",
+            "unmet_dimensions",
+            "unresolved_dimensions",
+            "explanation",
             "created_at",
         )
 

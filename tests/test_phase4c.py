@@ -31,8 +31,10 @@ from aria.impacts.models import (
     ImpactReview,
     ImpactReviewTarget,
     ImpactTarget,
+    ProfileImpactMatch,
     RegulatoryImpact,
 )
+from aria.impacts.profiles import match_business_profile, save_business_profile
 from aria.impacts.reviews import record_impact_review
 from aria.impacts.services import add_impact_target, create_regulatory_impact
 from aria.impacts.taxonomies import (
@@ -631,3 +633,162 @@ class ImpactHumanReviewTestCase(ImpactFixtureMixin, Phase3CFixture):
         )
         with self.assertRaisesMessage(ValidationError, "generation taxonomy"):
             invalid.full_clean(validate_constraints=False)
+
+
+class BusinessProfileMatchingTestCase(ImpactFixtureMixin, Phase3CFixture):
+    def setUp(self) -> None:
+        super().setUp()
+        self.confirm_change()
+        self.taxonomy, _ = apply_taxonomy_definition(load_taxonomy_definition())
+        result = generate_impact_candidates(self.item, self.taxonomy)
+        self.impact = result.generation.generated_impacts.get()
+        self.review = record_impact_review(
+            self.impact,
+            decision=ImpactReview.Decision.APPROVED,
+            reviewer=self.reviewer,
+            rationale="Approved for exact business-profile evaluation.",
+        )
+
+    def terms(self, *keys):
+        return [
+            self.taxonomy.terms.get(dimension=dimension, code=code)
+            for dimension, code in keys
+        ]
+
+    def create_profile(self, terms=None, name="Test organization"):
+        terms = terms or self.terms(
+            (ApplicabilityTerm.Dimension.JURISDICTION, "malaysia"),
+            (ApplicabilityTerm.Dimension.REGULATED_ROLE, "data-user"),
+            (ApplicabilityTerm.Dimension.ACTIVITY, "process-personal-data"),
+        )
+        return save_business_profile(
+            owner=self.reviewer,
+            taxonomy=self.taxonomy,
+            name=name,
+            terms=terms,
+            notes="A test profile expressed only with controlled terms.",
+        )
+
+    def test_exact_match_is_explainable_snapshotted_and_idempotent(self):
+        profile = self.create_profile()
+
+        result = match_business_profile(profile, self.review)
+        replay = match_business_profile(profile, self.review)
+
+        self.assertTrue(result.created)
+        self.assertFalse(replay.created)
+        self.assertEqual(result.match, replay.match)
+        self.assertEqual(result.match.outcome, ProfileImpactMatch.Outcome.MATCHED)
+        self.assertEqual(result.match.ruleset, "aria-exact-applicability-v1")
+        self.assertEqual(result.match.profile_snapshot["taxonomy_checksum"], self.taxonomy.checksum)
+        self.assertEqual(
+            result.match.impact_review_snapshot["impact_review_id"],
+            str(self.review.id),
+        )
+        self.assertTrue(result.match.matched_terms)
+        self.assertEqual(ProfileImpactMatch.objects.count(), 1)
+        self.assertEqual(
+            AuditEvent.objects.filter(action="business_profile.impact_evaluated").count(),
+            1,
+        )
+
+    def test_missing_and_conflicting_dimensions_have_distinct_outcomes(self):
+        profile = self.create_profile(
+            self.terms(
+                (ApplicabilityTerm.Dimension.JURISDICTION, "malaysia"),
+            )
+        )
+        missing = match_business_profile(profile, self.review).match
+        self.assertEqual(missing.outcome, ProfileImpactMatch.Outcome.INSUFFICIENT_CONTEXT)
+        self.assertEqual(
+            missing.unresolved_dimensions,
+            [ApplicabilityTerm.Dimension.REGULATED_ROLE],
+        )
+
+        profile = save_business_profile(
+            profile=profile,
+            owner=self.reviewer,
+            taxonomy=self.taxonomy,
+            name=profile.name,
+            terms=self.terms(
+                (ApplicabilityTerm.Dimension.JURISDICTION, "malaysia"),
+                (ApplicabilityTerm.Dimension.REGULATED_ROLE, "data-processor"),
+            ),
+        )
+        conflict = match_business_profile(profile, self.review).match
+        self.assertEqual(conflict.outcome, ProfileImpactMatch.Outcome.NOT_MATCHED)
+        self.assertEqual(conflict.unmet_dimensions, [ApplicabilityTerm.Dimension.REGULATED_ROLE])
+        self.assertFalse(
+            any(term["code"] == "data-processor" for term in missing.profile_snapshot["terms"])
+        )
+
+    def test_reviewed_exclusion_overrides_included_dimensions(self):
+        malaysia, data_user = self.terms(
+            (ApplicabilityTerm.Dimension.JURISDICTION, "malaysia"),
+            (ApplicabilityTerm.Dimension.REGULATED_ROLE, "data-user"),
+        )
+        amended = record_impact_review(
+            self.impact,
+            decision=ImpactReview.Decision.AMENDED,
+            reviewer=self.reviewer,
+            rationale="Exclude the specifically identified data-user profile.",
+            amended_title=self.impact.title,
+            amended_statement=self.impact.statement,
+            target_specs=[
+                {
+                    "term": malaysia,
+                    "disposition": ImpactTarget.Disposition.INCLUDED,
+                    "rationale": "The source is within the Malaysian collection.",
+                },
+                {
+                    "term": data_user,
+                    "disposition": ImpactTarget.Disposition.EXCLUDED,
+                    "rationale": "Reviewer explicitly excludes this controlled role.",
+                },
+            ],
+        )
+        profile = self.create_profile()
+
+        match = match_business_profile(profile, amended).match
+
+        self.assertEqual(match.outcome, ProfileImpactMatch.Outcome.NOT_MATCHED)
+        self.assertEqual(match.excluded_terms[0]["code"], "data-user")
+
+    def test_matching_rejects_stale_or_nonapproved_review(self):
+        profile = self.create_profile()
+        latest = record_impact_review(
+            self.impact,
+            decision=ImpactReview.Decision.NEEDS_CONTEXT,
+            reviewer=self.reviewer,
+            rationale="More business context is required before matching can continue.",
+        )
+
+        with self.assertRaisesMessage(ValidationError, "latest impact review"):
+            match_business_profile(profile, self.review)
+        with self.assertRaisesMessage(ValidationError, "approved or amended"):
+            match_business_profile(profile, latest)
+        self.assertEqual(ProfileImpactMatch.objects.count(), 0)
+
+    def test_profile_taxonomy_is_strict_and_admin_api_is_read_only(self):
+        profile = self.create_profile()
+        duplicate_size_terms = self.terms(
+            (ApplicabilityTerm.Dimension.SIZE, "small"),
+            (ApplicabilityTerm.Dimension.SIZE, "large"),
+        )
+        with self.assertRaisesMessage(ValidationError, "only one size"):
+            save_business_profile(
+                owner=self.reviewer,
+                taxonomy=self.taxonomy,
+                name="Invalid profile",
+                terms=duplicate_size_terms,
+            )
+
+        match = match_business_profile(profile, self.review).match
+        self.client.force_login(self.reviewer)
+        profile_response = self.client.get(reverse("businessprofile-detail", args=[profile.id]))
+        match_response = self.client.get(reverse("profileimpactmatch-detail", args=[match.id]))
+        self.assertEqual(profile_response.status_code, 200)
+        self.assertEqual(len(profile_response.json()["terms"]), 3)
+        self.assertEqual(match_response.status_code, 200)
+        self.assertEqual(match_response.json()["outcome"], "matched")
+        self.assertEqual(self.client.post(reverse("businessprofile-list"), {}).status_code, 405)

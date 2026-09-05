@@ -108,6 +108,26 @@ The console mutation is POST-only, CSRF-protected, actor-attributed, and transac
 candidate. Review remains a governance boundary: an approval does not publish or deliver the impact,
 and `legal_effect_assessed` remains false.
 
+## Deterministic business-profile matching
+
+Phase 4C.5 represents an organization as an owner-scoped `BusinessProfile` containing terms from
+exactly one installed taxonomy version. Profile edits pass through a transactional service that
+validates ownership, rejects mixed taxonomy versions, limits jurisdiction, organization type, and
+size to one value each, and writes an actor-attributed audit event.
+
+The `aria-exact-applicability-v1` matcher evaluates only the latest `approved` or `amended` impact
+review while its underlying source confirmation remains current. It does not use embeddings, GPT,
+aliases, or fuzzy text. Included terms are grouped by dimension and matched exactly; the declared
+`cross-sector` and `any-size` terms are the only wildcard rules. An exact reviewed exclusion wins
+over inclusions.
+
+Every evaluation is an append-only `ProfileImpactMatch` with one of three outcomes: `matched`,
+`not_matched`, or `insufficient_context`. It snapshots the complete profile, reviewed wording,
+controlled targets, taxonomy checksum, ruleset, matched/excluded terms, and unresolved or unmet
+dimensions. Its content fingerprint makes identical replays idempotent while preserving an earlier
+explanation after the mutable profile is edited. This is an explainable relevance screen, not a
+legal determination.
+
 ## Candidate types
 
 The controlled first vocabulary is: obligation, reporting, registration, deadline, prohibition,
@@ -128,6 +148,8 @@ Staff can inspect the append-only records in Django Admin or the administrator-o
 | Deterministic/GPT execution records | `/api/v1/impact-generations/` |
 | Append-only human impact reviews | `/api/v1/impact-reviews/` |
 | Reviewed controlled-term snapshots | `/api/v1/impact-review-targets/` |
+| Business profiles with controlled terms | `/api/v1/business-profiles/` |
+| Append-only deterministic evaluations | `/api/v1/profile-impact-matches/` |
 
 These endpoints are read-only. The supported write paths are transactional domain services, which
 lock their subject, verify current human confirmation, validate every evidence relationship, and

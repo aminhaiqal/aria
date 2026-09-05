@@ -17,6 +17,7 @@ from aria.api.serializers import (
     AuthoritySerializer,
     BrowserCaptureSerializer,
     BrowserNetworkExchangeSerializer,
+    BusinessProfileSerializer,
     ChangeOrchestrationSerializer,
     ComparisonItemSerializer,
     ComparisonReviewSerializer,
@@ -40,6 +41,7 @@ from aria.api.serializers import (
     MonitoredResourceSerializer,
     NormalizedSectionSerializer,
     OCRRunSerializer,
+    ProfileImpactMatchSerializer,
     PublicationCollectionSerializer,
     QualityAssessmentRunSerializer,
     QualityFindingSerializer,
@@ -90,11 +92,13 @@ from aria.fetching.models import FetchAttempt
 from aria.impacts.models import (
     ApplicabilityTaxonomy,
     ApplicabilityTerm,
+    BusinessProfile,
     ImpactEvidence,
     ImpactGeneration,
     ImpactReview,
     ImpactReviewTarget,
     ImpactTarget,
+    ProfileImpactMatch,
     RegulatoryImpact,
 )
 from aria.knowledge.embedding_services import current_sections_queryset
@@ -438,6 +442,20 @@ class ImpactReviewTargetViewSet(ReadOnlyModelViewSet):
         "impact_review", "term", "source_target"
     )
     serializer_class = ImpactReviewTargetSerializer
+
+
+class BusinessProfileViewSet(ReadOnlyModelViewSet):
+    queryset = BusinessProfile.objects.select_related("owner", "taxonomy").prefetch_related(
+        "terms"
+    )
+    serializer_class = BusinessProfileSerializer
+
+
+class ProfileImpactMatchViewSet(ReadOnlyModelViewSet):
+    queryset = ProfileImpactMatch.objects.select_related(
+        "profile", "impact_review", "impact_review__impact"
+    )
+    serializer_class = ProfileImpactMatchSerializer
 
 
 class ChangeOrchestrationViewSet(ReadOnlyModelViewSet):
