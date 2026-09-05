@@ -21,6 +21,32 @@ export const readerOptions: ReaderOptions = {
       authority_slug: "test-official-authority",
     },
   ],
+  applicability_taxonomy: {
+    id: "66666666-6666-4666-8666-666666666666",
+    name: "ARIA Malaysia business applicability",
+    version: 1,
+    disclaimer: "This vocabulary is not an official legal classification.",
+    terms: [
+      {
+        id: "77777777-7777-4777-8777-777777777777",
+        dimension: "regulated_role",
+        code: "data-user",
+        label: "Data user",
+        description: "An organization acting as a data user.",
+      },
+    ],
+  },
+  business_profiles: [
+    {
+      id: "88888888-8888-4888-8888-888888888888",
+      name: "Malaysia data team",
+      notes: "",
+      taxonomy_id: "66666666-6666-4666-8666-666666666666",
+      is_active: true,
+      term_ids: ["77777777-7777-4777-8777-777777777777"],
+      updated_at: "2026-08-07T10:00:00Z",
+    },
+  ],
 }
 
 export const searchResponse: SearchResponse = {
@@ -32,7 +58,13 @@ export const searchResponse: SearchResponse = {
     dimensions: 384,
     query_sent_to_provider: false,
   },
-  filters: { authority: "", collection: "", date_from: null, date_to: null },
+  filters: {
+    authority: "",
+    collection: "",
+    date_from: null,
+    date_to: null,
+    profile: "",
+  },
   page: 1,
   page_size: 10,
   bounded_result_count: 1,
@@ -163,4 +195,72 @@ export const documentResponse: DocumentPayload = {
     },
     finished_at: "2026-08-07T10:00:00Z",
   },
+  selected_profile: {
+    id: "88888888-8888-4888-8888-888888888888",
+    name: "Malaysia data team",
+    taxonomy_id: "66666666-6666-4666-8666-666666666666",
+  },
+  reviewed_impacts: [
+    {
+      id: "99999999-9999-4999-8999-999999999999",
+      impact_type: "obligation",
+      review_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      review_decision: "approved",
+      reviewed_title: "Technical safeguards may need review",
+      reviewed_statement:
+        "Data users may need to review their technical safeguards.",
+      reviewed_effective_date_text: "",
+      reviewed_at: "2026-08-07T10:00:00Z",
+      comparison_item_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      change_type: "modified",
+      legal_effect_assessed: false,
+      targets: [
+        {
+          id: "77777777-7777-4777-8777-777777777777",
+          dimension: "regulated_role",
+          code: "data-user",
+          label: "Data user",
+          disposition: "included",
+          rationale: "The cited text names the role.",
+        },
+      ],
+      evidence: [
+        {
+          side: "before",
+          artifact_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+          artifact_sha256: "b".repeat(64),
+          anchor_text: "A data user shall use reasonable safeguards.",
+          anchor_text_sha256: "c".repeat(64),
+          section_text_sha256: "d".repeat(64),
+          source_locator: { page: 2 },
+        },
+        {
+          side: "after",
+          artifact_id: "44444444-4444-4444-8444-444444444444",
+          artifact_sha256: "a".repeat(64),
+          anchor_text:
+            "A data user shall use appropriate technical safeguards.",
+          anchor_text_sha256: "e".repeat(64),
+          section_text_sha256: "f".repeat(64),
+          source_locator: { page: 2 },
+        },
+      ],
+      relevance: {
+        outcome: "matched",
+        explanation:
+          "The profile exactly matches every targeted applicability dimension.",
+        matched_terms: [
+          {
+            id: "77777777-7777-4777-8777-777777777777",
+            dimension: "regulated_role",
+            code: "data-user",
+            label: "Data user",
+            description: "An organization acting as a data user.",
+          },
+        ],
+        ruleset: "aria-exact-applicability-v1",
+        evaluated_at: "2026-08-07T10:00:00Z",
+      },
+    },
+  ],
 }

@@ -3,6 +3,7 @@ import type { FormEvent } from "react"
 import {
   ArrowLeft,
   ArrowRight,
+  Building2,
   ChevronDown,
   ExternalLink,
   FileSearch,
@@ -12,6 +13,7 @@ import {
   Search,
   Server,
   Sparkles,
+  Target,
 } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -39,7 +41,12 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
-import { fetchReaderOptions, ReaderApiError, searchReader } from "@/lib/api"
+import {
+  createBusinessProfile,
+  fetchReaderOptions,
+  ReaderApiError,
+  searchReader,
+} from "@/lib/api"
 import {
   formatDate,
   safeExternalUrl,
@@ -63,6 +70,7 @@ type SearchFields = {
   dateTo: string
   mode: "hybrid" | "full_text" | "vector"
   provider: "local_hash" | "openai"
+  profile: string
   query: string
 }
 
@@ -76,6 +84,7 @@ function fieldsFromParameters(parameters: URLSearchParams): SearchFields {
     dateTo: parameters.get("date_to") || "",
     mode: mode === "full_text" || mode === "vector" ? mode : "hybrid",
     provider: provider === "openai" ? "openai" : "local_hash",
+    profile: parameters.get("profile") || ALL,
     query: parameters.get("q") || "",
   }
 }
@@ -91,6 +100,7 @@ function buildParameters(fields: SearchFields) {
   if (fields.collection !== ALL) parameters.set("collection", fields.collection)
   if (fields.dateFrom) parameters.set("date_from", fields.dateFrom)
   if (fields.dateTo) parameters.set("date_to", fields.dateTo)
+  if (fields.profile !== ALL) parameters.set("profile", fields.profile)
   parameters.set("page", "1")
   parameters.set("page_size", "10")
   return parameters
@@ -127,7 +137,10 @@ function SearchResultCard({
   document: SearchDocument
 }) {
   const officialUrl = safeExternalUrl(document.canonical_url)
-  const detailUrl = `${bootstrap.searchUrl}documents/${encodeURIComponent(document.identity_id)}/`
+  const profileQuery = document.relevance
+    ? `?profile=${encodeURIComponent(document.relevance.profile_id)}`
+    : ""
+  const detailUrl = `${bootstrap.searchUrl}documents/${encodeURIComponent(document.identity_id)}/${profileQuery}`
   return (
     <Card className="transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/5">
       <CardHeader className="gap-4 border-b">
@@ -160,6 +173,23 @@ function SearchResultCard({
         </div>
       </CardHeader>
       <CardContent className="grid gap-3">
+        {document.relevance ? (
+          <div className="mb-1 grid gap-2 rounded-xl border border-primary/20 bg-primary/5 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Badge>
+                <Target data-icon="inline-start" /> Matched to{" "}
+                {document.relevance.profile_name}
+              </Badge>
+              <span className="text-xs text-muted-foreground">
+                {document.relevance.impact_count} reviewed{" "}
+                {document.relevance.impact_count === 1 ? "impact" : "impacts"}
+              </span>
+            </div>
+            <strong className="text-sm">
+              {document.relevance.impacts[0]?.reviewed_title}
+            </strong>
+          </div>
+        ) : null}
         {document.passages.map((passage) => (
           <a
             className="group rounded-xl border bg-muted/25 p-4 transition-colors hover:border-primary/30 hover:bg-primary/4"
@@ -208,10 +238,16 @@ export function SearchPage({ bootstrap }: { bootstrap: ReaderBootstrap }) {
   const [options, setOptions] = useState<ReaderOptions>({
     authorities: [],
     collections: [],
+    applicability_taxonomy: null,
+    business_profiles: [],
   })
   const [result, setResult] = useState<SearchResponse | null>(null)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const [profileEditorOpen, setProfileEditorOpen] = useState(false)
+  const [profileName, setProfileName] = useState("")
+  const [profileTerms, setProfileTerms] = useState<string[]>([])
+  const [profileSaving, setProfileSaving] = useState(false)
   const hasQuery = Boolean(parameters.get("q")?.trim())
 
   useEffect(() => {
@@ -276,6 +312,52 @@ export function SearchPage({ bootstrap }: { bootstrap: ReaderBootstrap }) {
       ),
     [fields.authority, options.collections]
   )
+  const groupedProfileTerms = useMemo(() => {
+    const grouped: Record<
+      string,
+      NonNullable<ReaderOptions["applicability_taxonomy"]>["terms"]
+    > = {}
+    for (const term of options.applicability_taxonomy?.terms || []) {
+      grouped[term.dimension] = [...(grouped[term.dimension] || []), term]
+    }
+    return grouped
+  }, [options.applicability_taxonomy])
+
+  async function submitProfile() {
+    if (!options.applicability_taxonomy) {
+      setError("No applicability taxonomy is installed.")
+      return
+    }
+    if (!profileName.trim() || profileTerms.length === 0) {
+      setError("Name the profile and select at least one controlled term.")
+      return
+    }
+    setProfileSaving(true)
+    setError("")
+    try {
+      const { profile } = await createBusinessProfile(bootstrap, {
+        name: profileName.trim(),
+        taxonomy_id: options.applicability_taxonomy.id,
+        term_ids: profileTerms,
+      })
+      setOptions((current) => ({
+        ...current,
+        business_profiles: [...current.business_profiles, profile],
+      }))
+      setFields((current) => ({ ...current, profile: profile.id }))
+      setProfileEditorOpen(false)
+      setProfileName("")
+      setProfileTerms([])
+    } catch (reason: unknown) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "The profile could not be saved."
+      )
+    } finally {
+      setProfileSaving(false)
+    }
+  }
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -350,6 +432,7 @@ export function SearchPage({ bootstrap }: { bootstrap: ReaderBootstrap }) {
               defaultOpen={Boolean(
                 fields.authority !== ALL ||
                 fields.collection !== ALL ||
+                fields.profile !== ALL ||
                 fields.dateFrom ||
                 fields.dateTo
               )}
@@ -459,6 +542,30 @@ export function SearchPage({ bootstrap }: { bootstrap: ReaderBootstrap }) {
                   </Select>
                 </div>
                 <div className="grid gap-2">
+                  <Label htmlFor="business-profile">Business relevance</Label>
+                  <Select
+                    onValueChange={(value) =>
+                      setFields((current) => ({
+                        ...current,
+                        profile: value,
+                      }))
+                    }
+                    value={fields.profile}
+                  >
+                    <SelectTrigger className="w-full" id="business-profile">
+                      <SelectValue placeholder="All official material" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL}>No profile filter</SelectItem>
+                      {options.business_profiles.map((profile) => (
+                        <SelectItem key={profile.id} value={profile.id}>
+                          {profile.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
                   <Label htmlFor="date-from">ARIA version from</Label>
                   <Input
                     id="date-from"
@@ -489,9 +596,104 @@ export function SearchPage({ bootstrap }: { bootstrap: ReaderBootstrap }) {
               </CollapsibleContent>
             </Collapsible>
           </form>
+
+          <div className="mx-auto mt-3 flex max-w-4xl flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/15 bg-primary/5 px-4 py-3 text-left">
+            <span className="flex items-center gap-2 text-sm">
+              <Building2 className="size-4 text-primary" />
+              Add your organization once to filter for exact reviewed relevance.
+            </span>
+            <Button
+              onClick={() => setProfileEditorOpen((open) => !open)}
+              type="button"
+              variant="outline"
+            >
+              {profileEditorOpen
+                ? "Close profile setup"
+                : "Set up business profile"}
+            </Button>
+          </div>
+
+          {profileEditorOpen ? (
+            <section className="mx-auto mt-3 grid max-w-4xl gap-5 rounded-2xl border bg-background p-5 text-left shadow-lg">
+              <header>
+                <p className="text-xs font-semibold tracking-[0.16em] text-primary uppercase">
+                  Controlled applicability profile
+                </p>
+                <h2 className="mt-1 text-xl font-semibold">
+                  Describe the organization
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  ARIA compares only these selected terms with human-reviewed
+                  impact targets.
+                </p>
+              </header>
+              <div className="grid gap-2">
+                <Label htmlFor="profile-name">Profile name</Label>
+                <Input
+                  id="profile-name"
+                  maxLength={255}
+                  onChange={(event) => setProfileName(event.target.value)}
+                  placeholder="Example: Malaysia digital services team"
+                  value={profileName}
+                />
+              </div>
+              <div className="grid gap-5 md:grid-cols-2">
+                {Object.entries(groupedProfileTerms).map(
+                  ([dimension, terms]) => (
+                    <fieldset
+                      className="grid content-start gap-2"
+                      key={dimension}
+                    >
+                      <legend className="mb-2 text-sm font-semibold">
+                        {titleCase(dimension)}
+                      </legend>
+                      {terms.map((term) => (
+                        <label
+                          className="flex items-start gap-3 rounded-lg border p-3 text-sm transition-colors has-checked:border-primary/40 has-checked:bg-primary/5"
+                          key={term.id}
+                        >
+                          <input
+                            checked={profileTerms.includes(term.id)}
+                            className="mt-1 size-4 accent-primary"
+                            onChange={(event) =>
+                              setProfileTerms((current) =>
+                                event.target.checked
+                                  ? [...current, term.id]
+                                  : current.filter((id) => id !== term.id)
+                              )
+                            }
+                            type="checkbox"
+                          />
+                          <span>
+                            <strong className="block">{term.label}</strong>
+                            <small className="mt-1 block leading-5 text-muted-foreground">
+                              {term.description}
+                            </small>
+                          </span>
+                        </label>
+                      ))}
+                    </fieldset>
+                  )
+                )}
+              </div>
+              <p className="text-xs leading-5 text-muted-foreground">
+                {options.applicability_taxonomy?.disclaimer}
+              </p>
+              <Button
+                className="w-fit"
+                disabled={profileSaving}
+                onClick={() => void submitProfile()}
+                type="button"
+              >
+                <Target data-icon="inline-start" />
+                {profileSaving ? "Evaluating…" : "Save and evaluate profile"}
+              </Button>
+            </section>
+          ) : null}
           <p className="mx-auto mt-4 max-w-2xl text-xs leading-5 text-muted-foreground">
-            ARIA ranks textual similarity. It does not determine legal
-            relevance, legal effect, or applicability.
+            {fields.profile !== ALL
+              ? "Profile filtering uses exact, human-reviewed applicability terms. It is not legal advice or a legal determination."
+              : "ARIA ranks textual similarity. It does not determine legal relevance, legal effect, or applicability."}
           </p>
         </div>
       </section>

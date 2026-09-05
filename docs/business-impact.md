@@ -128,6 +128,21 @@ dimensions. Its content fingerprint makes identical replays idempotent while pre
 explanation after the mutable profile is edited. This is an explainable relevance screen, not a
 legal determination.
 
+## Reader presentation
+
+Phase 4C.6 makes the relevance layer usable in the self-hosted React reader. Any active account can
+create an owner-scoped profile from the current controlled taxonomy. The CSRF-protected profile
+write immediately runs a bounded deterministic evaluation; an explicit re-evaluate endpoint is
+also available when reviewed impacts are added later.
+
+Selecting a profile adds an exact-relevance filter after ordinary textual retrieval. Search results
+must have at least one current `matched` evaluation and show the matched profile plus reviewed
+impact count. The document view renders a "why this matters" evidence spine with human-reviewed
+wording, matched controlled terms, exact before/after anchor text, artifact and anchor hashes, and
+source locators. Without a profile, current approved/amended impacts remain inspectable but are not
+presented as organization-specific matches. Stale source confirmation or a later rejection or
+needs-context review removes the impact from reader presentation without deleting its history.
+
 ## Candidate types
 
 The controlled first vocabulary is: obligation, reporting, registration, deadline, prohibition,

@@ -2,7 +2,9 @@ import { useEffect, useState } from "react"
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowRightLeft,
   Bot,
+  Building2,
   CheckCircle2,
   Download,
   ExternalLink,
@@ -13,6 +15,7 @@ import {
   Scale,
   ShieldCheck,
   Sparkles,
+  Target,
 } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -101,6 +104,124 @@ function GptSummary({
         </p>
       </CardContent>
     </Card>
+  )
+}
+
+function ReviewedImpactPanel({ document }: { document: DocumentPayload }) {
+  if (document.reviewed_impacts.length === 0) return null
+  const profile = document.selected_profile
+  return (
+    <section className="mb-8 overflow-hidden rounded-2xl border border-primary/25 bg-primary/4">
+      <header className="grid gap-3 border-b border-primary/15 px-5 py-5 sm:px-7">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Badge>
+            <Building2 data-icon="inline-start" />
+            {profile
+              ? `Why this matters to ${profile.name}`
+              : "Human-reviewed business impacts"}
+          </Badge>
+          <span className="text-xs text-muted-foreground">
+            {document.reviewed_impacts.length} reviewed{" "}
+            {document.reviewed_impacts.length === 1 ? "impact" : "impacts"}
+          </span>
+        </div>
+        <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+          {profile
+            ? "ARIA matched this document using exact controlled terms from your profile and the human review."
+            : "These candidate impacts passed human review and remain linked to the exact source change."}
+        </p>
+      </header>
+      <div className="grid gap-6 p-5 sm:p-7">
+        {document.reviewed_impacts.map((impact) => (
+          <article className="grid gap-5" key={impact.review_id}>
+            <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-start">
+              <div>
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <Badge variant="secondary">
+                    {titleCase(impact.impact_type)}
+                  </Badge>
+                  <Badge variant="outline">
+                    {titleCase(impact.review_decision)}
+                  </Badge>
+                </div>
+                <h2 className="text-xl font-semibold sm:text-2xl">
+                  {impact.reviewed_title}
+                </h2>
+                <p className="mt-2 max-w-3xl leading-7">
+                  {impact.reviewed_statement}
+                </p>
+              </div>
+              {impact.reviewed_effective_date_text ? (
+                <div className="rounded-lg border bg-background px-3 py-2 text-sm">
+                  <span className="block text-xs text-muted-foreground">
+                    Stated effective date
+                  </span>
+                  <strong>{impact.reviewed_effective_date_text}</strong>
+                </div>
+              ) : null}
+            </div>
+
+            {impact.relevance ? (
+              <div className="rounded-xl border border-primary/20 bg-background/75 p-4">
+                <p className="flex items-start gap-2 text-sm leading-6">
+                  <Target className="mt-1 size-4 shrink-0 text-primary" />
+                  <span>{impact.relevance.explanation}</span>
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {impact.relevance.matched_terms.map((term) => (
+                    <Badge
+                      key={`${term.dimension}-${term.code}`}
+                      variant="outline"
+                    >
+                      {titleCase(term.dimension)} · {term.label}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div>
+              <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
+                <ArrowRightLeft className="size-4 text-primary" /> Exact before
+                and after evidence
+              </h3>
+              <div className="grid gap-3 md:grid-cols-2">
+                {impact.evidence.map((evidence) => (
+                  <div
+                    className="rounded-xl border bg-background p-4"
+                    key={evidence.side}
+                  >
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <Badge
+                        variant={
+                          evidence.side === "after" ? "default" : "outline"
+                        }
+                      >
+                        {titleCase(evidence.side)}
+                      </Badge>
+                      <span className="font-mono text-[0.65rem] text-muted-foreground">
+                        {shortHash(evidence.artifact_sha256, 16)}
+                      </span>
+                    </div>
+                    <blockquote className="text-sm leading-6 text-foreground/85">
+                      {evidence.anchor_text}
+                    </blockquote>
+                    <p className="mt-3 border-t pt-3 font-mono text-[0.65rem] break-all text-muted-foreground">
+                      Anchor {shortHash(evidence.anchor_text_sha256, 20)} ·
+                      locator {JSON.stringify(evidence.source_locator)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </article>
+        ))}
+        <p className="flex items-start gap-2 border-t pt-4 text-xs leading-5 text-muted-foreground">
+          <Scale className="mt-0.5 size-4 shrink-0" /> Business relevance is an
+          explainable screening result. Legal effect was not assessed.
+        </p>
+      </div>
+    </section>
   )
 }
 
@@ -436,6 +557,7 @@ export function DocumentPage({ bootstrap }: { bootstrap: ReaderBootstrap }) {
       </section>
 
       <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+        <ReviewedImpactPanel document={document} />
         {document.gpt_summary ? (
           <div className="mb-8">
             <GptSummary summary={document.gpt_summary} />

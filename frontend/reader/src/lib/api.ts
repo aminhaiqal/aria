@@ -3,6 +3,7 @@ import type {
   ReaderBootstrap,
   ReaderOptions,
   SearchResponse,
+  BusinessProfile,
 } from "@/lib/types"
 
 export class ReaderApiError extends Error {
@@ -28,6 +29,7 @@ export function readBootstrap(): ReaderBootstrap {
     "loginUrl",
     "logoutUrl",
     "optionsApi",
+    "profilesApi",
     "searchApi",
     "searchUrl",
     "userName",
@@ -43,6 +45,7 @@ export function readBootstrap(): ReaderBootstrap {
     loginUrl: dataset.loginUrl!,
     logoutUrl: dataset.logoutUrl!,
     optionsApi: dataset.optionsApi!,
+    profilesApi: dataset.profilesApi!,
     searchApi: dataset.searchApi!,
     searchUrl: dataset.searchUrl!,
     userName: dataset.userName!,
@@ -110,9 +113,38 @@ export function fetchDocument(
   signal?: AbortSignal
 ) {
   const base = bootstrap.searchApi.replace(/search\/$/, "documents/")
+  const profile = new URLSearchParams(window.location.search).get("profile")
+  const parameters = profile ? `?profile=${encodeURIComponent(profile)}` : ""
   return requestJson<DocumentPayload>(
-    `${base}${encodeURIComponent(documentId)}/`,
+    `${base}${encodeURIComponent(documentId)}/${parameters}`,
     bootstrap.loginUrl,
     signal
   )
+}
+
+export async function createBusinessProfile(
+  bootstrap: ReaderBootstrap,
+  payload: { name: string; taxonomy_id: string; term_ids: string[] }
+) {
+  const response = await fetch(bootstrap.profilesApi, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "X-CSRFToken": bootstrap.csrfToken,
+    },
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) {
+    const data = (await response.json()) as { detail?: string }
+    throw new ReaderApiError(
+      data.detail || "The profile could not be saved.",
+      response.status
+    )
+  }
+  return (await response.json()) as {
+    profile: BusinessProfile
+    evaluation: Record<string, number | boolean>
+  }
 }

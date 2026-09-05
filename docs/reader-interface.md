@@ -18,7 +18,9 @@ The private preview provides:
 - official-source links plus authenticated downloads of immutable reader-eligible artifacts;
 - SHA-256, retrieval, extractor, quality, version, and comparison context; and
 - completed GPT change summaries only when their structured output explicitly preserves the
-  `legal_effect_not_assessed` boundary.
+  `legal_effect_not_assessed` boundary; and
+- owner-scoped business profiles, exact reviewed-relevance filtering, and a "why this matters"
+  evidence spine for current human-approved impacts.
 
 ARIA search ranks textual similarity. It does not determine legal authority, applicability,
 commencement, legal effect, or the correct answer to a legal question. ARIA-version timestamps are
@@ -38,6 +40,10 @@ remote scripts and `eval` are not allowed. The style policy permits inline decla
 Radix positions accessible popovers with runtime style values. Forms use Django sessions and CSRF,
 and reader API requests use active authenticated sessions or Basic authentication. Search and
 document API views have separate per-user throttle scopes.
+
+Business profiles are visible only to their owner. Their POST/PUT/evaluate routes require the same
+authenticated session and CSRF protection as the reader shell. A profile identifier owned by
+another account returns 404 and cannot be used to filter search or document responses.
 
 Create the first account and open the reader:
 
@@ -75,7 +81,7 @@ make frontend-test
 make reader-e2e
 ```
 
-`frontend-test` runs ESLint, four Vitest tests, axe-core accessibility scans, enforced coverage
+`frontend-test` runs ESLint, six Vitest tests, axe-core accessibility scans, enforced coverage
 floors, TypeScript compilation, and a production Vite build. `reader-e2e` runs the actual Django
 login, React mount, shadcn select, CSP console-error gate, and logout flow in isolated Chromium.
 
@@ -103,14 +109,23 @@ provenance, and stored vectors remain local. The interface discloses this per se
 ranking fails, hybrid mode visibly falls back to full text; vector-only mode returns HTTP 503
 instead of disguising a different ranking method.
 
-The separate read-only contract is:
+The reader retrieval contract is:
 
 ```text
-GET /api/reader/v1/search/?q=...&mode=hybrid&embedding_provider=openai
+GET /api/reader/v1/search/?q=...&mode=hybrid&embedding_provider=openai&profile=<profile-uuid>
 GET /api/reader/v1/options/
-GET /api/reader/v1/documents/<identity-uuid>/
+GET /api/reader/v1/documents/<identity-uuid>/?profile=<profile-uuid>
+GET|POST /api/reader/v1/profiles/
+PUT /api/reader/v1/profiles/<profile-uuid>/
+POST /api/reader/v1/profiles/<profile-uuid>/evaluate/
 GET /reader/artifacts/<artifact-uuid>/content/
 ```
+
+Profile creation and update synchronously run a bounded, deterministic evaluation over current
+eligible reviews. Search applies the selected profile only after textual retrieval and returns
+documents with at least one exact `matched` result. The document page exposes the reviewed wording,
+controlled matched terms, and immutable before/after evidence. Stale, rejected, needs-context, or
+superseded reviews are omitted. This relevance screen is explicitly labelled as non-legal.
 
 Queries are capped at 500 characters, page size at 20, pages at 10, ranked document results at 200,
 candidate sections at 300 by default, passages per document at three, and document sections at
@@ -135,8 +150,9 @@ On 2026-08-07 all three expected documents ranked first: MRR `1.0`, hit@1 `1.0`,
 hit@5 `1.0`. This is a small regression benchmark, not a universal statement about legal-search
 quality. The test suite separately covers authentication, reader/operator permission separation,
 input bounds, filter validation, semantic fallback, XSS escaping, evidence-only downloads, security
-headers, exact document rendering, React bundle integrity, filter metadata, accessibility, browser
-interaction, and autonomous source acceptance.
+headers, owner-scoped profile mutations, exact relevance filtering, stale-review exclusion, exact
+document rendering, React bundle integrity, filter metadata, accessibility, browser interaction,
+and autonomous source acceptance.
 
 ## Autonomous-source acceptance
 

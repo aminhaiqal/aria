@@ -792,3 +792,101 @@ class BusinessProfileMatchingTestCase(ImpactFixtureMixin, Phase3CFixture):
         self.assertEqual(match_response.status_code, 200)
         self.assertEqual(match_response.json()["outcome"], "matched")
         self.assertEqual(self.client.post(reverse("businessprofile-list"), {}).status_code, 405)
+
+    def test_reader_profile_api_is_owner_scoped_and_evaluates_on_create(self):
+        self.client.force_login(self.reviewer)
+        terms = self.terms(
+            (ApplicabilityTerm.Dimension.JURISDICTION, "malaysia"),
+            (ApplicabilityTerm.Dimension.REGULATED_ROLE, "data-user"),
+        )
+        response = self.client.post(
+            reverse("reader-api:profile-list"),
+            data=json.dumps(
+                {
+                    "name": "Malaysia data team",
+                    "taxonomy_id": str(self.taxonomy.id),
+                    "term_ids": [str(term.id) for term in terms],
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        profile_id = payload["profile"]["id"]
+        self.assertEqual(payload["evaluation"]["matched"], 1)
+        options = self.client.get(reverse("reader-api:options")).json()
+        self.assertEqual(options["applicability_taxonomy"]["id"], str(self.taxonomy.id))
+        self.assertEqual(options["business_profiles"][0]["id"], profile_id)
+
+        document = self.client.get(
+            reverse(
+                "reader-api:document-detail",
+                kwargs={"identity_id": self.comparison.identity_id},
+            ),
+            {"profile": profile_id},
+        )
+        self.assertEqual(document.status_code, 200)
+        self.assertEqual(document.json()["selected_profile"]["id"], profile_id)
+        self.assertEqual(len(document.json()["reviewed_impacts"]), 1)
+        after_evidence = next(
+            evidence
+            for evidence in document.json()["reviewed_impacts"][0]["evidence"]
+            if evidence["side"] == "after"
+        )
+        self.assertEqual(
+            after_evidence["artifact_sha256"],
+            self.item.after_anchor.source_artifact.sha256,
+        )
+
+        outsider = get_user_model().objects.create_user(username="profile-outsider")
+        self.client.force_login(outsider)
+        hidden = self.client.get(
+            reverse(
+                "reader-api:document-detail",
+                kwargs={"identity_id": self.comparison.identity_id},
+            ),
+            {"profile": profile_id},
+        )
+        self.assertEqual(hidden.status_code, 404)
+
+    def test_reader_profile_filter_returns_only_exact_reviewed_matches(self):
+        profile = self.create_profile(
+            self.terms(
+                (ApplicabilityTerm.Dimension.JURISDICTION, "malaysia"),
+                (ApplicabilityTerm.Dimension.REGULATED_ROLE, "data-user"),
+            )
+        )
+        match_business_profile(profile, self.review)
+        self.client.force_login(self.reviewer)
+
+        response = self.client.get(
+            reverse("reader-api:search"),
+            {
+                "q": "technical safeguards",
+                "mode": "full_text",
+                "profile": str(profile.id),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["bounded_result_count"], 1)
+        self.assertEqual(payload["results"][0]["relevance"]["profile_id"], str(profile.id))
+        self.assertEqual(payload["results"][0]["relevance"]["impact_count"], 1)
+
+        record_impact_review(
+            self.impact,
+            decision=ImpactReview.Decision.NEEDS_CONTEXT,
+            reviewer=self.reviewer,
+            rationale="New context is required before this impact can remain visible.",
+        )
+        hidden = self.client.get(
+            reverse(
+                "reader-api:document-detail",
+                kwargs={"identity_id": self.comparison.identity_id},
+            ),
+            {"profile": str(profile.id)},
+        )
+        self.assertEqual(hidden.status_code, 200)
+        self.assertEqual(hidden.json()["reviewed_impacts"], [])

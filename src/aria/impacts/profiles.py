@@ -135,7 +135,11 @@ def _term_snapshot(term: ApplicabilityTerm) -> dict:
     }
 
 
-def _profile_snapshot(profile: BusinessProfile, terms: list[ApplicabilityTerm]) -> dict:
+def business_profile_snapshot(
+    profile: BusinessProfile,
+    terms: list[ApplicabilityTerm] | None = None,
+) -> dict:
+    terms = terms if terms is not None else list(profile.terms.order_by("dimension", "code"))
     return {
         "profile_id": str(profile.id),
         "name": profile.name,
@@ -253,7 +257,7 @@ def match_business_profile(
     }
     if target_taxonomies != {profile.taxonomy_id}:
         raise ValidationError("The business profile and reviewed impact use different taxonomies.")
-    profile_snapshot = _profile_snapshot(profile, profile_terms)
+    profile_snapshot = business_profile_snapshot(profile, profile_terms)
     outcome, matched, excluded, unmet, unresolved, explanation = _evaluate(
         profile_terms,
         review_snapshot,
@@ -296,3 +300,51 @@ def match_business_profile(
         },
     )
     return ProfileMatchResult(match=match, created=True)
+
+
+def evaluate_current_impacts(
+    profile: BusinessProfile,
+    *,
+    limit: int = 500,
+) -> dict:
+    if limit < 1 or limit > 500:
+        raise ValidationError("Profile evaluation limit must be between 1 and 500.")
+    impacts = (
+        RegulatoryImpact.objects.select_related("generation__taxonomy")
+        .prefetch_related("reviews")
+        .order_by("created_at", "id")[:limit]
+    )
+    counts = {
+        ProfileImpactMatch.Outcome.MATCHED: 0,
+        ProfileImpactMatch.Outcome.NOT_MATCHED: 0,
+        ProfileImpactMatch.Outcome.INSUFFICIENT_CONTEXT: 0,
+    }
+    evaluated = 0
+    skipped = 0
+    for impact in impacts:
+        review = impact.reviews.first()
+        if review is None or review.decision not in (
+            ImpactReview.Decision.APPROVED,
+            ImpactReview.Decision.AMENDED,
+        ):
+            skipped += 1
+            continue
+        if impact.generation_id and impact.generation.taxonomy_id != profile.taxonomy_id:
+            skipped += 1
+            continue
+        try:
+            result = match_business_profile(profile, review)
+        except ValidationError:
+            skipped += 1
+            continue
+        counts[result.match.outcome] += 1
+        evaluated += 1
+    return {
+        "evaluated": evaluated,
+        "matched": counts[ProfileImpactMatch.Outcome.MATCHED],
+        "not_matched": counts[ProfileImpactMatch.Outcome.NOT_MATCHED],
+        "insufficient_context": counts[ProfileImpactMatch.Outcome.INSUFFICIENT_CONTEXT],
+        "skipped": skipped,
+        "bounded": len(impacts) == limit,
+        "limit": limit,
+    }

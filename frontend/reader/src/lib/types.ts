@@ -6,6 +6,7 @@ export type ReaderBootstrap = {
   loginUrl: string
   logoutUrl: string
   optionsApi: string
+  profilesApi: string
   searchApi: string
   searchUrl: string
   userName: string
@@ -25,6 +26,70 @@ export type ReaderOptions = {
     document_family: string
     authority_slug: string
   }>
+  applicability_taxonomy: {
+    id: string
+    name: string
+    version: number
+    disclaimer: string
+    terms: ApplicabilityTerm[]
+  } | null
+  business_profiles: BusinessProfile[]
+}
+
+export type ApplicabilityTerm = {
+  id: string
+  dimension: string
+  code: string
+  label: string
+  description: string
+}
+
+export type BusinessProfile = {
+  id: string
+  name: string
+  notes: string
+  taxonomy_id: string
+  is_active: boolean
+  term_ids: string[]
+  updated_at: string
+}
+
+export type ReviewedImpact = {
+  id: string
+  impact_type: string
+  review_id: string
+  review_decision: "approved" | "amended"
+  reviewed_title: string
+  reviewed_statement: string
+  reviewed_effective_date_text: string
+  reviewed_at: string
+  comparison_item_id: string
+  change_type: string
+  legal_effect_assessed: false
+  targets: Array<{
+    id: string
+    dimension: string
+    code: string
+    label: string
+    disposition: "included" | "excluded"
+    rationale: string
+  }>
+  evidence: Array<{
+    side: "before" | "after"
+    artifact_id: string
+    artifact_sha256: string
+    anchor_text: string
+    anchor_text_sha256: string
+    section_text_sha256: string
+    source_locator: Record<string, unknown>
+  }>
+  relevance: {
+    outcome: "matched"
+    explanation: string
+    matched_terms: ApplicabilityTerm[]
+    ruleset: string
+    evaluated_at: string
+  } | null
 }
 
 export type SearchPassage = {
@@ -69,6 +134,12 @@ export type SearchDocument = {
   }
   score: number
   passages: SearchPassage[]
+  relevance?: {
+    profile_id: string
+    profile_name: string
+    impact_count: number
+    impacts: ReviewedImpact[]
+  }
 }
 
 export type SearchResponse = {
@@ -85,6 +156,7 @@ export type SearchResponse = {
     collection: string
     date_from: string | null
     date_to: string | null
+    profile: string
   }
   page: number
   page_size: number
@@ -191,4 +263,10 @@ export type DocumentPayload = {
     }
     finished_at: string
   } | null
+  selected_profile: {
+    id: string
+    name: string
+    taxonomy_id: string
+  } | null
+  reviewed_impacts: ReviewedImpact[]
 }

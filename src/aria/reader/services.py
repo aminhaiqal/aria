@@ -15,6 +15,13 @@ from pgvector.django import CosineDistance
 from aria.artifacts.models import ArtifactObservation
 from aria.comparisons.models import ComparisonSummary, DocumentComparison
 from aria.documents.models import DocumentIdentity, DocumentVersion, VersionEvidence
+from aria.impacts.models import (
+    BusinessProfile,
+    ImpactReview,
+    ProfileImpactMatch,
+    RegulatoryImpact,
+)
+from aria.impacts.profiles import business_profile_snapshot
 from aria.knowledge.embedding_services import current_sections_queryset, current_versions_queryset
 from aria.knowledge.embeddings import (
     SUPPORTED_PROVIDERS,
@@ -100,6 +107,122 @@ def _latest_version_evidence(
     }
 
 
+def _reader_impact_payloads(
+    version_ids: set[UUID],
+    *,
+    business_profile: BusinessProfile | None = None,
+    include_evidence: bool = True,
+) -> dict[UUID, list[dict]]:
+    if not version_ids:
+        return {}
+    impacts = list(
+        RegulatoryImpact.objects.filter(
+            comparison_item__comparison__after_version_id__in=version_ids,
+        )
+        .select_related(
+            "comparison_item__comparison",
+            "confirmation_review",
+        )
+        .prefetch_related(
+            "comparison_item__reviews",
+            "reviews__reviewer",
+            "reviews__reviewed_targets__term",
+            "evidence_records",
+        )
+        .order_by("created_at", "id")
+    )
+    eligible: list[tuple[RegulatoryImpact, ImpactReview]] = []
+    for impact in impacts:
+        review = impact.reviews.first()
+        source_review = impact.comparison_item.reviews.first()
+        if (
+            review is None
+            or review.decision
+            not in (ImpactReview.Decision.APPROVED, ImpactReview.Decision.AMENDED)
+            or source_review is None
+            or source_review.id != impact.confirmation_review_id
+            or source_review.decision != "confirmed"
+        ):
+            continue
+        eligible.append((impact, review))
+
+    matches: dict[UUID, ProfileImpactMatch] = {}
+    selected_profile_snapshot = None
+    if business_profile is not None:
+        selected_profile_snapshot = business_profile_snapshot(business_profile)
+        for match in ProfileImpactMatch.objects.filter(
+            profile=business_profile,
+            impact_review_id__in=[review.id for _, review in eligible],
+        ).order_by("-created_at", "-id"):
+            if (
+                match.impact_review_id not in matches
+                and match.profile_snapshot == selected_profile_snapshot
+            ):
+                matches[match.impact_review_id] = match
+
+    grouped: dict[UUID, list[dict]] = {}
+    for impact, review in eligible:
+        match = matches.get(review.id)
+        if business_profile is not None and (
+            match is None or match.outcome != ProfileImpactMatch.Outcome.MATCHED
+        ):
+            continue
+        targets = [
+            {
+                "id": str(target.term_id),
+                "dimension": target.term.dimension,
+                "code": target.term.code,
+                "label": target.term.label,
+                "disposition": target.disposition,
+                "rationale": target.rationale,
+            }
+            for target in review.reviewed_targets.all()
+        ]
+        evidence = []
+        if include_evidence:
+            evidence = [
+                {
+                    "side": record.side,
+                    "artifact_id": str(record.source_artifact_id),
+                    "artifact_sha256": record.artifact_sha256,
+                    "anchor_text": record.anchor_text,
+                    "anchor_text_sha256": record.anchor_text_sha256,
+                    "section_text_sha256": record.section_text_sha256,
+                    "source_locator": record.source_locator,
+                }
+                for record in impact.evidence_records.all()
+            ]
+        payload = {
+            "id": str(impact.id),
+            "impact_type": impact.impact_type,
+            "review_id": str(review.id),
+            "review_decision": review.decision,
+            "reviewed_title": review.reviewed_title,
+            "reviewed_statement": review.reviewed_statement,
+            "reviewed_effective_date_text": review.reviewed_effective_date_text,
+            "reviewed_at": review.created_at,
+            "comparison_item_id": str(impact.comparison_item_id),
+            "change_type": impact.comparison_item.change_type,
+            "legal_effect_assessed": False,
+            "targets": targets,
+            "evidence": evidence,
+            "relevance": (
+                {
+                    "outcome": match.outcome,
+                    "explanation": match.explanation,
+                    "matched_terms": match.matched_terms,
+                    "ruleset": match.ruleset,
+                    "evaluated_at": match.created_at,
+                }
+                if match
+                else None
+            ),
+        }
+        identity_id = impact.comparison_item.comparison.identity_id
+        grouped.setdefault(identity_id, []).append(payload)
+    return grouped
+
+
 def _validate_search_inputs(
     query_text: str,
     mode: str,
@@ -140,6 +263,7 @@ def search_reader_documents(
     date_to: date | None = None,
     page: int = 1,
     page_size: int = 10,
+    business_profile: BusinessProfile | None = None,
 ) -> dict:
     query_text = _validate_search_inputs(
         query_text,
@@ -305,6 +429,25 @@ def search_reader_documents(
         )
 
     documents = list(grouped.values())[: settings.READER_MAX_SEARCH_RESULTS]
+    if business_profile is not None:
+        impact_payloads = _reader_impact_payloads(
+            {UUID(document["version_id"]) for document in documents},
+            business_profile=business_profile,
+            include_evidence=False,
+        )
+        relevant_documents = []
+        for document in documents:
+            impacts = impact_payloads.get(UUID(document["identity_id"]), [])
+            if not impacts:
+                continue
+            document["relevance"] = {
+                "profile_id": str(business_profile.id),
+                "profile_name": business_profile.name,
+                "impact_count": len(impacts),
+                "impacts": impacts,
+            }
+            relevant_documents.append(document)
+        documents = relevant_documents
     artifact_ids = {
         UUID(passage["artifact"]["id"])
         for document in documents
@@ -340,6 +483,7 @@ def search_reader_documents(
             "collection": collection_id,
             "date_from": date_from,
             "date_to": date_to,
+            "profile": str(business_profile.id) if business_profile else "",
         },
         "page": page,
         "page_size": page_size,
@@ -351,7 +495,11 @@ def search_reader_documents(
     }
 
 
-def reader_document_payload(identity_id: UUID) -> dict:
+def reader_document_payload(
+    identity_id: UUID,
+    *,
+    business_profile: BusinessProfile | None = None,
+) -> dict:
     identity = DocumentIdentity.objects.select_related("collection", "collection__authority").get(
         pk=identity_id,
         collection__is_enabled=True,
@@ -456,6 +604,10 @@ def reader_document_payload(identity_id: UUID) -> dict:
             .order_by("-finished_at", "-created_at")
             .first()
         )
+    impact_payloads = _reader_impact_payloads(
+        {current_version.id},
+        business_profile=business_profile,
+    )
 
     return {
         "identity": {
@@ -558,4 +710,14 @@ def reader_document_payload(identity_id: UUID) -> dict:
             if summary
             else None
         ),
+        "selected_profile": (
+            {
+                "id": str(business_profile.id),
+                "name": business_profile.name,
+                "taxonomy_id": str(business_profile.taxonomy_id),
+            }
+            if business_profile
+            else None
+        ),
+        "reviewed_impacts": impact_payloads.get(identity.id, []),
     }
