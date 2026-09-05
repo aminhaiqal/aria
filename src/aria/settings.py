@@ -255,6 +255,12 @@ OPENAI_SUMMARY_MAX_ITEMS = int(os.getenv("ARIA_OPENAI_SUMMARY_MAX_ITEMS", "50"))
 OPENAI_SUMMARY_MAX_CHARS_PER_ANCHOR = int(
     os.getenv("ARIA_OPENAI_SUMMARY_MAX_CHARS_PER_ANCHOR", "12000")
 )
+OPENAI_IMPACT_MODEL = os.getenv("ARIA_OPENAI_IMPACT_MODEL", OPENAI_SUMMARY_MODEL)
+OPENAI_IMPACT_REASONING_EFFORT = os.getenv("ARIA_OPENAI_IMPACT_REASONING_EFFORT", "low")
+OPENAI_IMPACT_MAX_OUTPUT_TOKENS = int(os.getenv("ARIA_OPENAI_IMPACT_MAX_OUTPUT_TOKENS", "3000"))
+OPENAI_IMPACT_MAX_CHARS_PER_ANCHOR = int(
+    os.getenv("ARIA_OPENAI_IMPACT_MAX_CHARS_PER_ANCHOR", "12000")
+)
 ORCHESTRATION_AUTO_GPT_SUMMARIES = env_bool(
     "ARIA_AUTO_GPT_SUMMARIES",
     bool(OPENAI_API_KEY),
@@ -333,6 +339,7 @@ CELERY_TASK_ROUTES = {
     "aria.ocr.tasks.*": {"queue": "ocr", "routing_key": "ocr"},
     "aria.knowledge.tasks.*": {"queue": "normalization", "routing_key": "normalization"},
     "aria.comparisons.tasks.*": {"queue": "diff", "routing_key": "diff"},
+    "aria.impacts.tasks.*": {"queue": "diff", "routing_key": "diff"},
     "aria.events.tasks.*": {"queue": "event_publish", "routing_key": "event_publish"},
 }
 CELERY_BEAT_SCHEDULE = {

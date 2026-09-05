@@ -24,6 +24,7 @@ from aria.api.views import (
     GraphEdgeViewSet,
     GraphNodeViewSet,
     ImpactEvidenceViewSet,
+    ImpactGenerationViewSet,
     ImpactTargetViewSet,
     KnowledgeSearchViewSet,
     MonitoredResourceViewSet,
@@ -91,6 +92,7 @@ router.register("impact-evidence", ImpactEvidenceViewSet)
 router.register("applicability-taxonomies", ApplicabilityTaxonomyViewSet)
 router.register("applicability-terms", ApplicabilityTermViewSet)
 router.register("impact-targets", ImpactTargetViewSet)
+router.register("impact-generations", ImpactGenerationViewSet)
 router.register("change-orchestrations", ChangeOrchestrationViewSet)
 
 urlpatterns = router.urls

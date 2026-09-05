@@ -34,6 +34,7 @@ from aria.impacts.models import (
     ApplicabilityTaxonomy,
     ApplicabilityTerm,
     ImpactEvidence,
+    ImpactGeneration,
     ImpactTarget,
     RegulatoryImpact,
 )
@@ -1054,6 +1055,36 @@ class ImpactTargetSerializer(serializers.ModelSerializer):
         )
 
 
+class ImpactGenerationSerializer(serializers.ModelSerializer):
+    impact_count = serializers.IntegerField(source="generated_impacts.count", read_only=True)
+
+    class Meta:
+        model = ImpactGeneration
+        fields = (
+            "id",
+            "comparison_item",
+            "confirmation_review",
+            "taxonomy",
+            "provider",
+            "model",
+            "prompt_version",
+            "input_hash",
+            "input_snapshot",
+            "status",
+            "output",
+            "response_id",
+            "input_tokens",
+            "output_tokens",
+            "started_at",
+            "finished_at",
+            "error_code",
+            "error_message",
+            "impact_count",
+            "created_at",
+            "updated_at",
+        )
+
+
 class RegulatoryImpactSerializer(serializers.ModelSerializer):
     evidence_records = ImpactEvidenceSerializer(many=True, read_only=True)
     targets = ImpactTargetSerializer(many=True, read_only=True)
@@ -1064,6 +1095,7 @@ class RegulatoryImpactSerializer(serializers.ModelSerializer):
             "id",
             "comparison_item",
             "confirmation_review",
+            "generation",
             "impact_type",
             "origin",
             "title",

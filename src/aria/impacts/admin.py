@@ -4,6 +4,7 @@ from aria.impacts.models import (
     ApplicabilityTaxonomy,
     ApplicabilityTerm,
     ImpactEvidence,
+    ImpactGeneration,
     ImpactTarget,
     RegulatoryImpact,
 )
@@ -64,3 +65,17 @@ class ImpactTargetAdmin(ReadOnlyImpactAdmin):
     list_display = ("impact", "term", "disposition", "origin", "created_at")
     list_filter = ("disposition", "origin", "term__dimension")
     search_fields = ("impact__title", "term__label", "rationale")
+
+
+@admin.register(ImpactGeneration)
+class ImpactGenerationAdmin(ReadOnlyImpactAdmin):
+    list_display = (
+        "comparison_item",
+        "provider",
+        "model",
+        "status",
+        "taxonomy",
+        "created_at",
+    )
+    list_filter = ("provider", "status", "taxonomy")
+    search_fields = ("comparison_item__fingerprint", "input_hash", "response_id")

@@ -33,6 +33,7 @@ from aria.api.serializers import (
     GraphEdgeSerializer,
     GraphNodeSerializer,
     ImpactEvidenceSerializer,
+    ImpactGenerationSerializer,
     ImpactTargetSerializer,
     MonitoredResourceSerializer,
     NormalizedSectionSerializer,
@@ -88,6 +89,7 @@ from aria.impacts.models import (
     ApplicabilityTaxonomy,
     ApplicabilityTerm,
     ImpactEvidence,
+    ImpactGeneration,
     ImpactTarget,
     RegulatoryImpact,
 )
@@ -376,6 +378,7 @@ class RegulatoryImpactViewSet(ReadOnlyModelViewSet):
     queryset = RegulatoryImpact.objects.select_related(
         "comparison_item",
         "confirmation_review",
+        "generation",
     ).prefetch_related(
         "evidence_records",
         "evidence_records__structural_anchor",
@@ -408,6 +411,13 @@ class ApplicabilityTermViewSet(ReadOnlyModelViewSet):
 class ImpactTargetViewSet(ReadOnlyModelViewSet):
     queryset = ImpactTarget.objects.select_related("impact", "term", "term__taxonomy")
     serializer_class = ImpactTargetSerializer
+
+
+class ImpactGenerationViewSet(ReadOnlyModelViewSet):
+    queryset = ImpactGeneration.objects.select_related(
+        "comparison_item", "confirmation_review", "taxonomy"
+    ).prefetch_related("generated_impacts")
+    serializer_class = ImpactGenerationSerializer
 
 
 class ChangeOrchestrationViewSet(ReadOnlyModelViewSet):

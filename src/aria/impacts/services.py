@@ -9,6 +9,7 @@ from aria.events.services import record_audit_event
 from aria.impacts.models import (
     ApplicabilityTaxonomy,
     ImpactEvidence,
+    ImpactGeneration,
     ImpactTarget,
     RegulatoryImpact,
 )
@@ -48,6 +49,7 @@ def create_regulatory_impact(
     effective_date_text: str = "",
     actor_type: str = "system",
     actor_identifier: str = "",
+    generation: ImpactGeneration | None = None,
 ) -> tuple[RegulatoryImpact, bool]:
     item = ComparisonItem.objects.select_for_update().select_related("comparison").get(pk=item.pk)
     confirmation = _current_confirmation(item)
@@ -67,7 +69,14 @@ def create_regulatory_impact(
         "rationale": rationale,
         "effective_date_text": effective_date_text,
     }
-    fingerprint = _fingerprint(item=item, confirmation=confirmation, payload=payload)
+    fingerprint = _fingerprint(
+        item=item,
+        confirmation=confirmation,
+        payload={
+            **payload,
+            "generation_id": str(generation.id) if generation else None,
+        },
+    )
     existing = RegulatoryImpact.objects.filter(input_fingerprint=fingerprint).first()
     if existing is not None:
         return existing, False
@@ -75,6 +84,7 @@ def create_regulatory_impact(
     impact = RegulatoryImpact(
         comparison_item=item,
         confirmation_review=confirmation,
+        generation=generation,
         input_fingerprint=fingerprint,
         legal_effect_assessed=False,
         **payload,

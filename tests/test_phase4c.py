@@ -1,21 +1,33 @@
 import json
 from dataclasses import replace
 from io import StringIO
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.test import override_settings
 from django.urls import reverse
 
 from aria.comparisons.models import ComparisonItem, ComparisonReview
 from aria.comparisons.reviews import record_comparison_review
 from aria.comparisons.services import compare_document_versions
 from aria.events.models import AuditEvent
+from aria.impacts.generation import (
+    ImpactGenerationEligibilityError,
+    ImpactGenerationError,
+    StructuredImpactCandidate,
+    StructuredImpactCandidates,
+    StructuredImpactTarget,
+    generate_impact_candidates,
+)
 from aria.impacts.models import (
     ApplicabilityTaxonomy,
     ApplicabilityTerm,
     ImpactEvidence,
+    ImpactGeneration,
     ImpactTarget,
     RegulatoryImpact,
 )
@@ -29,7 +41,7 @@ from aria.impacts.taxonomies import (
 from tests.test_phase3c import Phase3CFixture
 
 
-class ImpactEvidenceFoundationTestCase(Phase3CFixture):
+class ImpactFixtureMixin:
     def setUp(self) -> None:
         super().setUp()
         before = self.create_version(
@@ -66,6 +78,9 @@ class ImpactEvidenceFoundationTestCase(Phase3CFixture):
             actor_type="user",
             actor_identifier=str(self.reviewer.id),
         )
+
+
+class ImpactEvidenceFoundationTestCase(ImpactFixtureMixin, Phase3CFixture):
 
     def test_candidate_snapshots_exact_confirmed_before_and_after_evidence(self) -> None:
         confirmation = self.confirm_change()
@@ -164,7 +179,7 @@ class ImpactEvidenceFoundationTestCase(Phase3CFixture):
         )
 
 
-class ApplicabilityTaxonomyTestCase(ImpactEvidenceFoundationTestCase):
+class ApplicabilityTaxonomyTestCase(ImpactFixtureMixin, Phase3CFixture):
     def test_repository_taxonomy_dry_run_apply_and_replay_are_governed(self) -> None:
         definition = load_taxonomy_definition()
         expected_terms = len(definition.definition["terms"])
@@ -300,3 +315,145 @@ class ApplicabilityTaxonomyTestCase(ImpactEvidenceFoundationTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["targets"][0]["code"], "process-personal-data")
         self.assertEqual(response.json()["targets"][0]["taxonomy_checksum"], taxonomy.checksum)
+
+
+@override_settings(
+    OPENAI_IMPACT_MODEL="gpt-5.6-sol",
+    OPENAI_IMPACT_REASONING_EFFORT="low",
+    OPENAI_IMPACT_MAX_OUTPUT_TOKENS=3000,
+    OPENAI_IMPACT_MAX_CHARS_PER_ANCHOR=12000,
+)
+class ImpactGenerationTestCase(ImpactFixtureMixin, Phase3CFixture):
+    def setUp(self) -> None:
+        super().setUp()
+        self.taxonomy, _ = apply_taxonomy_definition(load_taxonomy_definition())
+
+    def _structured_output(self, *, anchor_ids=None, target_code="data-user"):
+        return StructuredImpactCandidates(
+            comparison_item_id=str(self.item.id),
+            confirmation_review_id=str(self.item.reviews.first().id),
+            legal_effect_not_assessed=True,
+            candidates=[
+                StructuredImpactCandidate(
+                    impact_type="obligation",
+                    title="Potential safeguard obligation",
+                    statement=(
+                        "Organizations acting as data users may need to review "
+                        "technical safeguards."
+                    ),
+                    rationale="The confirmed text changes the safeguard wording.",
+                    effective_date_text="",
+                    citation_anchor_ids=anchor_ids
+                    or [str(self.item.before_anchor_id), str(self.item.after_anchor_id)],
+                    targets=[
+                        StructuredImpactTarget(
+                            dimension="regulated_role",
+                            code=target_code,
+                            disposition="included",
+                            rationale="The exact text names a controller role.",
+                        )
+                    ],
+                )
+            ],
+        )
+
+    def test_deterministic_generation_is_review_required_evidence_bound_and_idempotent(self):
+        self.confirm_change()
+
+        result = generate_impact_candidates(self.item, self.taxonomy)
+        replay = generate_impact_candidates(self.item, self.taxonomy)
+
+        self.assertTrue(result.created)
+        self.assertFalse(replay.created)
+        self.assertEqual(result.impact_count, 1)
+        self.assertEqual(replay.impact_count, 1)
+        self.assertEqual(ImpactGeneration.objects.count(), 1)
+        generation = result.generation
+        self.assertEqual(generation.status, ImpactGeneration.Status.COMPLETED)
+        self.assertEqual(generation.provider, "deterministic")
+        impact = generation.generated_impacts.get()
+        self.assertEqual(impact.origin, RegulatoryImpact.Origin.DETERMINISTIC)
+        self.assertEqual(impact.evidence_records.count(), 2)
+        self.assertTrue(impact.targets.filter(term__code="data-user").exists())
+        self.assertFalse(impact.legal_effect_assessed)
+
+    def test_generation_rejects_unconfirmed_text_before_any_model_call(self):
+        client = MagicMock()
+
+        with self.assertRaises(ImpactGenerationEligibilityError):
+            generate_impact_candidates(
+                self.item,
+                self.taxonomy,
+                provider="openai",
+                client=client,
+            )
+
+        client.responses.parse.assert_not_called()
+        self.assertEqual(ImpactGeneration.objects.count(), 0)
+
+    def test_openai_structured_output_is_validated_then_materialized(self):
+        self.confirm_change()
+        client = MagicMock()
+        client.responses.parse.return_value = SimpleNamespace(
+            id="resp-impact-1",
+            output_parsed=self._structured_output(),
+            usage=SimpleNamespace(input_tokens=321, output_tokens=123),
+        )
+
+        result = generate_impact_candidates(
+            self.item,
+            self.taxonomy,
+            provider="openai",
+            client=client,
+        )
+
+        generation = result.generation
+        self.assertEqual(generation.status, ImpactGeneration.Status.COMPLETED)
+        self.assertEqual(generation.response_id, "resp-impact-1")
+        self.assertEqual(generation.input_tokens, 321)
+        impact = generation.generated_impacts.get()
+        self.assertEqual(impact.origin, RegulatoryImpact.Origin.GPT)
+        self.assertEqual(impact.targets.get().term.code, "data-user")
+        request = client.responses.parse.call_args.kwargs
+        self.assertIs(request["text_format"], StructuredImpactCandidates)
+        self.assertFalse(request["store"])
+
+        self.client.force_login(self.reviewer)
+        response = self.client.get(reverse("impactgeneration-detail", args=[generation.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["impact_count"], 1)
+
+    def test_hallucinated_anchor_or_taxonomy_code_fails_without_partial_impacts(self):
+        self.confirm_change()
+        client = MagicMock()
+        client.responses.parse.return_value = SimpleNamespace(
+            id="resp-impact-invalid",
+            output_parsed=self._structured_output(anchor_ids=["not-an-anchor"]),
+            usage=None,
+        )
+
+        with self.assertRaisesMessage(ImpactGenerationError, "exact anchor"):
+            generate_impact_candidates(
+                self.item,
+                self.taxonomy,
+                provider="openai",
+                client=client,
+            )
+
+        failed = ImpactGeneration.objects.get()
+        self.assertEqual(failed.status, ImpactGeneration.Status.FAILED)
+        self.assertEqual(RegulatoryImpact.objects.count(), 0)
+
+        client.responses.parse.return_value = SimpleNamespace(
+            id="resp-impact-invalid-term",
+            output_parsed=self._structured_output(target_code="invented-role"),
+            usage=None,
+        )
+        with self.assertRaisesMessage(ImpactGenerationError, "unknown applicability"):
+            generate_impact_candidates(
+                self.item,
+                self.taxonomy,
+                provider="openai",
+                client=client,
+            )
+        self.assertEqual(RegulatoryImpact.objects.count(), 0)

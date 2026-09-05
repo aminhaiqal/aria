@@ -4,7 +4,7 @@ from django.db import models
 from django.utils import timezone
 
 from aria.artifacts.models import RawArtifact
-from aria.common.models import AppendOnlyModel
+from aria.common.models import AppendOnlyModel, TimeStampedModel
 from aria.comparisons.models import ComparisonItem, ComparisonReview, StructuralAnchor
 from aria.documents.models import NormalizedSection
 
@@ -37,6 +37,13 @@ class RegulatoryImpact(AppendOnlyModel):
         ComparisonReview,
         on_delete=models.PROTECT,
         related_name="regulatory_impacts",
+    )
+    generation = models.ForeignKey(
+        "ImpactGeneration",
+        on_delete=models.PROTECT,
+        related_name="generated_impacts",
+        null=True,
+        blank=True,
     )
     impact_type = models.CharField(max_length=32, choices=ImpactType.choices, db_index=True)
     origin = models.CharField(max_length=16, choices=Origin.choices, db_index=True)
@@ -85,6 +92,11 @@ class RegulatoryImpact(AppendOnlyModel):
             != self.comparison_item.comparison.Status.COMPLETED
         ):
             errors["comparison_item"] = "The source comparison must be complete."
+        if self.generation_id:
+            if self.generation.comparison_item_id != self.comparison_item_id:
+                errors["generation"] = "The generation must belong to the comparison item."
+            elif self.generation.confirmation_review_id != self.confirmation_review_id:
+                errors["generation"] = "The generation must use the same confirmation review."
         if not self.title.strip():
             errors["title"] = "An impact title is required."
         if not self.statement.strip():
@@ -346,3 +358,76 @@ class ImpactTarget(AppendOnlyModel):
 
     def __str__(self) -> str:
         return f"{self.impact_id}:{self.term_id} [{self.disposition}]"
+
+
+class ImpactGeneration(TimeStampedModel):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        RUNNING = "running", "Running"
+        COMPLETED = "completed", "Completed"
+        FAILED = "failed", "Failed"
+
+    comparison_item = models.ForeignKey(
+        ComparisonItem,
+        on_delete=models.PROTECT,
+        related_name="impact_generations",
+    )
+    confirmation_review = models.ForeignKey(
+        ComparisonReview,
+        on_delete=models.PROTECT,
+        related_name="impact_generations",
+    )
+    taxonomy = models.ForeignKey(
+        ApplicabilityTaxonomy,
+        on_delete=models.PROTECT,
+        related_name="impact_generations",
+    )
+    provider = models.CharField(max_length=32)
+    model = models.CharField(max_length=128)
+    prompt_version = models.CharField(max_length=128)
+    input_hash = models.CharField(
+        max_length=64,
+        validators=[RegexValidator(r"^[0-9a-f]{64}$")],
+    )
+    input_snapshot = models.JSONField(default=dict)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+    output = models.JSONField(default=dict, blank=True)
+    response_id = models.CharField(max_length=255, blank=True)
+    input_tokens = models.PositiveIntegerField(default=0)
+    output_tokens = models.PositiveIntegerField(default=0)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    error_code = models.CharField(max_length=128, blank=True)
+    error_message = models.TextField(blank=True)
+    class Meta:
+        ordering = ("-created_at", "-id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("provider", "model", "prompt_version", "input_hash"),
+                name="unique_impact_generation_input",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=("comparison_item", "status", "created_at"),
+                name="impact_generation_item_idx",
+            )
+        ]
+
+    def clean(self) -> None:
+        errors = {}
+        if self.confirmation_review_id and self.comparison_item_id:
+            if self.confirmation_review.comparison_item_id != self.comparison_item_id:
+                errors["confirmation_review"] = "The review must belong to the comparison item."
+            elif self.confirmation_review.decision != ComparisonReview.Decision.CONFIRMED:
+                errors["confirmation_review"] = "Impact generation requires a confirmed review."
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self) -> str:
+        return f"{self.comparison_item_id} {self.provider}/{self.model} [{self.status}]"

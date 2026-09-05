@@ -53,6 +53,44 @@ make apply-impact-taxonomy
 The underlying command requires both `--apply` and the exact `--confirm APPLY`. Reapplication of
 identical bytes is idempotent and does not duplicate taxonomy terms or its audit event.
 
+## Candidate extraction
+
+Phase 4C.3 adds two candidate providers behind one evidence contract:
+
+- `deterministic` applies a small, versioned ruleset for explicit obligation, reporting,
+  registration, deadline, prohibition, penalty, exemption, permission, governance, and
+  record-keeping wording; and
+- `openai` uses the Responses API with a strict Pydantic structured-output schema to propose
+  concise statements and controlled targets.
+
+Both providers accept exactly one currently confirmed comparison item and one installed taxonomy
+version. Input snapshots contain bounded before/after anchor text plus anchor, artifact, review,
+and taxonomy IDs/hashes. Output is rejected unless it preserves the item and review IDs, cites
+every available exact anchor once, keeps the legal-effect flag false, and uses only supplied
+taxonomy terms. Schema-valid GPT output still passes these application-level evidence checks before
+any impact record is written. This follows the [official OpenAI Structured Outputs guidance](https://developers.openai.com/api/docs/guides/structured-outputs)
+while retaining ARIA's stricter domain validation.
+
+Every attempt is represented by a mutable `ImpactGeneration` execution record with provider,
+model, prompt version, input hash and snapshot, output, token counts, response ID, and terminal
+status. The resulting impact, evidence, and target records remain append-only. Invalid output marks
+the attempt failed and the materialization transaction leaves no partial candidates.
+
+Generate deterministic candidates synchronously for an exact confirmed item:
+
+```bash
+make extract-impacts ITEM_ID=<comparison-item-uuid>
+```
+
+Select GPT explicitly when desired:
+
+```bash
+make extract-impacts ITEM_ID=<comparison-item-uuid> PROVIDER=openai
+```
+
+Asynchronous command calls use the existing self-hosted `diff` worker queue. Candidate generation
+does not publish, notify, or bypass the separate human impact-review phase.
+
 ## Candidate types
 
 The controlled first vocabulary is: obligation, reporting, registration, deadline, prohibition,
@@ -70,6 +108,7 @@ Staff can inspect the append-only records in Django Admin or the administrator-o
 | Versioned taxonomy snapshots | `/api/v1/applicability-taxonomies/` |
 | Controlled applicability terms | `/api/v1/applicability-terms/` |
 | Candidate-to-term links | `/api/v1/impact-targets/` |
+| Deterministic/GPT execution records | `/api/v1/impact-generations/` |
 
 Both endpoints are read-only. The supported write path is the transactional domain service, which
 locks the comparison item, verifies its current human confirmation, validates every evidence
