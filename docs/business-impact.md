@@ -91,6 +91,23 @@ make extract-impacts ITEM_ID=<comparison-item-uuid> PROVIDER=openai
 Asynchronous command calls use the existing self-hosted `diff` worker queue. Candidate generation
 does not publish, notify, or bypass the separate human impact-review phase.
 
+## Human impact review
+
+Phase 4C.4 adds a staff-only review desk at `/console/impacts/`. Its detail view keeps the full
+evidence spine visible in one place: the confirmed textual change, exact before/after anchors and
+artifact hashes, proposed impact wording, controlled applicability targets, and decision history.
+
+Reviewers may approve the candidate, amend its wording and targets, reject it, or request more
+context. Every decision is a new append-only `ImpactReview`; amendments and approvals snapshot the
+exact controlled terms used at that moment in append-only `ImpactReviewTarget` records. Later
+decisions link to their predecessor instead of replacing history. A source-change confirmation that
+has since been superseded makes the candidate ineligible for review and requires regeneration from
+the current evidence.
+
+The console mutation is POST-only, CSRF-protected, actor-attributed, and transactionally locks the
+candidate. Review remains a governance boundary: an approval does not publish or deliver the impact,
+and `legal_effect_assessed` remains false.
+
 ## Candidate types
 
 The controlled first vocabulary is: obligation, reporting, registration, deadline, prohibition,
@@ -109,10 +126,12 @@ Staff can inspect the append-only records in Django Admin or the administrator-o
 | Controlled applicability terms | `/api/v1/applicability-terms/` |
 | Candidate-to-term links | `/api/v1/impact-targets/` |
 | Deterministic/GPT execution records | `/api/v1/impact-generations/` |
+| Append-only human impact reviews | `/api/v1/impact-reviews/` |
+| Reviewed controlled-term snapshots | `/api/v1/impact-review-targets/` |
 
-Both endpoints are read-only. The supported write path is the transactional domain service, which
-locks the comparison item, verifies its current human confirmation, validates every evidence
-relationship, and records the actor in the audit trail.
+These endpoints are read-only. The supported write paths are transactional domain services, which
+lock their subject, verify current human confirmation, validate every evidence relationship, and
+record the actor in the audit trail.
 
 ## Verification
 

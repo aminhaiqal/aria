@@ -15,6 +15,8 @@ def status_tone(value):
         "passed",
         "published",
         "accepted",
+        "approved",
+        "amended",
         "unchanged",
         "not_modified",
     }:

@@ -36,6 +36,9 @@
       <a class="nav-item {% if active_section == 'comparisons' %}is-active{% endif %}" href="{% url 'console:comparison-list' %}">
         <span class="nav-icon" aria-hidden="true">◫</span><span>Comparison review</span>
       </a>
+      <a class="nav-item {% if active_section == 'impacts' %}is-active{% endif %}" href="{% url 'console:impact-list' %}">
+        <span class="nav-icon" aria-hidden="true">⌘</span><span>Business impacts</span>
+      </a>
       <a class="nav-item {% if active_section == 'audit' %}is-active{% endif %}" href="{% url 'console:audit-list' %}">
         <span class="nav-icon" aria-hidden="true">✓</span><span>Audit trail</span>
       </a>

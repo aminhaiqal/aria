@@ -28,9 +28,12 @@ from aria.impacts.models import (
     ApplicabilityTerm,
     ImpactEvidence,
     ImpactGeneration,
+    ImpactReview,
+    ImpactReviewTarget,
     ImpactTarget,
     RegulatoryImpact,
 )
+from aria.impacts.reviews import record_impact_review
 from aria.impacts.services import add_impact_target, create_regulatory_impact
 from aria.impacts.taxonomies import (
     TaxonomyDefinitionError,
@@ -457,3 +460,174 @@ class ImpactGenerationTestCase(ImpactFixtureMixin, Phase3CFixture):
                 client=client,
             )
         self.assertEqual(RegulatoryImpact.objects.count(), 0)
+
+
+class ImpactHumanReviewTestCase(ImpactFixtureMixin, Phase3CFixture):
+    def setUp(self) -> None:
+        super().setUp()
+        self.confirm_change()
+        self.taxonomy, _ = apply_taxonomy_definition(load_taxonomy_definition())
+        result = generate_impact_candidates(self.item, self.taxonomy)
+        self.impact = result.generation.generated_impacts.get()
+
+    def test_review_history_is_append_only_chained_and_snapshots_targets(self):
+        first = record_impact_review(
+            self.impact,
+            decision=ImpactReview.Decision.NEEDS_CONTEXT,
+            reviewer=self.reviewer,
+            rationale="Confirm whether a separate commencement instrument applies.",
+        )
+        second = record_impact_review(
+            self.impact,
+            decision=ImpactReview.Decision.APPROVED,
+            reviewer=self.reviewer,
+            rationale="The proposed impact remains bounded to the cited change.",
+        )
+
+        self.assertEqual(second.previous_review, first)
+        self.assertEqual(self.impact.reviews.count(), 2)
+        self.assertEqual(second.reviewed_title, self.impact.title)
+        self.assertEqual(
+            second.reviewed_targets.count(),
+            self.impact.targets.count(),
+        )
+        for reviewed_target in second.reviewed_targets.all():
+            self.assertEqual(reviewed_target.source_target.impact, self.impact)
+            self.assertEqual(reviewed_target.term, reviewed_target.source_target.term)
+        self.assertEqual(
+            AuditEvent.objects.filter(
+                action="impact.review_recorded", target_id=self.impact.id
+            ).count(),
+            2,
+        )
+        second.rationale = "Mutated"
+        with self.assertRaisesMessage(ValidationError, "append-only"):
+            second.save()
+
+    def test_amendment_snapshots_reviewer_wording_and_controlled_targets(self):
+        role = self.taxonomy.terms.get(
+            dimension=ApplicabilityTerm.Dimension.REGULATED_ROLE,
+            code="data-user",
+        )
+        review = record_impact_review(
+            self.impact,
+            decision=ImpactReview.Decision.AMENDED,
+            reviewer=self.reviewer,
+            rationale="The evidence supports a narrower data-user statement.",
+            amended_title="Technical safeguards may need review",
+            amended_statement="Data users may need to review their technical safeguards.",
+            target_specs=[
+                {
+                    "term": role,
+                    "disposition": ImpactTarget.Disposition.INCLUDED,
+                    "rationale": "The cited text names the controller role.",
+                }
+            ],
+        )
+
+        self.assertEqual(review.reviewed_title, "Technical safeguards may need review")
+        self.assertEqual(review.reviewed_targets.get().term, role)
+        self.assertIsNone(review.reviewed_targets.get().source_target)
+
+    def test_review_is_blocked_when_textual_change_confirmation_is_superseded(self):
+        record_comparison_review(
+            self.item,
+            decision=ComparisonReview.Decision.REJECTED,
+            reviewer=self.reviewer,
+            rationale="A second source check invalidated the earlier confirmation.",
+        )
+
+        with self.assertRaisesMessage(ValidationError, "no longer current"):
+            record_impact_review(
+                self.impact,
+                decision=ImpactReview.Decision.APPROVED,
+                reviewer=self.reviewer,
+            )
+        self.assertEqual(ImpactReview.objects.count(), 0)
+
+    def test_console_review_is_post_only_validated_and_evidence_complete(self):
+        self.client.force_login(self.reviewer)
+        list_route = reverse("console:impact-list")
+        detail_route = reverse("console:impact-detail", args=[self.impact.id])
+        review_route = reverse("console:impact-review", args=[self.impact.id])
+
+        self.assertEqual(self.client.get(list_route).status_code, 200)
+        detail = self.client.get(detail_route)
+        self.assertEqual(detail.status_code, 200)
+        self.assertContains(detail, "Exact before and after evidence")
+        self.assertContains(detail, self.item.before_anchor.source_artifact.sha256)
+        self.assertContains(detail, "Potential obligation impact")
+        self.assertEqual(self.client.get(review_route).status_code, 405)
+
+        invalid = self.client.post(
+            review_route,
+            {
+                "decision": ImpactReview.Decision.REJECTED,
+                "title": self.impact.title,
+                "statement": self.impact.statement,
+                "rationale": "short",
+            },
+        )
+        self.assertRedirects(invalid, detail_route)
+        self.assertEqual(ImpactReview.objects.count(), 0)
+
+        response = self.client.post(
+            review_route,
+            {
+                "decision": ImpactReview.Decision.APPROVED,
+                "title": self.impact.title,
+                "statement": self.impact.statement,
+                "rationale": "Approved against the exact evidence shown.",
+            },
+        )
+        self.assertRedirects(response, detail_route)
+        review = ImpactReview.objects.get()
+        self.assertEqual(review.decision, ImpactReview.Decision.APPROVED)
+        self.assertEqual(review.reviewer, self.reviewer)
+
+        self.client.force_login(self.reviewer)
+        api_response = self.client.get(reverse("impactreview-detail", args=[review.id]))
+        self.assertEqual(api_response.status_code, 200)
+        self.assertEqual(
+            len(api_response.json()["reviewed_targets"]),
+            self.impact.targets.count(),
+        )
+        self.assertEqual(
+            self.client.post(reverse("impactreview-list"), {}).status_code,
+            405,
+        )
+
+    def test_review_target_rejects_cross_version_taxonomy(self):
+        review = record_impact_review(
+            self.impact,
+            decision=ImpactReview.Decision.APPROVED,
+            reviewer=self.reviewer,
+        )
+        foreign_taxonomy = ApplicabilityTaxonomy(
+            slug=self.taxonomy.slug,
+            schema_version=1,
+            version=2,
+            name="Foreign taxonomy version",
+            description="Test fixture",
+            jurisdiction="Malaysia",
+            disclaimer="Not an official legal classification.",
+            checksum="c" * 64,
+            definition={"slug": self.taxonomy.slug, "schema_version": 1, "version": 2},
+        )
+        foreign_taxonomy.full_clean()
+        foreign_taxonomy.save()
+        foreign_term = ApplicabilityTerm.objects.create(
+            taxonomy=foreign_taxonomy,
+            dimension=ApplicabilityTerm.Dimension.SECTOR,
+            code="cross-sector",
+            label="Cross-sector",
+            description="Test term",
+        )
+        invalid = ImpactReviewTarget(
+            impact_review=review,
+            term=foreign_term,
+            disposition=ImpactTarget.Disposition.INCLUDED,
+            rationale="This different version must be rejected.",
+        )
+        with self.assertRaisesMessage(ValidationError, "generation taxonomy"):
+            invalid.full_clean(validate_constraints=False)

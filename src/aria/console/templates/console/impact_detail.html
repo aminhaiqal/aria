@@ -1,0 +1,65 @@
+{% extends "console/base.html" %}{% load console_extras %}
+{% block content %}
+<section class="page-heading">
+  <div><a class="eyebrow" href="{% url 'console:impact-list' %}">← Business impacts</a><h1>{{ impact.title }}</h1><p>{{ impact.comparison_item.comparison.identity.canonical_title }} · {{ impact.get_impact_type_display }} · {{ impact.get_origin_display }}</p></div>
+  <div class="heading-actions">{% if current_review %}<span class="badge badge-{{ current_review.decision|status_tone }}">{{ current_review.get_decision_display }}</span>{% else %}<span class="badge badge-warning">Review required</span>{% endif %}<a class="button button-secondary" href="{{ impact.comparison_item.comparison.identity.canonical_url }}" target="_blank" rel="noopener noreferrer">Open official source</a></div>
+</section>
+
+{% if not source_confirmation_current %}<section class="attention-strip danger-card"><div><span class="attention-mark">!</span><div><strong>Source confirmation is no longer current</strong><p>This candidate cannot be approved. Reconfirm the textual change and generate a new evidence-bound candidate.</p></div></div></section>{% endif %}
+
+<div class="detail-grid impact-layout">
+  <div class="detail-stack">
+    <ol class="impact-spine" aria-label="Impact evidence chain">
+      <li>
+        <span class="spine-index">1</span>
+        <section class="panel">
+          <header class="panel-head"><div><span class="eyebrow">Confirmed textual change</span><h2>Exact before and after evidence</h2></div><span class="badge badge-positive">Human confirmed</span></header>
+          <div class="evidence-split">
+            {% if impact.comparison_item.before_anchor %}<section class="evidence-pane"><header><span>Before</span><span>{{ impact.comparison_item.before_anchor.canonical_key }}</span></header><p>{{ impact.comparison_item.before_anchor.text }}</p><div class="evidence-meta">anchor {{ impact.comparison_item.before_anchor.id }}<br>artifact {{ impact.comparison_item.before_anchor.source_artifact.sha256 }}<br>text {{ impact.comparison_item.before_anchor.text_sha256 }}<br>locator {{ impact.comparison_item.before_anchor.source_locator|pretty_json }}</div></section>{% else %}<section class="evidence-pane is-empty"><span>No before anchor — the text was added.</span></section>{% endif %}
+            {% if impact.comparison_item.after_anchor %}<section class="evidence-pane"><header><span>After</span><span>{{ impact.comparison_item.after_anchor.canonical_key }}</span></header><p>{{ impact.comparison_item.after_anchor.text }}</p><div class="evidence-meta">anchor {{ impact.comparison_item.after_anchor.id }}<br>artifact {{ impact.comparison_item.after_anchor.source_artifact.sha256 }}<br>text {{ impact.comparison_item.after_anchor.text_sha256 }}<br>locator {{ impact.comparison_item.after_anchor.source_locator|pretty_json }}</div></section>{% else %}<section class="evidence-pane is-empty"><span>No after anchor — the text was removed.</span></section>{% endif %}
+          </div>
+          <div class="current-review"><strong>Confirmation review {{ impact.confirmation_review.id|short_id }}</strong> · {{ impact.confirmation_review.reviewer.username }} · {{ impact.confirmation_review.created_at }}{% if impact.confirmation_review.rationale %}<br>{{ impact.confirmation_review.rationale }}{% endif %}</div>
+        </section>
+      </li>
+      <li>
+        <span class="spine-index">2</span>
+        <section class="panel">
+          <header class="panel-head"><div><span class="eyebrow">Candidate interpretation</span><h2>{{ impact.get_impact_type_display }}</h2></div><span class="badge badge-info">{{ impact.get_origin_display }}</span></header>
+          <div class="summary-output"><h3>{{ impact.title }}</h3><p class="impact-statement">{{ impact.statement }}</p><div class="summary-change"><strong>Candidate rationale</strong><p>{{ impact.rationale }}</p></div>{% if impact.effective_date_text %}<p><strong>Proposed effective-date text:</strong> {{ impact.effective_date_text }}</p>{% endif %}<small>Candidate fingerprint <span class="mono">{{ impact.input_fingerprint }}</span>{% if impact.generation %}<br>{{ impact.generation.model }} · prompt {{ impact.generation.prompt_version }} · generation {{ impact.generation.id }}{% endif %}</small></div>
+        </section>
+      </li>
+      <li>
+        <span class="spine-index">3</span>
+        <section class="panel">
+          <header class="panel-head"><div><span class="eyebrow">Controlled applicability</span><h2>Proposed business targets</h2></div>{% if impact.generation %}<span class="mono">taxonomy v{{ impact.generation.taxonomy.version }}</span>{% endif %}</header>
+          <div class="target-list">{% for target in impact.targets.all %}<article><span class="badge badge-{% if target.disposition == 'included' %}positive{% else %}danger{% endif %}">{{ target.get_disposition_display }}</span><div><strong>{{ target.term.get_dimension_display }} · {{ target.term.label }}</strong><p>{{ target.rationale }}</p><small class="mono">{{ target.term.code }} · {{ target.term.taxonomy.checksum|short_hash:18 }}</small></div></article>{% empty %}<div class="empty-state"><strong>No controlled targets</strong><span>This candidate is not eligible for approval.</span></div>{% endfor %}</div>
+        </section>
+      </li>
+      <li>
+        <span class="spine-index">4</span>
+        <section class="panel">
+          <header class="panel-head"><div><span class="eyebrow">Append-only decisions</span><h2>Review history</h2></div>{% if current_review %}<span class="badge badge-{{ current_review.decision|status_tone }}">Current · {{ current_review.get_decision_display }}</span>{% endif %}</header>
+          <ol class="timeline">{% for review in review_history %}<li><span class="timeline-mark">{{ forloop.revcounter }}</span><div class="timeline-copy"><strong>{{ review.get_decision_display }} · {{ review.reviewer.username }}</strong><p>{{ review.reviewed_title }} — {{ review.reviewed_statement }}</p>{% if review.rationale %}<p>{{ review.rationale }}</p>{% endif %}<p>{% for target in review.reviewed_targets.all %}<span class="badge badge-neutral">{{ target.term.label }} · {{ target.get_disposition_display }}</span>{% endfor %}</p>{% if review.previous_review_id %}<small class="mono">Supersedes {{ review.previous_review_id }}</small>{% endif %}</div><time>{{ review.created_at }}</time></li>{% empty %}<li><span class="timeline-mark">?</span><div class="timeline-copy"><strong>No impact decision yet</strong><p>The candidate remains internal and unavailable to readers or delivery.</p></div></li>{% endfor %}</ol>
+        </section>
+      </li>
+    </ol>
+  </div>
+
+  <aside class="detail-stack">
+    <section class="action-card boundary-card"><h3>Impact is not legal advice</h3><p>Approve only the evidence-bounded candidate. Applicability still depends on the eventual business profile and may require professional interpretation.</p><span class="badge badge-warning">No legal effect asserted</span></section>
+    <section class="panel review-desk">
+      <header class="panel-head"><div><span class="eyebrow">Reviewer desk</span><h2>Record a decision</h2></div></header>
+      <form method="post" action="{% url 'console:impact-review' impact.id %}">{% csrf_token %}
+        <div class="form-field"><label for="{{ review_form.decision.id_for_label }}">Decision</label>{{ review_form.decision }}</div>
+        <div class="form-field"><label for="{{ review_form.title.id_for_label }}">Reviewed title</label>{{ review_form.title }}</div>
+        <div class="form-field"><label for="{{ review_form.statement.id_for_label }}">Reviewed statement</label>{{ review_form.statement }}</div>
+        <div class="form-field"><label for="{{ review_form.effective_date_text.id_for_label }}">Effective-date wording</label>{{ review_form.effective_date_text }}</div>
+        <div class="form-field"><label for="{{ review_form.included_terms.id_for_label }}">Included terms</label>{{ review_form.included_terms }}<small>Used only for “approved with amendments”. Hold Ctrl/Cmd for multiple.</small></div>
+        <div class="form-field"><label for="{{ review_form.excluded_terms.id_for_label }}">Excluded terms</label>{{ review_form.excluded_terms }}</div>
+        <div class="form-field"><label for="{{ review_form.rationale.id_for_label }}">Decision rationale</label>{{ review_form.rationale }}</div>
+        <button class="button button-primary button-wide" type="submit" {% if not source_confirmation_current %}disabled{% endif %}>Append review decision</button>
+      </form>
+    </section>
+  </aside>
+</div>
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends "console/base.html" %}{% load console_extras %}
+{% block content %}
+<section class="page-heading">
+  <div><span class="eyebrow">Human impact queue</span><h1>Business impact review</h1><p>Validate proposed business consequences against the exact confirmed change and controlled applicability terms.</p></div>
+</section>
+
+<form class="filter-bar" method="get">
+  <div class="filter-field is-grow"><label for="impact-q">Search impact evidence</label><input class="field-control" id="impact-q" type="search" name="q" value="{{ query }}" placeholder="Publication, candidate statement, or applicability term"></div>
+  <div class="filter-field"><label for="impact-state">Review state</label><select class="field-control" id="impact-state" name="state"><option value="">All states</option><option value="review_required" {% if selected_state == 'review_required' %}selected{% endif %}>Review required</option>{% for value,label in decision_choices %}<option value="{{ value }}" {% if selected_state == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <button class="button button-primary" type="submit">Apply filters</button>{% if query or selected_state %}<a class="button button-ghost" href="{% url 'console:impact-list' %}">Clear</a>{% endif %}
+</form>
+
+<section class="panel"><div class="table-wrap"><table><thead><tr><th>Candidate impact</th><th>Official publication</th><th>Applicability</th><th>Origin</th><th>Review state</th></tr></thead><tbody>
+  {% for impact in page.object_list %}<tr class="click-row" data-href="{% url 'console:impact-detail' impact.id %}"><td><a class="primary-link" href="{% url 'console:impact-detail' impact.id %}">{{ impact.title }}</a><small>{{ impact.statement|truncatechars:120 }}</small></td><td>{{ impact.comparison_item.comparison.identity.canonical_title|default:"Untitled publication" }}<small>{{ impact.comparison_item.get_change_type_display }} textual change</small></td><td>{% for target in impact.targets.all|slice:":3" %}<span class="badge badge-neutral">{{ target.term.label }}</span>{% empty %}<span class="badge badge-warning">No targets</span>{% endfor %}<small>{{ impact.targets.count }} controlled term{{ impact.targets.count|pluralize }}</small></td><td><span class="badge badge-info">{{ impact.get_origin_display }}</span><small>{% if impact.generation %}{{ impact.generation.model }}{% else %}Operator-created{% endif %}</small></td><td>{% if impact.current_decision %}<span class="badge badge-{{ impact.current_decision|status_tone }}">{{ impact.current_decision|title }}</span>{% else %}<span class="badge badge-warning">Review required</span>{% endif %}<small>{{ impact.created_at|timesince }} ago</small></td></tr>
+  {% empty %}<tr><td colspan="5"><div class="empty-state"><strong>No matching impact candidates</strong><span>Generate candidates from currently confirmed textual changes first.</span></div></td></tr>{% endfor %}
+</tbody></table></div>{% include "console/includes/pagination.html" with page=page page_query=page_query %}</section>
+{% endblock %}

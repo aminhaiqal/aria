@@ -31,6 +31,7 @@ from aria.console.forms import (
     AdmissionAssessmentForm,
     AdmissionPromotionForm,
     ComparisonReviewForm,
+    ImpactReviewForm,
     PublicationConfirmationForm,
     ResourceRetirementForm,
     StaticAdmissionAssessmentForm,
@@ -47,11 +48,13 @@ from aria.console.operations import (
     queue_resource_poll,
     queue_static_source_pilot,
     record_admission_assessment,
+    record_impact_decision,
     record_static_admission_assessment,
     retire_resource,
 )
 from aria.discovery.models import MonitoredResource, ResourceRun, SourceRun
 from aria.events.models import AuditEvent, OutboxEvent, PipelineEvent
+from aria.impacts.models import ImpactReview, RegulatoryImpact
 from aria.orchestration.models import ChangeOrchestration
 from aria.orchestration.services import comparison_review_state
 from aria.quality.models import DocumentQualityAssessment
@@ -891,6 +894,162 @@ def comparison_publish(request, comparison_id):
                 f"{result.skipped_count} already existed.",
             )
     return redirect("console:comparison-detail", comparison_id=comparison.id)
+
+
+@staff_required
+def impact_list(request):
+    state = request.GET.get("state", "")
+    query = request.GET.get("q", "").strip()
+    latest_decision = (
+        ImpactReview.objects.filter(impact=OuterRef("pk"))
+        .order_by("-created_at", "-id")
+        .values("decision")[:1]
+    )
+    impacts = (
+        RegulatoryImpact.objects.select_related(
+            "comparison_item__comparison__identity__collection__authority",
+            "confirmation_review",
+            "generation__taxonomy",
+        )
+        .prefetch_related("targets__term", "reviews")
+        .annotate(current_decision=Subquery(latest_decision))
+    )
+    if query:
+        impacts = impacts.filter(
+            Q(title__icontains=query)
+            | Q(statement__icontains=query)
+            | Q(comparison_item__comparison__identity__canonical_title__icontains=query)
+            | Q(targets__term__label__icontains=query)
+        )
+    if state == "review_required":
+        impacts = impacts.filter(current_decision__isnull=True)
+    elif state in ImpactReview.Decision.values:
+        impacts = impacts.filter(current_decision=state)
+    page, page_query = _page(request, impacts.distinct())
+    return render(
+        request,
+        "console/impact_list.html",
+        {
+            **_base_context(
+                title="Business impact review",
+                section="impacts",
+                eyebrow="Evidence-bound applicability",
+            ),
+            "page": page,
+            "page_query": page_query,
+            "selected_state": state,
+            "query": query,
+            "decision_choices": ImpactReview.Decision.choices,
+        },
+    )
+
+
+def _impact_review_initial(impact, current_review):
+    if current_review:
+        targets = current_review.reviewed_targets.all()
+        title = current_review.reviewed_title
+        statement = current_review.reviewed_statement
+        effective_date = current_review.reviewed_effective_date_text
+    else:
+        targets = impact.targets.all()
+        title = impact.title
+        statement = impact.statement
+        effective_date = impact.effective_date_text
+    return {
+        "decision": current_review.decision if current_review else "",
+        "title": title,
+        "statement": statement,
+        "effective_date_text": effective_date,
+        "included_terms": [
+            target.term_id
+            for target in targets
+            if target.disposition == "included"
+        ],
+        "excluded_terms": [
+            target.term_id
+            for target in targets
+            if target.disposition == "excluded"
+        ],
+        "rationale": current_review.rationale if current_review else "",
+    }
+
+
+@staff_required
+def impact_detail(request, impact_id):
+    impact = get_object_or_404(
+        RegulatoryImpact.objects.select_related(
+            "comparison_item__comparison__identity__collection__authority",
+            "comparison_item__before_anchor__source_artifact",
+            "comparison_item__after_anchor__source_artifact",
+            "confirmation_review__reviewer",
+            "generation__taxonomy",
+        ).prefetch_related(
+            "evidence_records__structural_anchor",
+            "targets__term__taxonomy",
+            "reviews__reviewer",
+            "reviews__reviewed_targets__term",
+        ),
+        pk=impact_id,
+    )
+    current_review = impact.reviews.order_by("-created_at", "-id").first()
+    latest_change_review = impact.comparison_item.reviews.order_by("-created_at", "-id").first()
+    source_confirmation_current = bool(
+        latest_change_review
+        and latest_change_review.id == impact.confirmation_review_id
+        and latest_change_review.decision == ComparisonReview.Decision.CONFIRMED
+    )
+    return render(
+        request,
+        "console/impact_detail.html",
+        {
+            **_base_context(
+                title=impact.title,
+                section="impacts",
+                eyebrow="Impact evidence review",
+            ),
+            "impact": impact,
+            "current_review": current_review,
+            "review_history": impact.reviews.all(),
+            "source_confirmation_current": source_confirmation_current,
+            "review_form": ImpactReviewForm(
+                impact=impact,
+                initial=_impact_review_initial(impact, current_review),
+            ),
+        },
+    )
+
+
+@staff_required
+@require_POST
+def impact_review(request, impact_id):
+    impact = get_object_or_404(
+        RegulatoryImpact.objects.select_related("generation__taxonomy"),
+        pk=impact_id,
+    )
+    form = ImpactReviewForm(request.POST, impact=impact)
+    if not form.is_valid():
+        messages.error(
+            request,
+            "Impact review was not recorded: " + json.dumps(form.errors.get_json_data()),
+        )
+    else:
+        try:
+            record_impact_decision(
+                impact,
+                decision=form.cleaned_data["decision"],
+                rationale=form.cleaned_data["rationale"],
+                title=form.cleaned_data["title"],
+                statement=form.cleaned_data["statement"],
+                effective_date_text=form.cleaned_data["effective_date_text"],
+                included_terms=form.cleaned_data["included_terms"],
+                excluded_terms=form.cleaned_data["excluded_terms"],
+                user=request.user,
+            )
+        except ConsoleOperationError as error:
+            messages.error(request, str(error))
+        else:
+            messages.success(request, "Append-only impact decision recorded.")
+    return redirect("console:impact-detail", impact_id=impact.id)
 
 
 @staff_required

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
 from django.db import models
@@ -431,3 +432,114 @@ class ImpactGeneration(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.comparison_item_id} {self.provider}/{self.model} [{self.status}]"
+
+
+class ImpactReview(AppendOnlyModel):
+    class Decision(models.TextChoices):
+        APPROVED = "approved", "Approved"
+        AMENDED = "amended", "Approved with amendments"
+        REJECTED = "rejected", "Rejected"
+        NEEDS_CONTEXT = "needs_context", "Needs context"
+
+    impact = models.ForeignKey(
+        RegulatoryImpact,
+        on_delete=models.PROTECT,
+        related_name="reviews",
+    )
+    decision = models.CharField(max_length=16, choices=Decision.choices, db_index=True)
+    reviewed_title = models.CharField(max_length=512)
+    reviewed_statement = models.TextField()
+    reviewed_effective_date_text = models.CharField(max_length=255, blank=True)
+    rationale = models.TextField(blank=True)
+    reviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="impact_reviews",
+    )
+    previous_review = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        related_name="superseding_reviews",
+        null=True,
+        blank=True,
+    )
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(fields=("impact", "created_at"), name="impact_review_history_idx"),
+            models.Index(fields=("decision", "created_at"), name="impact_review_decision_idx"),
+        ]
+
+    def clean(self) -> None:
+        errors = {}
+        if self.previous_review_id and self.previous_review.impact_id != self.impact_id:
+            errors["previous_review"] = "The previous review must belong to the same impact."
+        if not self.reviewed_title.strip():
+            errors["reviewed_title"] = "The reviewed title is required."
+        if not self.reviewed_statement.strip():
+            errors["reviewed_statement"] = "The reviewed statement is required."
+        if (
+            self.decision
+            in (self.Decision.AMENDED, self.Decision.REJECTED, self.Decision.NEEDS_CONTEXT)
+            and len(self.rationale.strip()) < 10
+        ):
+            errors["rationale"] = "Provide at least 10 characters of review rationale."
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self) -> str:
+        return f"{self.impact_id} [{self.decision}]"
+
+
+class ImpactReviewTarget(AppendOnlyModel):
+    impact_review = models.ForeignKey(
+        ImpactReview,
+        on_delete=models.PROTECT,
+        related_name="reviewed_targets",
+    )
+    term = models.ForeignKey(
+        ApplicabilityTerm,
+        on_delete=models.PROTECT,
+        related_name="impact_review_targets",
+    )
+    disposition = models.CharField(max_length=16, choices=ImpactTarget.Disposition.choices)
+    rationale = models.TextField()
+    source_target = models.ForeignKey(
+        ImpactTarget,
+        on_delete=models.PROTECT,
+        related_name="review_snapshots",
+        null=True,
+        blank=True,
+    )
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ("impact_review", "term__dimension", "term__code")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("impact_review", "term"),
+                name="unique_term_per_impact_review",
+            )
+        ]
+
+    def clean(self) -> None:
+        errors = {}
+        if not self.rationale.strip():
+            errors["rationale"] = "A reviewed-target rationale is required."
+        if self.source_target_id:
+            if self.source_target.impact_id != self.impact_review.impact_id:
+                errors["source_target"] = "The source target must belong to the reviewed impact."
+            elif self.source_target.term_id != self.term_id:
+                errors["source_target"] = "The source target must use the reviewed term."
+            elif self.source_target.disposition != self.disposition:
+                errors["source_target"] = "The source target disposition must match."
+        generation = self.impact_review.impact.generation
+        if generation and self.term.taxonomy_id != generation.taxonomy_id:
+            errors["term"] = "Reviewed targets must use the generation taxonomy version."
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self) -> str:
+        return f"{self.impact_review_id}:{self.term_id} [{self.disposition}]"

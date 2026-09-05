@@ -1,5 +1,6 @@
 from dataclasses import asdict
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from aria.browser.admission import assess_browser_admission, promote_admitted_source
@@ -15,6 +16,8 @@ from aria.discovery.services import (
 )
 from aria.discovery.tasks import execute_resource_run, execute_source_run
 from aria.events.services import record_audit_event
+from aria.impacts.models import ImpactReview, ImpactTarget, RegulatoryImpact
+from aria.impacts.reviews import record_impact_review
 from aria.orchestration.models import ChangeOrchestration
 from aria.orchestration.services import comparison_review_state, prepare_orchestration_retry
 from aria.orchestration.tasks import process_change_orchestration
@@ -235,6 +238,50 @@ def retire_resource(
         )
     except ValueError as error:
         raise ConsoleOperationError(str(error)) from error
+
+
+def record_impact_decision(
+    impact: RegulatoryImpact,
+    *,
+    decision: str,
+    rationale: str,
+    title: str,
+    statement: str,
+    effective_date_text: str,
+    included_terms,
+    excluded_terms,
+    user,
+) -> ImpactReview:
+    target_specs = None
+    if decision == ImpactReview.Decision.AMENDED:
+        target_specs = [
+            {
+                "term": term,
+                "disposition": ImpactTarget.Disposition.INCLUDED,
+                "rationale": "Reviewer explicitly included this controlled term.",
+            }
+            for term in included_terms
+        ] + [
+            {
+                "term": term,
+                "disposition": ImpactTarget.Disposition.EXCLUDED,
+                "rationale": "Reviewer explicitly excluded this controlled term.",
+            }
+            for term in excluded_terms
+        ]
+    try:
+        return record_impact_review(
+            impact,
+            decision=decision,
+            reviewer=user,
+            rationale=rationale,
+            amended_title=title,
+            amended_statement=statement,
+            amended_effective_date_text=effective_date_text,
+            target_specs=target_specs,
+        )
+    except ValidationError as error:
+        raise ConsoleOperationError("; ".join(error.messages)) from error
 
 
 @transaction.atomic

@@ -35,6 +35,8 @@ from aria.impacts.models import (
     ApplicabilityTerm,
     ImpactEvidence,
     ImpactGeneration,
+    ImpactReview,
+    ImpactReviewTarget,
     ImpactTarget,
     RegulatoryImpact,
 )
@@ -1085,9 +1087,53 @@ class ImpactGenerationSerializer(serializers.ModelSerializer):
         )
 
 
+class ImpactReviewTargetSerializer(serializers.ModelSerializer):
+    dimension = serializers.CharField(source="term.dimension", read_only=True)
+    code = serializers.CharField(source="term.code", read_only=True)
+    label = serializers.CharField(source="term.label", read_only=True)
+
+    class Meta:
+        model = ImpactReviewTarget
+        fields = (
+            "id",
+            "impact_review",
+            "term",
+            "dimension",
+            "code",
+            "label",
+            "disposition",
+            "rationale",
+            "source_target",
+            "created_at",
+        )
+
+
+class ImpactReviewSerializer(serializers.ModelSerializer):
+    reviewer_username = serializers.CharField(source="reviewer.username", read_only=True)
+    reviewed_targets = ImpactReviewTargetSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = ImpactReview
+        fields = (
+            "id",
+            "impact",
+            "decision",
+            "reviewed_title",
+            "reviewed_statement",
+            "reviewed_effective_date_text",
+            "rationale",
+            "reviewer",
+            "reviewer_username",
+            "previous_review",
+            "reviewed_targets",
+            "created_at",
+        )
+
+
 class RegulatoryImpactSerializer(serializers.ModelSerializer):
     evidence_records = ImpactEvidenceSerializer(many=True, read_only=True)
     targets = ImpactTargetSerializer(many=True, read_only=True)
+    current_review = serializers.SerializerMethodField()
 
     class Meta:
         model = RegulatoryImpact
@@ -1106,8 +1152,13 @@ class RegulatoryImpactSerializer(serializers.ModelSerializer):
             "input_fingerprint",
             "evidence_records",
             "targets",
+            "current_review",
             "created_at",
         )
+
+    def get_current_review(self, obj):
+        review = obj.reviews.order_by("-created_at", "-id").first()
+        return ImpactReviewSerializer(review).data if review else None
 
 
 class OrchestrationStepAttemptSerializer(serializers.ModelSerializer):
