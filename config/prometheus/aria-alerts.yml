@@ -1,0 +1,31 @@
+groups:
+  - name: aria-operational
+    rules:
+      - alert: AriaMetricsUnavailable
+        expr: up{job="aria"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: ARIA metrics endpoint is unavailable
+      - alert: AriaSchedulerWorkerHeartbeatMissing
+        expr: aria_scheduler_worker_heartbeat_age_seconds > 180
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: ARIA scheduler-worker heartbeat is stale
+      - alert: AriaOutboxDeliveryFailed
+        expr: aria_outbox_events{status="failed"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: ARIA has failed reviewed-impact delivery events
+      - alert: AriaSourceEndpointUnhealthy
+        expr: aria_source_endpoints{health_state="unhealthy"} > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: ARIA has an unhealthy official source endpoint

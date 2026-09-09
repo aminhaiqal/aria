@@ -1,8 +1,10 @@
 from django.conf import settings
 from django.db import connection
-from django.http import JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.views.decorators.http import require_GET
 from redis import Redis
+
+from aria.health.metrics import metrics_token_is_valid, render_operational_metrics
 
 
 @require_GET
@@ -34,4 +36,16 @@ def readiness(request) -> JsonResponse:
     return JsonResponse(
         {"status": "ok" if ready else "unavailable", "checks": checks},
         status=200 if ready else 503,
+    )
+
+
+@require_GET
+def metrics(request) -> HttpResponse:
+    if not settings.METRICS_TOKEN:
+        raise Http404
+    if not metrics_token_is_valid(request.headers.get("Authorization", "")):
+        return HttpResponse("Forbidden\n", status=403, content_type="text/plain")
+    return HttpResponse(
+        render_operational_metrics(),
+        content_type="text/plain; version=0.0.4; charset=utf-8",
     )

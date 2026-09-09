@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help ensure-env start start-workers start-ocr start-browser start-all stop stop-heavy status health logs-core bootstrap build up down logs migrate makemigrations test check frontend-build frontend-test frontend-format reader-e2e shell superuser list-source-packs plan-source-pack apply-source-pack plan-impact-taxonomy apply-impact-taxonomy extract-impacts publish-impact pilot-source audit-static promote-static source-confidence source-soak poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings evaluate-reader quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage backup backup-verify restore-drill
+.PHONY: help ensure-env start start-workers start-ocr start-browser start-all start-observability stop stop-heavy status health logs-core bootstrap build up down logs migrate makemigrations test check frontend-build frontend-test frontend-format reader-e2e shell superuser list-source-packs plan-source-pack apply-source-pack plan-impact-taxonomy apply-impact-taxonomy extract-impacts publish-impact pilot-source audit-static promote-static source-confidence source-soak poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings evaluate-reader quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage backup backup-verify restore-drill observability-check
 
 help:
 	@printf '%s\n' \
@@ -9,6 +9,7 @@ help:
 		'make start-ocr      Start OCR processing' \
 		'make start-browser  Start bounded Chromium processing' \
 		'make start-all      Start the complete stack' \
+		'make start-observability  Start private Prometheus metrics' \
 		'make backup         Create an encrypted local backup (optionally upload to R2)' \
 		'make status         Show service health' \
 		'make health         Check application readiness' \
@@ -34,6 +35,10 @@ start-browser: ensure-env
 
 start-all: ensure-env
 	docker compose up --build -d --wait --wait-timeout 180
+
+start-observability: ensure-env
+	@test -n "$(ARIA_METRICS_TOKEN)" || rg -q '^ARIA_METRICS_TOKEN=.+$$' .env || (echo "Set ARIA_METRICS_TOKEN in the environment or .env" && exit 1)
+	docker compose --profile observability up -d --wait --wait-timeout 180 prometheus
 
 stop:
 	docker compose down
@@ -240,3 +245,6 @@ restore-drill: ensure-env
 	@test -n "$(MANIFEST)" || (echo "Set MANIFEST=/var/lib/aria/backups/<name>.manifest.json" && exit 1)
 	@test -n "$(IDENTITY_FILE)" || (echo "Set IDENTITY_FILE=<host-path-to-age-identity>" && exit 1)
 	docker compose run --rm --build -v "$(abspath $(IDENTITY_FILE)):/run/secrets/aria-backup-age-key:ro" backup python manage.py restore_backup_drill "$(MANIFEST)" --identity-file /run/secrets/aria-backup-age-key --confirm RESTORE-DRILL
+
+observability-check:
+	docker run --rm --entrypoint /bin/sh -v "$(CURDIR)/config/prometheus:/etc/prometheus:ro" prom/prometheus:v3.5.0 -c 'printf test > /tmp/aria-metrics-token && exec /bin/promtool check config /etc/prometheus/prometheus.yml'

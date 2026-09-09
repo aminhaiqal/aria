@@ -117,3 +117,36 @@ existing impact publication attribution, and include the publisher identifier in
 event. The rule is also enforced below the console in the publication services, so a management
 command cannot bypass it. The change-publication command accepts `--publisher`; the Make target
 requires `PUBLISHER=<active-staff-username>`.
+
+## 4D.4 private observability
+
+`/health/metrics/` exposes Prometheus text only when `ARIA_METRICS_TOKEN` is configured and the
+request supplies that exact bearer token. When disabled it returns 404; a wrong or missing token
+returns 403. Generate a long random value and keep the route private. Do not place this endpoint
+behind the public reader hostname.
+
+The metrics deliberately use only bounded state labels. They report enabled endpoint health,
+source-run and change-workflow states, outbox delivery states, review backlogs, the append-only
+source-structure incident count, and a scheduler-worker heartbeat. Official URLs, document titles,
+artifact hashes, user IDs, profile names, and evidence text never become metric labels.
+
+The minute-level heartbeat is published by Beat to the normal discovery queue and written to the
+shared cache when a core worker executes it. Its age therefore proves the scheduler, broker, and a
+core worker can complete a small task together. `+Inf` is expected when only the lightweight reader
+is running; it becomes an alert only when scheduled workers are supposed to be active.
+
+Set `ARIA_METRICS_TOKEN` in `.env`, then run:
+
+```text
+make observability-check
+make start-observability
+```
+
+The opt-in Compose profile runs a self-hosted Prometheus instance on `127.0.0.1:9090` by default,
+keeps its token in a mode-077 temporary file, persists its time series in a named volume, and ships
+alerts for scrape failure, stale scheduler-worker heartbeat, failed outbox delivery, and unhealthy
+official endpoints. It is excluded from `make start`, so local reader resource use does not grow.
+
+Every HTTP response also carries a bounded `X-Request-ID`. A safe incoming ID is preserved for
+cross-service tracing; malformed or log-injection-shaped values are replaced with a UUID. The same
+ID is added to in-request logs and permission-denial audit details, while background logs use `-`.

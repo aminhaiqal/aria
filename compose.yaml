@@ -12,6 +12,7 @@ x-app: &app
     ARIA_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     ARIA_CACHE_URL: redis://:${REDIS_PASSWORD}@redis:6379/2
     ARIA_CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+    ARIA_METRICS_TOKEN: ${ARIA_METRICS_TOKEN:-}
     ARIA_HTTP_SUPPLEMENTAL_CA_BUNDLE: ${ARIA_HTTP_SUPPLEMENTAL_CA_BUNDLE:-/app/config/certificates/sectigo-public-server-authentication-ca-dv-r36.pem}
   volumes:
     - .:/app
@@ -199,12 +200,44 @@ services:
       postgres:
         condition: service_healthy
 
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: ["observability"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        test -n "$$ARIA_METRICS_TOKEN" || { echo "ARIA_METRICS_TOKEN is required" >&2; exit 1; };
+        umask 077;
+        printf '%s' "$$ARIA_METRICS_TOKEN" > /tmp/aria-metrics-token;
+        exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml
+        --storage.tsdb.path=/prometheus
+    environment:
+      ARIA_METRICS_TOKEN: ${ARIA_METRICS_TOKEN:-}
+    ports:
+      - "${ARIA_PROMETHEUS_BIND_ADDRESS:-127.0.0.1}:${ARIA_PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/prometheus/aria-alerts.yml:/etc/prometheus/aria-alerts.yml:ro
+      - prometheus-data:/prometheus
+    tmpfs:
+      - /tmp:size=1048576,mode=1777
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
 volumes:
   postgres-data:
   redis-data:
   artifact-data:
   reader-ui:
   backup-data:
+  prometheus-data:
 
 networks:
   backend:

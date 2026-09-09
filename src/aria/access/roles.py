@@ -73,6 +73,7 @@ def _audit_denial(request, codename: str, route_arguments: Iterable[object]) -> 
                 "method": request.method,
                 "path": request.path,
                 "required_permission": f"{PERMISSION_PREFIX}{codename}",
+                "correlation_id": getattr(request, "correlation_id", ""),
             },
         )
     except Exception:

@@ -87,6 +87,7 @@ outputs are explicit derivatives and never replace or mutate the official source
 - Phase 4D.1 source-structure drift quarantine and approved selector fallbacks: implemented
 - Phase 4D.2 encrypted PostgreSQL backup, R2 copy, and disposable restore drill: implemented
 - Phase 4D.3 least-privilege operator roles, login throttling, and two-person release: implemented
+- Phase 4D.4 private metrics, correlation IDs, scheduler-worker heartbeat, and alerts: implemented
 - Phase 2 source breadth: JPDP, AGC Updated Principal Acts, and Parliament Dewan Rakyat bills are
   operational with complete R2, extraction, graph, local-vector, and OpenAI-vector coverage
 - Operational acceptance still pending: observe the first autonomous AGC and Parliament daily

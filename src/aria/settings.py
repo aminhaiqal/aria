@@ -66,6 +66,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "aria.common.request_context.CorrelationIdMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -170,6 +171,7 @@ LOGIN_RATE_LIMIT_ATTEMPTS = max(2, int(os.getenv("ARIA_LOGIN_RATE_LIMIT_ATTEMPTS
 LOGIN_RATE_LIMIT_WINDOW_SECONDS = max(
     60, int(os.getenv("ARIA_LOGIN_RATE_LIMIT_WINDOW_SECONDS", "900"))
 )
+METRICS_TOKEN = os.getenv("ARIA_METRICS_TOKEN", "").strip()
 OBJECT_STORAGE_BACKEND = os.getenv("ARIA_OBJECT_STORAGE_BACKEND", "filesystem")
 OBJECT_STORAGE_ROOT = Path(os.getenv("ARIA_OBJECT_STORAGE_ROOT", "/var/lib/aria/artifacts"))
 OBJECT_STORAGE_ENDPOINT = os.getenv("ARIA_OBJECT_STORAGE_ENDPOINT", "")
@@ -375,6 +377,7 @@ CELERY_TASK_QUEUES = tuple(
     )
 )
 CELERY_TASK_ROUTES = {
+    "aria.health.tasks.*": {"queue": "discovery", "routing_key": "discovery"},
     "aria.browser.tasks.*": {"queue": "browser_fetch", "routing_key": "browser_fetch"},
     "aria.reliability.tasks.*": {"queue": "discovery", "routing_key": "discovery"},
     "aria.discovery.tasks.*": {"queue": "discovery", "routing_key": "discovery"},
@@ -388,6 +391,10 @@ CELERY_TASK_ROUTES = {
     "aria.events.tasks.*": {"queue": "event_publish", "routing_key": "event_publish"},
 }
 CELERY_BEAT_SCHEDULE = {
+    "record-scheduler-worker-heartbeat": {
+        "task": "aria.health.tasks.record_pipeline_heartbeat",
+        "schedule": crontab(minute="*"),
+    },
     "schedule-due-source-endpoints": {
         "task": "aria.discovery.tasks.schedule_due_endpoints",
         "schedule": crontab(minute="*"),
@@ -416,11 +423,20 @@ LOGGING = {
     "disable_existing_loggers": False,
     "formatters": {
         "standard": {
-            "format": "{asctime} {levelname} {name} {message}",
+            "format": "{asctime} {levelname} {name} request_id={correlation_id} {message}",
             "style": "{",
         }
     },
-    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "standard"}},
+    "filters": {
+        "correlation_id": {"()": "aria.common.request_context.CorrelationIdFilter"}
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "standard",
+            "filters": ["correlation_id"],
+        }
+    },
     "root": {"handlers": ["console"], "level": LOG_LEVEL},
 }
 
