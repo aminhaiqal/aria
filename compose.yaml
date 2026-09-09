@@ -103,6 +103,20 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  test:
+    <<: *app
+    profiles: ["tools"]
+    build:
+      context: .
+      target: test
+    command: ["python", "manage.py", "test"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   worker:
     <<: *app
     command:

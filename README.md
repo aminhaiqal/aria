@@ -90,12 +90,13 @@ outputs are explicit derivatives and never replace or mutate the official source
 - Phase 4D.4 private metrics, correlation IDs, scheduler-worker heartbeat, and alerts: implemented
 - Phase 4D.5 immutable base images, hashed Python locks, production isolation, SBOM, and local
   vulnerability scanning: implemented
+- Phase 4D.6 fail-closed production readiness policy and unified release gate: implemented
 - Phase 2 source breadth: JPDP, AGC Updated Principal Acts, and Parliament Dewan Rakyat bills are
   operational with complete R2, extraction, graph, local-vector, and OpenAI-vector coverage
 - Operational acceptance still pending: observe the first autonomous AGC and Parliament daily
   cycles through the durable soak gate; manual pilot success is not presented as autonomous proof
-- Next implementation slice: one fail-closed production readiness and resilience gate before a
-  private Cloudflare preview is exposed
+- Next implementation step: satisfy the production readiness gate, expose a private Cloudflare
+  preview, and collect evidence-reader feedback
 
 ## Local setup
 
@@ -147,10 +148,13 @@ make logs-core       # follow API, PostgreSQL, and Redis logs
 make logs            # follow API and all worker logs
 make stop-heavy      # stop OCR and browser workers while leaving the reader running
 make stop            # stop the stack without deleting persistent volumes
-make test            # run the Django test suite in Compose
+make lint            # lint Python in the dependency-hashed test image
+make test            # run the Django test suite in the dependency-hashed test image
 make frontend-test   # install deterministically, lint, test with coverage, and build the reader
 make frontend-build  # rebuild and publish the hashed reader bundle into the Compose volume
 make reader-e2e      # test login, shadcn interaction, CSP, and logout in Chromium
+make release-check   # run the complete local build, test, scan, and SBOM gate
+make production-readiness # verify hardened settings, live dependencies, roles, migrations, and R2
 make makemigrations  # generate model migrations
 make migrate         # apply migrations
 make list-source-packs # list validated repository source contracts

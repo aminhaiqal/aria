@@ -17,6 +17,7 @@ def env_list(name: str, default: str = "") -> list[str]:
 
 
 DEBUG = env_bool("ARIA_DEBUG", False)
+RELEASE_REVISION = os.getenv("ARIA_RELEASE_REVISION", "unknown").strip().lower()
 SECRET_KEY = os.getenv("ARIA_SECRET_KEY", "")
 if not SECRET_KEY:
     if not DEBUG:

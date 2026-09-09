@@ -645,12 +645,16 @@ class JpdpSeedTestCase(TestCase):
         self.assertEqual(endpoint.collection.authority.country_code, "MY")
         self.assertEqual(endpoint.allowed_domains, ["pdp.gov.my"])
         self.assertEqual(endpoint.connector_type, SourceEndpoint.ConnectorType.HTML_LISTING)
-        self.assertEqual(endpoint.connector_configuration_version, 3)
-        self.assertEqual(endpoint.connector_configurations.count(), 3)
+        self.assertEqual(endpoint.connector_configuration_version, 4)
+        self.assertEqual(endpoint.connector_configurations.count(), 4)
         self.assertFalse(endpoint.connector_configurations.get(version=1).is_active)
         self.assertFalse(endpoint.connector_configurations.get(version=2).is_active)
-        self.assertTrue(
-            endpoint.connector_configurations.get(version=3).configuration["follow_detail_pages"]
+        self.assertFalse(endpoint.connector_configurations.get(version=3).is_active)
+        active_configuration = endpoint.connector_configurations.get(version=4)
+        self.assertTrue(active_configuration.is_active)
+        self.assertEqual(
+            active_configuration.configuration["detail_content_selectors"],
+            [".betterdocs-entry-content"],
         )
         feed = endpoint.monitored_resources.get(resource_type=MonitoredResource.ResourceType.RSS)
         self.assertEqual(feed.url, "https://www.pdp.gov.my/ppdpv1/en/feed/")

@@ -192,3 +192,40 @@ suite, and commit the new digests and locks together. The current Debian package
 installation steps still contact their upstream repositories during a clean build, so this phase
 does not claim bit-for-bit offline reproducibility. The immutable base, language-package hashes,
 SBOM, scanner, and runtime boundaries materially narrow and expose that remaining surface.
+
+## 4D.6 production readiness and release gate
+
+ARIA now distinguishes code readiness from deployment readiness. `make release-check` is the local
+code gate: it resolves production isolation, builds every runtime plus a dependency-hashed test
+image, runs Python lint, rejects model changes without migrations, executes the complete backend and
+bounded-browser suites, runs frontend lint/tests/coverage/build, validates Prometheus, scans all
+three Python locks plus npm and Docker configuration, and emits the SPDX SBOM. A release candidate
+is not ready when any one of those stages fails.
+
+`make production-readiness` is the live deployment gate. The production overlay forces debug off,
+HTTPS proxy handling, redirect and secure cookies, a short initial HSTS policy, strict operator
+roles, two-person publication, R2 evidence storage, and encrypted off-host backup upload. The gate
+then requires:
+
+- a strong Django secret and explicit public hostname without a wildcard;
+- password-protected internal PostgreSQL, Redis cache, and Redis broker endpoints;
+- scoped private R2 credentials, an age public backup recipient, and a private metrics token;
+- a commit SHA injected as the release identity;
+- no unapplied database migrations;
+- a successful shared-cache round trip and broker ping; and
+- a successful temporary R2 write, digest read-back, deletion, and deletion confirmation.
+
+The command reports only check identifiers and bounded status messages; it never echoes a secret,
+credential-bearing URL, or object content. The R2 probe uses the existing `.aria-probe/` namespace
+and removes its temporary object before passing. Run it only after the private hostname, Cloudflare
+Tunnel, R2 credentials, metrics token, backup recipient, and operator roles are configured:
+
+```text
+make release-check
+make production-readiness
+```
+
+Passing the release gate proves the candidate is internally consistent. Passing the live gate
+proves that the selected environment meets ARIA's deployment policy and its critical dependencies
+are reachable at that moment. Neither replaces a restore drill, autonomous source-soak evidence, or
+human review of regulatory output.

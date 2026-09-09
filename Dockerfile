@@ -23,10 +23,10 @@ RUN addgroup --system aria \
     && chown -R aria:aria /var/lib/aria
 
 COPY requirements.lock ./
+RUN pip install --require-hashes --requirement requirements.lock
 COPY src ./src
 COPY manage.py ./manage.py
 COPY --from=reader-ui /reader/dist /app/frontend/reader/dist
-RUN pip install --require-hashes --requirement requirements.lock
 
 USER aria
 
@@ -35,6 +35,13 @@ EXPOSE 8000
 CMD ["gunicorn", "aria.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--threads", "4", "--access-logfile", "-", "--error-logfile", "-"]
 
 FROM base AS app
+
+FROM base AS test
+
+USER root
+COPY requirements-dev.lock ./requirements-dev.lock
+RUN pip install --require-hashes --requirement requirements-dev.lock
+USER aria
 
 FROM pgvector/pgvector:0.8.2-pg17-bookworm@sha256:feb68f4f15446397d8cac7f4fe48fe4586de83160d1fc48b46283312d1a33966 AS postgres-tools
 

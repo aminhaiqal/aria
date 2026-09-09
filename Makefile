@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 ARIA_SBOM_VERSION ?= $(shell git rev-parse --verify HEAD)
 
-.PHONY: help ensure-env start start-workers start-ocr start-browser start-all start-observability stop stop-heavy status health logs-core bootstrap build up down logs migrate makemigrations test check frontend-build frontend-test frontend-format reader-e2e shell superuser list-source-packs plan-source-pack apply-source-pack plan-impact-taxonomy apply-impact-taxonomy extract-impacts publish-impact pilot-source audit-static promote-static source-confidence source-soak poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings evaluate-reader quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage backup backup-verify restore-drill observability-check supply-chain-check security-scan sbom
+.PHONY: help ensure-env start start-workers start-ocr start-browser start-all start-observability stop stop-heavy status health logs-core bootstrap build up down logs migrate makemigrations test lint check frontend-build frontend-test frontend-format reader-e2e shell superuser list-source-packs plan-source-pack apply-source-pack plan-impact-taxonomy apply-impact-taxonomy extract-impacts publish-impact pilot-source audit-static promote-static source-confidence source-soak poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings evaluate-reader quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage backup backup-verify restore-drill observability-check supply-chain-check security-scan sbom production-readiness release-check
 
 help:
 	@printf '%s\n' \
@@ -15,6 +15,8 @@ help:
 		'make supply-chain-check  Verify immutable dependencies and production isolation' \
 		'make security-scan  Scan source and dependency locks for high-risk findings' \
 		'make sbom           Generate build/aria-sbom.spdx.json' \
+		'make production-readiness  Probe a hardened deployment before exposure' \
+		'make release-check  Run the complete local release gate' \
 		'make status         Show service health' \
 		'make health         Check application readiness' \
 		'make stop           Stop everything without deleting data'
@@ -80,10 +82,13 @@ makemigrations:
 	docker compose run --rm api python manage.py makemigrations
 
 test:
-	docker compose run --rm api python manage.py test
+	docker compose --profile tools run --rm --build test python manage.py test
+
+lint:
+	docker compose --profile tools run --rm --build --no-deps test ruff check src tests scripts manage.py
 
 check:
-	docker compose run --rm api python manage.py check --deploy
+	docker compose run --rm api python manage.py check
 
 frontend-build:
 	docker compose build frontend-assets
@@ -262,3 +267,18 @@ security-scan:
 sbom:
 	mkdir -p "$(CURDIR)/build"
 	docker run --rm --user "$$(id -u):$$(id -g)" --tmpfs /tmp:rw,mode=1777 -e HOME=/tmp -v "$(CURDIR):/workspace" anchore/syft:v1.33.0@sha256:f94e5d9fce1f2278491a8e3a63bd5f6ddb81fdfdbb8bf7a1637565c1d5344357 dir:/workspace --source-name aria --source-version "$(ARIA_SBOM_VERSION)" --exclude './.git/**' --exclude './.venv/**' --exclude './build/**' --exclude './frontend/reader/node_modules/**' -o spdx-json=/workspace/build/aria-sbom.spdx.json
+
+production-readiness: ensure-env supply-chain-check
+	ARIA_RELEASE_REVISION="$$(git rev-parse --verify HEAD)" docker compose --profile operations -f compose.yaml -f compose.production.yaml run --rm api python manage.py check_production_readiness
+	ARIA_RELEASE_REVISION="$$(git rev-parse --verify HEAD)" docker compose --profile operations -f compose.yaml -f compose.production.yaml run --rm api python manage.py verify_object_storage
+
+release-check: supply-chain-check
+	docker compose --profile tools build api backup browser-worker ocr-worker test
+	$(MAKE) lint
+	docker compose --profile tools run --rm test python manage.py makemigrations --check --dry-run
+	$(MAKE) test
+	$(MAKE) reader-e2e
+	$(MAKE) frontend-test
+	$(MAKE) observability-check
+	$(MAKE) security-scan
+	$(MAKE) sbom

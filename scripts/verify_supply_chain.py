@@ -29,6 +29,17 @@ HARDENED_APP_SERVICES = {
 }
 ARTIFACT_READ_ONLY = {"api", "backup", "beat", "migrate"}
 ARTIFACT_WRITERS = {"browser-worker", "ocr-worker", "worker"}
+PRODUCTION_ENVIRONMENT = {
+    "ARIA_DEBUG": "false",
+    "ARIA_ENFORCE_OPERATOR_ROLES": "true",
+    "ARIA_REQUIRE_SEPARATE_PUBLISHER": "true",
+    "ARIA_TRUST_X_FORWARDED_PROTO": "true",
+    "ARIA_SSL_REDIRECT": "true",
+    "ARIA_SECURE_COOKIES": "true",
+    "ARIA_SECURE_HSTS_SECONDS": "3600",
+    "ARIA_OBJECT_STORAGE_BACKEND": "s3",
+    "ARIA_BACKUP_UPLOAD_TO_R2": "true",
+}
 
 
 class SupplyChainError(RuntimeError):
@@ -90,7 +101,11 @@ def validate_dockerfile(path: Path) -> None:
             stages.add(stage.lower())
 
     dockerfile = path.read_text(encoding="utf-8")
-    for lock_name in ("requirements.lock", "requirements-browser.lock"):
+    for lock_name in (
+        "requirements.lock",
+        "requirements-browser.lock",
+        "requirements-dev.lock",
+    ):
         install = f"pip install --require-hashes --requirement {lock_name}"
         if install not in dockerfile:
             raise SupplyChainError(f"Dockerfile does not enforce hashes for {lock_name}")
@@ -112,8 +127,16 @@ def validate_compose_images(path: Path) -> None:
 
 
 def validate_repository(root: Path = ROOT) -> None:
-    validate_lock(root / "requirements.lock")
-    validate_lock(root / "requirements-browser.lock")
+    lock_paths = sorted(root.glob("requirements*.lock"))
+    expected_locks = {
+        "requirements.lock",
+        "requirements-browser.lock",
+        "requirements-dev.lock",
+    }
+    if {path.name for path in lock_paths} != expected_locks:
+        raise SupplyChainError("the production, browser, and development locks are all required")
+    for lock_path in lock_paths:
+        validate_lock(lock_path)
     validate_dockerfile(root / "Dockerfile")
     validate_compose_images(root / "compose.yaml")
     if not (root / "compose.production.yaml").is_file():
@@ -160,6 +183,14 @@ def validate_runtime_config(config: dict[str, Any]) -> None:
             raise SupplyChainError(f"{service_name} must disable privilege escalation")
         for field in ("pids_limit", "mem_limit", "cpus"):
             _require_positive(service_name, service, field)
+        environment = service.get("environment", {})
+        for name, expected in PRODUCTION_ENVIRONMENT.items():
+            if environment.get(name) != expected:
+                raise SupplyChainError(
+                    f"{service_name} does not enforce production setting {name}={expected}"
+                )
+        if "ARIA_RELEASE_REVISION" not in environment:
+            raise SupplyChainError(f"{service_name} has no immutable release identity input")
         app_mount = _volume(service, "/app")
         if not app_mount or app_mount.get("read_only") is not True:
             raise SupplyChainError(f"{service_name} must mount application code read-only")

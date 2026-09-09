@@ -1,6 +1,19 @@
+x-production-environment: &production-environment
+  ARIA_DEBUG: "false"
+  ARIA_ENFORCE_OPERATOR_ROLES: "true"
+  ARIA_REQUIRE_SEPARATE_PUBLISHER: "true"
+  ARIA_TRUST_X_FORWARDED_PROTO: "true"
+  ARIA_SSL_REDIRECT: "true"
+  ARIA_SECURE_COOKIES: "true"
+  ARIA_SECURE_HSTS_SECONDS: "3600"
+  ARIA_OBJECT_STORAGE_BACKEND: "s3"
+  ARIA_BACKUP_UPLOAD_TO_R2: "true"
+  ARIA_RELEASE_REVISION: ${ARIA_RELEASE_REVISION:-unknown}
+
 x-hardened-app: &hardened-app
   user: aria
   read_only: true
+  environment: *production-environment
   tmpfs:
     - /tmp:size=268435456,mode=1777
   cap_drop:
@@ -65,6 +78,7 @@ services:
     cpus: "2.0"
 
   browser-worker:
+    environment: *production-environment
     mem_limit: 1g
     cpus: "1.5"
 

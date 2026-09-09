@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 from django.test import SimpleTestCase
 
 from scripts.verify_supply_chain import (
+    PRODUCTION_ENVIRONMENT,
     SupplyChainError,
     validate_dockerfile,
     validate_lock,
@@ -24,6 +25,7 @@ def hardened_service(*, artifact_read_only: bool) -> dict:
         "pids_limit": 128,
         "mem_limit": "536870912",
         "cpus": 1,
+        "environment": {**PRODUCTION_ENVIRONMENT, "ARIA_RELEASE_REVISION": "unknown"},
         "volumes": [
             {"target": "/app", "read_only": True},
             {
@@ -83,7 +85,8 @@ class SupplyChainLockTests(SimpleTestCase):
             dockerfile.write_text(
                 "FROM python:3.13 AS base\n"
                 "RUN pip install --require-hashes --requirement requirements.lock\n"
-                "RUN pip install --require-hashes --requirement requirements-browser.lock\n",
+                "RUN pip install --require-hashes --requirement requirements-browser.lock\n"
+                "RUN pip install --require-hashes --requirement requirements-dev.lock\n",
                 encoding="utf-8",
             )
             with self.assertRaisesMessage(SupplyChainError, "not pinned by digest"):
