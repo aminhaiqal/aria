@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help ensure-env start start-workers start-ocr start-browser start-all stop stop-heavy status health logs-core bootstrap build up down logs migrate makemigrations test check frontend-build frontend-test frontend-format reader-e2e shell superuser list-source-packs plan-source-pack apply-source-pack plan-impact-taxonomy apply-impact-taxonomy extract-impacts publish-impact pilot-source audit-static promote-static source-confidence source-soak poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings evaluate-reader quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage
+.PHONY: help ensure-env start start-workers start-ocr start-browser start-all stop stop-heavy status health logs-core bootstrap build up down logs migrate makemigrations test check frontend-build frontend-test frontend-format reader-e2e shell superuser list-source-packs plan-source-pack apply-source-pack plan-impact-taxonomy apply-impact-taxonomy extract-impacts publish-impact pilot-source audit-static promote-static source-confidence source-soak poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings evaluate-reader quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage backup backup-verify restore-drill
 
 help:
 	@printf '%s\n' \
@@ -9,6 +9,7 @@ help:
 		'make start-ocr      Start OCR processing' \
 		'make start-browser  Start bounded Chromium processing' \
 		'make start-all      Start the complete stack' \
+		'make backup         Create an encrypted local backup (optionally upload to R2)' \
 		'make status         Show service health' \
 		'make health         Check application readiness' \
 		'make stop           Stop everything without deleting data'
@@ -225,3 +226,16 @@ retry-orchestration:
 
 verify-storage:
 	docker compose exec api python manage.py verify_object_storage
+
+backup: ensure-env
+	docker compose run --rm --build backup python manage.py create_backup
+
+backup-verify: ensure-env
+	@test -n "$(MANIFEST)" || (echo "Set MANIFEST=/var/lib/aria/backups/<name>.manifest.json" && exit 1)
+	@test -n "$(IDENTITY_FILE)" || (echo "Set IDENTITY_FILE=<host-path-to-age-identity>" && exit 1)
+	docker compose run --rm --build -v "$(abspath $(IDENTITY_FILE)):/run/secrets/aria-backup-age-key:ro" backup python manage.py verify_backup "$(MANIFEST)" --identity-file /run/secrets/aria-backup-age-key
+
+restore-drill: ensure-env
+	@test -n "$(MANIFEST)" || (echo "Set MANIFEST=/var/lib/aria/backups/<name>.manifest.json" && exit 1)
+	@test -n "$(IDENTITY_FILE)" || (echo "Set IDENTITY_FILE=<host-path-to-age-identity>" && exit 1)
+	docker compose run --rm --build -v "$(abspath $(IDENTITY_FILE)):/run/secrets/aria-backup-age-key:ro" backup python manage.py restore_backup_drill "$(MANIFEST)" --identity-file /run/secrets/aria-backup-age-key --confirm RESTORE-DRILL

@@ -182,11 +182,28 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  backup:
+    <<: *app
+    profiles: ["operations"]
+    build:
+      context: .
+      target: backup
+    command: ["python", "manage.py", "create_backup"]
+    volumes:
+      - .:/app:ro
+      - artifact-data:/var/lib/aria/artifacts:ro
+      - backup-data:/var/lib/aria/backups
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres-data:
   redis-data:
   artifact-data:
   reader-ui:
+  backup-data:
 
 networks:
   backend:

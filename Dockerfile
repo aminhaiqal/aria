@@ -35,6 +35,32 @@ CMD ["gunicorn", "aria.wsgi:application", "--bind", "0.0.0.0:8000", "--workers",
 
 FROM base AS app
 
+FROM pgvector/pgvector:0.8.2-pg17-bookworm AS postgres-tools
+
+FROM postgres-tools AS postgres-runtime-libraries
+RUN mkdir -p /postgres-runtime-libraries \
+    && case "$(uname -m)" in \
+        x86_64) architecture=x86_64-linux-gnu ;; \
+        aarch64) architecture=aarch64-linux-gnu ;; \
+        *) echo "Unsupported backup architecture" >&2; exit 1 ;; \
+    esac \
+    && cp -a /usr/lib/"${architecture}"/libpq.so.5* /postgres-runtime-libraries/
+
+FROM base AS backup
+
+USER root
+COPY --from=postgres-tools /usr/lib/postgresql/17 /usr/lib/postgresql/17
+ENV PATH="/usr/lib/postgresql/17/bin:${PATH}" \
+    LD_LIBRARY_PATH="/usr/local/lib"
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends age libpq5 \
+    && mkdir -p /var/lib/aria/backups \
+    && chown aria:aria /var/lib/aria/backups \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=postgres-runtime-libraries /postgres-runtime-libraries/ /usr/local/lib/
+RUN ldconfig
+USER aria
+
 FROM base AS browser
 
 USER root
