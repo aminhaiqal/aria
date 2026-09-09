@@ -542,6 +542,7 @@ def resource_detail(request, resource_id):
     )
     runs = resource.runs.select_related("source_run")[:20]
     observations = resource.observations.prefetch_related("link_observations")[:10]
+    structure_incidents = resource.structure_incidents.select_related("resource_run")[:10]
     latest_observation = observations[0] if observations else None
     active_run = resource.runs.filter(
         status__in=(ResourceRun.Status.PENDING, ResourceRun.Status.RUNNING)
@@ -558,6 +559,7 @@ def resource_detail(request, resource_id):
             "resource": resource,
             "runs": runs,
             "observations": observations,
+            "structure_incidents": structure_incidents,
             "latest_observation": latest_observation,
             "active_run": active_run,
             "retirement_form": ResourceRetirementForm(),

@@ -40,6 +40,14 @@
         {% empty %}<tr><td colspan="5"><div class="empty-state"><span>No observations recorded.</span></div></td></tr>{% endfor %}
       </tbody></table></div>
     </section>
+    {% if structure_incidents %}
+    <section class="panel">
+      <header class="panel-head"><div><span class="eyebrow">Source drift quarantine</span><h2>Recent structure incidents</h2></div><span class="badge badge-warning">Operator attention</span></header>
+      <div class="table-wrap"><table><thead><tr><th>Detected</th><th>Failure</th><th>Response</th><th>Structure</th><th>Paused until</th></tr></thead><tbody>
+        {% for incident in structure_incidents %}<tr><td>{{ incident.detected_at }}</td><td><strong>{{ incident.error_code }}</strong><small>{{ incident.error_message|truncatechars:120 }}</small></td><td>{{ incident.response_status }}<small>{{ incident.final_url|truncatechars:72 }}</small></td><td><span class="mono">{{ incident.structure_sha256|short_hash }}</span><small>{{ incident.byte_size }} bytes · no page text retained</small></td><td>{{ incident.pause_until }}</td></tr>{% endfor %}
+      </tbody></table></div>
+    </section>
+    {% endif %}
     {% if latest_observation %}
     <section class="panel">
       <header class="panel-head"><div><span class="eyebrow">Latest link disposition</span><h2>Observed official links</h2></div></header>

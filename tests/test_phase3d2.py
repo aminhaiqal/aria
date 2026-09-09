@@ -19,10 +19,12 @@ from aria.discovery.models import (
     ResourceLinkObservation,
     ResourceObservation,
     ResourceRun,
+    ResourceStructureIncident,
     SourceRun,
 )
 from aria.discovery.resource_connectors import (
     ResourceStructureChanged,
+    fingerprint_html_structure,
     parse_detail_page,
     parse_feed,
 )
@@ -323,6 +325,108 @@ class ResourceMonitoringTestCase(TestCase):
                 for candidate in accepted
             )
         )
+
+    def test_detail_parser_uses_only_approved_fallbacks_and_records_match(self) -> None:
+        content = b"""
+            <main class="approved-v2"><a href="/files/a.pdf">A</a></main>
+        """
+        links = parse_detail_page(
+            content,
+            resource_url="https://example.com/rules/a/",
+            allowed_domains=["example.com"],
+            content_selectors=(".approved-v1", ".approved-v2"),
+        )
+
+        self.assertEqual(len(links), 1)
+        self.assertEqual(links[0].metadata["matched_detail_selector"], ".approved-v2")
+        with self.assertRaisesMessage(ResourceStructureChanged, "Approved detail selectors"):
+            parse_detail_page(
+                content,
+                resource_url="https://example.com/rules/a/",
+                allowed_domains=["example.com"],
+                content_selectors=(".unapproved",),
+            )
+
+    def test_detail_parser_rejects_a_malformed_runtime_selector(self) -> None:
+        with self.assertRaisesMessage(ResourceStructureChanged, "is invalid"):
+            parse_detail_page(
+                b"<html><body><a href='/document.pdf'>Document</a></body></html>",
+                resource_url="https://example.com/rules/a/",
+                allowed_domains=["example.com"],
+                content_selectors=("[",),
+            )
+
+    def test_structure_fingerprint_excludes_page_text(self) -> None:
+        first = fingerprint_html_structure(
+            b'<main class="official"><p>private page text one</p></main>'
+        )
+        second = fingerprint_html_structure(
+            b'<main class="official"><p>different page text</p></main>'
+        )
+
+        self.assertEqual(first.sha256, second.sha256)
+        self.assertNotIn("private", " ".join(first.sample))
+        self.assertEqual(first.sample, ("main.official", "p"))
+
+    @override_settings(MONITOR_STRUCTURE_DRIFT_PAUSE_MINUTES=120)
+    @patch("aria.discovery.tasks.get_default_http_client")
+    def test_structure_drift_is_terminal_durable_and_pauses_polling(
+        self,
+        client_factory: Mock,
+    ) -> None:
+        resource, _ = register_monitored_resource(
+            self.endpoint,
+            resource_type=MonitoredResource.ResourceType.DETAIL_PAGE,
+            url="https://example.com/rules/removed/",
+            is_approved=True,
+        )
+        resource_run, _ = create_monitored_resource_run(
+            resource,
+            trigger=SourceRun.Trigger.MANUAL,
+        )
+        content = b'<main class="replacement"><p>Do not retain this text.</p></main>'
+        client_factory.return_value.fetch.return_value = FetchResponse(
+            requested_url=resource.url,
+            final_url="https://example.com/",
+            status_code=200,
+            headers={"Content-Type": "text/html"},
+            redirect_chain=[
+                {"url": resource.url, "status": 301, "location": "https://example.com/"}
+            ],
+            resolved_addresses=["93.184.216.34"],
+            content=content,
+        )
+        from aria.sources.models import ConnectorConfiguration
+
+        ConnectorConfiguration.objects.create(
+            endpoint=self.endpoint,
+            version=1,
+            configuration={
+                "detail_content_selectors": [".approved-v1", ".approved-v2"],
+                "detail_final_path_prefixes": ["/rules/"],
+            },
+        )
+        before = timezone.now()
+
+        execute_resource_run.run(str(resource_run.id))
+
+        resource_run.refresh_from_db()
+        resource.refresh_from_db()
+        self.assertEqual(resource_run.status, ResourceRun.Status.FAILED)
+        self.assertEqual(resource_run.error_code, "ResourceStructureChanged")
+        self.assertGreaterEqual(resource.next_poll_at, before + timedelta(minutes=119))
+        incident = ResourceStructureIncident.objects.get(resource_run=resource_run)
+        self.assertEqual(incident.final_url, "https://example.com/")
+        self.assertEqual(incident.expected_selectors, [".approved-v1", ".approved-v2"])
+        self.assertEqual(incident.content_sha256, hashlib.sha256(content).hexdigest())
+        self.assertNotIn("retain", " ".join(incident.structure_sample))
+        self.assertTrue(
+            PipelineEvent.objects.filter(
+                event_type="source.resource.structure_drift_detected",
+                aggregate_id=incident.id,
+            ).exists()
+        )
+        client_factory.return_value.fetch.assert_called_once()
 
     @patch("aria.discovery.tasks.get_default_http_client")
     def test_detail_task_uses_conditional_headers_and_preserves_links_on_304(

@@ -18,9 +18,10 @@ from aria.discovery.models import (
     ResourceLinkObservation,
     ResourceObservation,
     ResourceRun,
+    ResourceStructureIncident,
     SourceRun,
 )
-from aria.discovery.resource_connectors import ResourceLinkData
+from aria.discovery.resource_connectors import ResourceLinkData, fingerprint_html_structure
 from aria.events.services import record_audit_event, record_pipeline_event
 from aria.fetching.client import FetchResponse
 from aria.sources.models import SourceEndpoint
@@ -753,6 +754,62 @@ def mark_resource_run_failed(
         },
     )
     return resource_run
+
+
+@transaction.atomic
+def record_resource_structure_incident(
+    resource_run: ResourceRun,
+    response: FetchResponse,
+    *,
+    error: Exception,
+    expected_selectors: tuple[str, ...],
+) -> tuple[ResourceStructureIncident, bool]:
+    fingerprint = fingerprint_html_structure(response.content)
+    normalized_headers = {key.lower(): value for key, value in response.headers.items()}
+    pause_until = timezone.now() + timedelta(
+        minutes=settings.MONITOR_STRUCTURE_DRIFT_PAUSE_MINUTES
+    )
+    incident, created = ResourceStructureIncident.objects.get_or_create(
+        resource_run=resource_run,
+        defaults={
+            "resource": resource_run.resource,
+            "error_code": type(error).__name__,
+            "error_message": str(error),
+            "expected_selectors": list(expected_selectors),
+            "requested_url": response.requested_url,
+            "final_url": response.final_url,
+            "response_status": response.status_code,
+            "content_type": normalized_headers.get("content-type", "")[:255],
+            "byte_size": len(response.content),
+            "content_sha256": hashlib.sha256(response.content).hexdigest(),
+            "structure_sha256": fingerprint.sha256,
+            "structure_sample": list(fingerprint.sample),
+            "redirect_chain": response.redirect_chain,
+            "pause_until": pause_until,
+        },
+    )
+    if created:
+        incident.full_clean()
+        resource = MonitoredResource.objects.select_for_update().get(pk=resource_run.resource_id)
+        if resource.next_poll_at is None or resource.next_poll_at < pause_until:
+            resource.next_poll_at = pause_until
+            resource.save(update_fields=("next_poll_at", "updated_at"))
+        record_pipeline_event(
+            event_type="source.resource.structure_drift_detected",
+            aggregate_type="resource_structure_incident",
+            aggregate_id=incident.id,
+            payload={
+                "resource_id": str(resource_run.resource_id),
+                "resource_run_id": str(resource_run.id),
+                "error_code": incident.error_code,
+                "content_sha256": incident.content_sha256,
+                "structure_sha256": incident.structure_sha256,
+                "requested_url": incident.requested_url,
+                "final_url": incident.final_url,
+                "pause_until": incident.pause_until.isoformat(),
+            },
+        )
+    return incident, created
 
 
 def _current_resource_links(

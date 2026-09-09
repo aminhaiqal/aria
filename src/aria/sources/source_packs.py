@@ -7,6 +7,7 @@ from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import soupsieve
 from django.db import transaction
 from django.utils import timezone
 
@@ -154,6 +155,26 @@ def _validate_paths(configuration: dict, key: str) -> None:
             raise SourcePackError(f"connector configuration {key} requires exact safe paths.")
 
 
+def _validate_detail_selectors(configuration: dict) -> None:
+    selectors = configuration.get("detail_content_selectors")
+    legacy = configuration.get("detail_content_selector")
+    if selectors is not None and legacy is not None:
+        raise SourcePackError("Declare either detail_content_selector or detail_content_selectors.")
+    if selectors is None:
+        selectors = [legacy] if legacy is not None else []
+    if not isinstance(selectors, list) or len(selectors) > 5:
+        raise SourcePackError("Detail selectors must be a list of at most five approved values.")
+    for selector in selectors:
+        if not isinstance(selector, str) or not selector.strip() or len(selector) > 200:
+            raise SourcePackError("Each detail selector must be a non-empty bounded string.")
+        try:
+            soupsieve.compile(selector)
+        except soupsieve.SelectorSyntaxError as error:
+            raise SourcePackError(f"Invalid detail selector {selector!r}.") from error
+    if configuration.get("follow_detail_pages") and not selectors:
+        raise SourcePackError("Detail-page following requires an approved detail selector.")
+
+
 def validate_source_pack(definition: dict) -> None:
     if not isinstance(definition, dict):
         raise SourcePackError("Source pack must be a JSON object.")
@@ -281,9 +302,11 @@ def validate_source_pack(definition: dict) -> None:
             "include_path_prefixes",
             "upload_path_prefixes",
             "detail_resource_path_prefixes",
+            "detail_final_path_prefixes",
             "browser_read_only_post_paths",
         ):
             _validate_paths(configuration, key)
+        _validate_detail_selectors(configuration)
         link_attribute = configuration.get("link_attribute", "href")
         if not isinstance(link_attribute, str) or not HTML_ATTRIBUTE_PATTERN.fullmatch(
             link_attribute

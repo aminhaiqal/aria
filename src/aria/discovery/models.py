@@ -369,6 +369,66 @@ class ResourceRun(TimeStampedModel):
         return f"{self.resource} — {self.created_at:%Y-%m-%d %H:%M:%S}"
 
 
+class ResourceStructureIncident(AppendOnlyModel):
+    resource = models.ForeignKey(
+        MonitoredResource,
+        on_delete=models.PROTECT,
+        related_name="structure_incidents",
+    )
+    resource_run = models.OneToOneField(
+        ResourceRun,
+        on_delete=models.PROTECT,
+        related_name="structure_incident",
+    )
+    error_code = models.CharField(max_length=128)
+    error_message = models.TextField()
+    expected_selectors = models.JSONField(default=list)
+    requested_url = models.URLField(max_length=2048)
+    final_url = models.URLField(max_length=2048)
+    response_status = models.PositiveSmallIntegerField()
+    content_type = models.CharField(max_length=255, blank=True)
+    byte_size = models.PositiveBigIntegerField(default=0)
+    content_sha256 = models.CharField(
+        max_length=64,
+        validators=[RegexValidator(r"^[0-9a-f]{64}$")],
+    )
+    structure_sha256 = models.CharField(
+        max_length=64,
+        validators=[RegexValidator(r"^[0-9a-f]{64}$")],
+    )
+    structure_sample = models.JSONField(default=list)
+    redirect_chain = models.JSONField(default=list, blank=True)
+    pause_until = models.DateTimeField(db_index=True)
+    detected_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ("-detected_at", "-id")
+        indexes = [
+            models.Index(fields=("resource", "detected_at")),
+            models.Index(fields=("structure_sha256", "detected_at")),
+        ]
+
+    def clean(self) -> None:
+        errors = {}
+        if self.resource_run_id and self.resource_id:
+            if self.resource_run.resource_id != self.resource_id:
+                errors["resource_run"] = "The incident run must belong to the resource."
+        if not isinstance(self.expected_selectors, list) or any(
+            not isinstance(value, str) or not value.strip()
+            for value in self.expected_selectors
+        ):
+            errors["expected_selectors"] = "Expected selectors must be non-empty strings."
+        if not isinstance(self.structure_sample, list) or any(
+            not isinstance(value, str) for value in self.structure_sample
+        ):
+            errors["structure_sample"] = "The structure sample must contain strings only."
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self) -> str:
+        return f"{self.resource_id} [{self.error_code}] {self.detected_at:%Y-%m-%d %H:%M:%S}"
+
+
 class ResourceObservation(AppendOnlyModel):
     class Outcome(models.TextChoices):
         CHANGED = "changed", "Changed"

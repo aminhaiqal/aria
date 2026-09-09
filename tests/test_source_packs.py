@@ -69,6 +69,27 @@ class SourcePackValidationTestCase(TestCase):
         with self.assertRaisesMessage(SourcePackError, "Exactly"):
             validate_source_pack(definition)
 
+    def test_detail_selector_contract_is_bounded_and_valid(self) -> None:
+        definition = copy.deepcopy(load_source_pack("jpdp-act-709").definition)
+        configuration = definition["connector_configurations"][-1]["configuration"]
+        configuration["detail_content_selector"] = ".legacy"
+        with self.assertRaisesMessage(SourcePackError, "either"):
+            validate_source_pack(definition)
+
+        malformed = copy.deepcopy(load_source_pack("jpdp-act-709").definition)
+        malformed["connector_configurations"][-1]["configuration"][
+            "detail_content_selectors"
+        ] = ["["]
+        with self.assertRaisesMessage(SourcePackError, "Invalid detail selector"):
+            validate_source_pack(malformed)
+
+        unbounded = copy.deepcopy(load_source_pack("jpdp-act-709").definition)
+        unbounded["connector_configurations"][-1]["configuration"][
+            "detail_content_selectors"
+        ] = [f".selector-{number}" for number in range(6)]
+        with self.assertRaisesMessage(SourcePackError, "at most five"):
+            validate_source_pack(unbounded)
+
     def test_wrapped_link_contract_is_strictly_bounded(self) -> None:
         invalid_path = self.definition()
         invalid_path["connector_configurations"][-1]["configuration"][

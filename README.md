@@ -84,6 +84,7 @@ outputs are explicit derivatives and never replace or mutate the official source
 - Phase 4C.5 deterministic business-profile matching: implemented
 - Phase 4C.6 owner-scoped reader relevance and evidence presentation: implemented
 - Phase 4C.7 explicit reviewed-impact publication and signed delivery: implemented
+- Phase 4D.1 source-structure drift quarantine and approved selector fallbacks: implemented
 - Phase 2 source breadth: JPDP, AGC Updated Principal Acts, and Parliament Dewan Rakyat bills are
   operational with complete R2, extraction, graph, local-vector, and OpenAI-vector coverage
 - Operational acceptance still pending: observe the first autonomous AGC and Parliament daily

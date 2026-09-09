@@ -6,6 +6,7 @@ from pathlib import PurePosixPath
 from urllib.parse import urljoin, urlsplit, urlunsplit
 from xml.etree.ElementTree import ParseError
 
+import soupsieve
 from bs4 import BeautifulSoup
 from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
@@ -15,6 +16,12 @@ from aria.fetching.client import hostname_is_allowed
 
 class ResourceStructureChanged(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class HtmlStructureFingerprint:
+    sha256: str
+    sample: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -46,19 +53,78 @@ def link_fingerprint(url: str) -> str:
     return hashlib.sha256(url.encode("utf-8")).hexdigest()
 
 
+def fingerprint_html_structure(
+    content: bytes,
+    *,
+    maximum_nodes: int = 2000,
+    maximum_sample: int = 80,
+) -> HtmlStructureFingerprint:
+    """Hash HTML shape without retaining page text or attribute values."""
+    soup = BeautifulSoup(content, "html.parser")
+    tokens: list[str] = []
+    sample: list[str] = []
+    seen: set[str] = set()
+    for node in soup.find_all(True, limit=maximum_nodes):
+        classes = sorted(
+            value[:80]
+            for value in node.get("class", [])[:8]
+            if isinstance(value, str) and value
+        )
+        token = node.name.lower()
+        if classes:
+            token += "." + ".".join(classes)
+        tokens.append(token)
+        if token not in seen and len(sample) < maximum_sample:
+            sample.append(token)
+            seen.add(token)
+    canonical = "\n".join(tokens).encode("utf-8")
+    return HtmlStructureFingerprint(
+        sha256=hashlib.sha256(canonical).hexdigest(),
+        sample=tuple(sample),
+    )
+
+
+def _detail_selectors(
+    content_selector: str,
+    content_selectors: tuple[str, ...] | None,
+) -> tuple[str, ...]:
+    configured = content_selectors or (content_selector,)
+    selectors: list[str] = []
+    for selector in configured:
+        normalized = str(selector).strip()
+        if normalized and normalized not in selectors:
+            selectors.append(normalized)
+    if not selectors:
+        raise ResourceStructureChanged("No approved detail selector was configured.")
+    return tuple(selectors)
+
+
 def parse_detail_page(
     content: bytes,
     *,
     resource_url: str,
     allowed_domains: list[str],
     content_selector: str = ".betterdocs-entry-content",
+    content_selectors: tuple[str, ...] | None = None,
     document_extensions: tuple[str, ...] = (".pdf", ".doc", ".docx", ".csv", ".json", ".xml"),
 ) -> tuple[ResourceLinkData, ...]:
     soup = BeautifulSoup(content, "html.parser")
-    root = soup.select_one(content_selector)
+    selectors = _detail_selectors(content_selector, content_selectors)
+    root = None
+    matched_selector = ""
+    for selector in selectors:
+        try:
+            root = soup.select_one(selector)
+        except soupsieve.SelectorSyntaxError as error:
+            raise ResourceStructureChanged(
+                f"Approved detail selector {selector!r} is invalid."
+            ) from error
+        if root is not None:
+            matched_selector = selector
+            break
     if root is None:
         raise ResourceStructureChanged(
-            f"Detail selector '{content_selector}' was not found at {resource_url}."
+            f"Approved detail selectors {list(selectors)!r} were not found at {resource_url}."
         )
 
     allowed_extensions = {extension.lower() for extension in document_extensions}
@@ -89,7 +155,10 @@ def parse_detail_page(
                 title=title,
                 disposition=disposition,
                 quarantine_reason=quarantine_reason,
-                metadata={"source_detail_page": resource_url},
+                metadata={
+                    "source_detail_page": resource_url,
+                    "matched_detail_selector": matched_selector,
+                },
             ),
         )
     return tuple(sorted(links.values(), key=lambda item: item.target_url))

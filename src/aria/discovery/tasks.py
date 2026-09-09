@@ -1,11 +1,16 @@
 import logging
+from urllib.parse import urlsplit
 
 from celery import shared_task
 from django.db import transaction
 
 from aria.discovery.connectors import ConnectorNotRegistered, get_connector
 from aria.discovery.models import MonitoredResource, ResourceRun, SourceRun
-from aria.discovery.resource_connectors import parse_detail_page, parse_feed
+from aria.discovery.resource_connectors import (
+    ResourceStructureChanged,
+    parse_detail_page,
+    parse_feed,
+)
 from aria.discovery.services import (
     mark_resource_run_completed,
     mark_resource_run_failed,
@@ -18,6 +23,7 @@ from aria.discovery.services import (
     reconcile_resource_links,
     record_endpoint_observation,
     record_resource_observation,
+    record_resource_structure_incident,
     resource_conditional_headers,
     schedule_due_resource_runs,
     schedule_due_source_runs,
@@ -27,6 +33,32 @@ from aria.fetching.client import get_default_http_client
 from aria.sources.models import ConnectorConfiguration
 
 logger = logging.getLogger(__name__)
+
+
+def _configured_detail_selectors(configuration: dict) -> tuple[str, ...]:
+    configured = configuration.get("detail_content_selectors")
+    if configured is None:
+        configured = [configuration.get("detail_content_selector", ".betterdocs-entry-content")]
+    if not isinstance(configured, list) or any(
+        not isinstance(selector, str) or not selector.strip() for selector in configured
+    ):
+        raise ResourceStructureChanged("Approved detail selectors are malformed.")
+    return tuple(selector.strip() for selector in configured)
+
+
+def _assert_final_detail_path(response, configuration: dict) -> None:
+    prefixes = tuple(configuration.get("detail_final_path_prefixes", []))
+    if not prefixes:
+        return
+    final_path = urlsplit(response.final_url).path
+    if not any(
+        final_path == prefix.rstrip("/")
+        or final_path.startswith(prefix if prefix.endswith("/") else f"{prefix}/")
+        for prefix in prefixes
+    ):
+        raise ResourceStructureChanged(
+            f"Final detail path '{final_path}' left approved prefixes {list(prefixes)!r}."
+        )
 
 
 @shared_task(name="aria.discovery.tasks.schedule_due_endpoints")
@@ -157,6 +189,8 @@ def execute_resource_run(self, resource_run_id: str) -> None:
 
     resource = resource_run.resource
     client = None
+    response = None
+    detail_selectors: tuple[str, ...] = ()
     try:
         if not resource.is_enabled or not resource.is_approved:
             raise ValueError("Monitored resource is not enabled and explicitly approved.")
@@ -187,13 +221,13 @@ def execute_resource_run(self, resource_run_id: str) -> None:
                     raise ValueError(
                         f"Expected HTML detail resource, received '{content_type or 'unknown'}'."
                     )
+                detail_selectors = _configured_detail_selectors(configuration)
+                _assert_final_detail_path(response, configuration)
                 links = parse_detail_page(
                     response.content,
                     resource_url=resource.url,
                     allowed_domains=resource.endpoint.allowed_domains,
-                    content_selector=configuration.get(
-                        "detail_content_selector", ".betterdocs-entry-content"
-                    ),
+                    content_selectors=detail_selectors,
                     document_extensions=tuple(
                         configuration.get(
                             "document_extensions",
@@ -245,6 +279,16 @@ def execute_resource_run(self, resource_run_id: str) -> None:
                     )
                 )
             mark_resource_run_completed(resource_run)
+    except ResourceStructureChanged as error:
+        logger.warning("Resource run %s detected structure drift: %s", resource_run.id, error)
+        if response is not None:
+            record_resource_structure_incident(
+                resource_run,
+                response,
+                error=error,
+                expected_selectors=detail_selectors or ("<invalid configuration>",),
+            )
+        mark_resource_run_failed(resource_run, code=type(error).__name__, message=str(error))
     except Exception as error:
         logger.exception("Resource run %s failed", resource_run.id)
         if self.request.retries >= self.max_retries:

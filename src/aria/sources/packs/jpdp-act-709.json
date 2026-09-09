@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "slug": "jpdp-act-709",
-  "version": 1,
+  "version": 2,
   "authority": {
     "slug": "personal-data-protection-commissioner-malaysia",
     "name": "Personal Data Protection Commissioner, Malaysia",
@@ -33,7 +33,7 @@
     "pagination_strategy": "none",
     "expected_content_types": ["text/html", "application/pdf"],
     "requires_javascript": false,
-    "connector_configuration_version": 3,
+    "connector_configuration_version": 4,
     "default_enabled": true
   },
   "connector_configurations": [
@@ -82,6 +82,25 @@
         "max_feed_entries": 20
       },
       "notes": "Phase 3D.2 bounded listing, detail-page, and official-feed monitoring.",
+      "is_active": false
+    },
+    {
+      "version": 4,
+      "configuration": {
+        "link_selector": "a[href]",
+        "include_path_prefixes": ["/ppdpv1/en/akta/", "/ppdpv1/wp-content/uploads/"],
+        "upload_path_prefixes": ["/ppdpv1/wp-content/uploads/"],
+        "exclude_path_suffixes": ["/feed/"],
+        "document_extensions": [".pdf", ".doc", ".docx", ".csv", ".json", ".xml"],
+        "max_candidates": 20,
+        "follow_detail_pages": true,
+        "detail_content_selectors": [".betterdocs-entry-content"],
+        "detail_resource_path_prefixes": ["/ppdpv1/en/akta/"],
+        "detail_final_path_prefixes": ["/ppdpv1/en/akta/"],
+        "max_detail_pages": 20,
+        "max_feed_entries": 20
+      },
+      "notes": "Phase 4D.1 approved-selector and final-path drift contract.",
       "is_active": true
     }
   ],

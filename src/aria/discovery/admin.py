@@ -8,6 +8,7 @@ from aria.discovery.models import (
     ResourceLinkObservation,
     ResourceObservation,
     ResourceRun,
+    ResourceStructureIncident,
     SourceRun,
 )
 
@@ -122,6 +123,37 @@ class ResourceRunAdmin(admin.ModelAdmin):
     search_fields = ("id", "resource__url", "idempotency_key", "error_code")
     autocomplete_fields = ("resource", "source_run")
     readonly_fields = tuple(field.name for field in ResourceRun._meta.fields)
+
+    def has_add_permission(self, request) -> bool:
+        return False
+
+    def has_change_permission(self, request, obj=None) -> bool:
+        return False
+
+    def has_delete_permission(self, request, obj=None) -> bool:
+        return False
+
+
+@admin.register(ResourceStructureIncident)
+class ResourceStructureIncidentAdmin(admin.ModelAdmin):
+    list_display = (
+        "resource",
+        "error_code",
+        "response_status",
+        "final_url",
+        "pause_until",
+        "detected_at",
+    )
+    list_filter = ("error_code", "response_status", "resource__endpoint")
+    search_fields = (
+        "resource__title",
+        "resource__url",
+        "requested_url",
+        "final_url",
+        "content_sha256",
+        "structure_sha256",
+    )
+    readonly_fields = tuple(field.name for field in ResourceStructureIncident._meta.fields)
 
     def has_add_permission(self, request) -> bool:
         return False
