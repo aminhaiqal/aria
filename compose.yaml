@@ -38,7 +38,7 @@ services:
       - backend
 
   postgres:
-    image: pgvector/pgvector:0.8.2-pg17-bookworm
+    image: pgvector/pgvector:0.8.2-pg17-bookworm@sha256:feb68f4f15446397d8cac7f4fe48fe4586de83160d1fc48b46283312d1a33966
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -55,7 +55,7 @@ services:
       - backend
 
   redis:
-    image: redis:7.4-alpine
+    image: redis:7.4-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\""]
@@ -201,7 +201,7 @@ services:
         condition: service_healthy
 
   prometheus:
-    image: prom/prometheus:v3.5.0
+    image: prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
     profiles: ["observability"]
     entrypoint: ["/bin/sh", "-c"]
     command:

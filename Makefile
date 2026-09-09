@@ -1,6 +1,7 @@
 .DEFAULT_GOAL := help
+ARIA_SBOM_VERSION ?= $(shell git rev-parse --verify HEAD)
 
-.PHONY: help ensure-env start start-workers start-ocr start-browser start-all start-observability stop stop-heavy status health logs-core bootstrap build up down logs migrate makemigrations test check frontend-build frontend-test frontend-format reader-e2e shell superuser list-source-packs plan-source-pack apply-source-pack plan-impact-taxonomy apply-impact-taxonomy extract-impacts publish-impact pilot-source audit-static promote-static source-confidence source-soak poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings evaluate-reader quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage backup backup-verify restore-drill observability-check
+.PHONY: help ensure-env start start-workers start-ocr start-browser start-all start-observability stop stop-heavy status health logs-core bootstrap build up down logs migrate makemigrations test check frontend-build frontend-test frontend-format reader-e2e shell superuser list-source-packs plan-source-pack apply-source-pack plan-impact-taxonomy apply-impact-taxonomy extract-impacts publish-impact pilot-source audit-static promote-static source-confidence source-soak poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings evaluate-reader quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage backup backup-verify restore-drill observability-check supply-chain-check security-scan sbom
 
 help:
 	@printf '%s\n' \
@@ -11,6 +12,9 @@ help:
 		'make start-all      Start the complete stack' \
 		'make start-observability  Start private Prometheus metrics' \
 		'make backup         Create an encrypted local backup (optionally upload to R2)' \
+		'make supply-chain-check  Verify immutable dependencies and production isolation' \
+		'make security-scan  Scan source and dependency locks for high-risk findings' \
+		'make sbom           Generate build/aria-sbom.spdx.json' \
 		'make status         Show service health' \
 		'make health         Check application readiness' \
 		'make stop           Stop everything without deleting data'
@@ -86,13 +90,13 @@ frontend-build:
 	docker compose run --rm frontend-assets
 
 frontend-test:
-	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$(CURDIR)/frontend/reader:/workspace" -w /workspace node:22-bookworm-slim npm ci
-	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$(CURDIR)/frontend/reader:/workspace" -w /workspace node:22-bookworm-slim npm run lint
-	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$(CURDIR)/frontend/reader:/workspace" -w /workspace node:22-bookworm-slim npm run test:coverage
-	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$(CURDIR)/frontend/reader:/workspace" -w /workspace node:22-bookworm-slim npm run build
+	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$(CURDIR)/frontend/reader:/workspace" -w /workspace node:22-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436 npm ci
+	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$(CURDIR)/frontend/reader:/workspace" -w /workspace node:22-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436 npm run lint
+	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$(CURDIR)/frontend/reader:/workspace" -w /workspace node:22-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436 npm run test:coverage
+	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$(CURDIR)/frontend/reader:/workspace" -w /workspace node:22-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436 npm run build
 
 frontend-format:
-	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$(CURDIR)/frontend/reader:/workspace" -w /workspace node:22-bookworm-slim npm run format
+	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$(CURDIR)/frontend/reader:/workspace" -w /workspace node:22-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436 npm run format
 
 reader-e2e:
 	docker compose run --rm browser-worker python manage.py test tests.test_reader_browser
@@ -247,4 +251,14 @@ restore-drill: ensure-env
 	docker compose run --rm --build -v "$(abspath $(IDENTITY_FILE)):/run/secrets/aria-backup-age-key:ro" backup python manage.py restore_backup_drill "$(MANIFEST)" --identity-file /run/secrets/aria-backup-age-key --confirm RESTORE-DRILL
 
 observability-check:
-	docker run --rm --entrypoint /bin/sh -v "$(CURDIR)/config/prometheus:/etc/prometheus:ro" prom/prometheus:v3.5.0 -c 'printf test > /tmp/aria-metrics-token && exec /bin/promtool check config /etc/prometheus/prometheus.yml'
+	docker run --rm --entrypoint /bin/sh -v "$(CURDIR)/config/prometheus:/etc/prometheus:ro" prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996 -c 'printf test > /tmp/aria-metrics-token && exec /bin/promtool check config /etc/prometheus/prometheus.yml'
+
+supply-chain-check:
+	python3 scripts/verify_supply_chain.py
+
+security-scan:
+	docker run --rm -v "$(CURDIR):/workspace:ro" -v aria-trivy-cache:/root/.cache/ aquasec/trivy:0.66.0@sha256:086971aaf400beebd94e8300fd8ea623774419597169156cec56eec5b00dfb1e fs --scanners vuln,misconfig,secret --severity HIGH,CRITICAL --exit-code 1 --file-patterns 'pip:requirements.*\.lock' --skip-dirs /workspace/.git --skip-dirs /workspace/.venv --skip-dirs /workspace/build --skip-dirs /workspace/frontend/reader/node_modules --skip-files /workspace/.env /workspace
+
+sbom:
+	mkdir -p "$(CURDIR)/build"
+	docker run --rm --user "$$(id -u):$$(id -g)" --tmpfs /tmp:rw,mode=1777 -e HOME=/tmp -v "$(CURDIR):/workspace" anchore/syft:v1.33.0@sha256:f94e5d9fce1f2278491a8e3a63bd5f6ddb81fdfdbb8bf7a1637565c1d5344357 dir:/workspace --source-name aria --source-version "$(ARIA_SBOM_VERSION)" --exclude './.git/**' --exclude './.venv/**' --exclude './build/**' --exclude './frontend/reader/node_modules/**' -o spdx-json=/workspace/build/aria-sbom.spdx.json

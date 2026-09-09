@@ -150,3 +150,45 @@ official endpoints. It is excluded from `make start`, so local reader resource u
 Every HTTP response also carries a bounded `X-Request-ID`. A safe incoming ID is preserved for
 cross-service tracing; malformed or log-injection-shaped values are replaced with a UUID. The same
 ID is added to in-request logs and permission-denial audit details, while background logs use `-`.
+
+## 4D.5 supply chain and container isolation
+
+All external images used by the Dockerfile and Compose stack are pinned to immutable SHA-256
+digests. Python production and browser dependency graphs are resolved to exact versions with hashes
+in `requirements.lock` and `requirements-browser.lock`; image builds install them with
+`--require-hashes`. The reader continues to use `npm ci`, so its committed npm lock and integrity
+values remain authoritative. A version range or a package artifact without an approved hash now
+fails the supply-chain gate rather than being silently selected during a later build.
+
+`compose.production.yaml` is an additive production overlay. It runs application processes as the
+unprivileged `aria` user, makes each root filesystem and source mount read-only, drops Linux
+capabilities, disables privilege escalation, and gives every long-running component CPU, memory,
+and process ceilings. Only ingestion, browser, and OCR workers can write the evidence artifact
+volume. The reader, migrations, scheduler, and backup process receive it read-only. The API and
+Prometheus ports must resolve to `127.0.0.1`; Cloudflare Tunnel or another authenticated local proxy
+is the intended ingress boundary.
+
+Run these checks before a deployment:
+
+```text
+make supply-chain-check
+make security-scan
+make sbom
+docker compose -f compose.yaml -f compose.production.yaml up -d --wait
+```
+
+The first command resolves the final Compose model without expanding application secrets, then
+rejects mutable image references, unhashed Python dependencies, missing isolation controls, public
+bind addresses, excessive write access, or absent resource ceilings. Its invariant logic also has
+unit tests. `security-scan` runs a digest-pinned, self-hosted Trivy filesystem scan and fails on high
+or critical dependency, configuration, or committed-secret findings. It excludes the ignored local
+`.env`; that file must remain outside version control and should be checked through the deployment
+secret-management procedure. `sbom` runs digest-pinned Syft locally and writes an ignored SPDX JSON
+inventory to `build/aria-sbom.spdx.json` for each release candidate.
+
+Digest and lock updates are deliberate maintenance: review upstream release notes, regenerate both
+Python locks in the same Python 3.13 environment, run all four image builds, rerun the scan and test
+suite, and commit the new digests and locks together. The current Debian package and Playwright
+installation steps still contact their upstream repositories during a clean build, so this phase
+does not claim bit-for-bit offline reproducibility. The immutable base, language-package hashes,
+SBOM, scanner, and runtime boundaries materially narrow and expose that remaining surface.

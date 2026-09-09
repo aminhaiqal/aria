@@ -88,12 +88,14 @@ outputs are explicit derivatives and never replace or mutate the official source
 - Phase 4D.2 encrypted PostgreSQL backup, R2 copy, and disposable restore drill: implemented
 - Phase 4D.3 least-privilege operator roles, login throttling, and two-person release: implemented
 - Phase 4D.4 private metrics, correlation IDs, scheduler-worker heartbeat, and alerts: implemented
+- Phase 4D.5 immutable base images, hashed Python locks, production isolation, SBOM, and local
+  vulnerability scanning: implemented
 - Phase 2 source breadth: JPDP, AGC Updated Principal Acts, and Parliament Dewan Rakyat bills are
   operational with complete R2, extraction, graph, local-vector, and OpenAI-vector coverage
 - Operational acceptance still pending: observe the first autonomous AGC and Parliament daily
   cycles through the durable soak gate; manual pilot success is not presented as autonomous proof
-- Next implementation slice: harden the Cloudflare private-preview deployment and collect reader
-  feedback without weakening the evidence boundary
+- Next implementation slice: one fail-closed production readiness and resilience gate before a
+  private Cloudflare preview is exposed
 
 ## Local setup
 
