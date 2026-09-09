@@ -379,7 +379,7 @@ class ComparisonSummaryViewSet(ReadOnlyModelViewSet):
 
 class ReviewedChangePublicationViewSet(ReadOnlyModelViewSet):
     queryset = ReviewedChangePublication.objects.select_related(
-        "comparison_item", "confirmation_review", "pipeline_event"
+        "comparison_item", "confirmation_review", "pipeline_event", "published_by"
     )
     serializer_class = ReviewedChangePublicationSerializer
 

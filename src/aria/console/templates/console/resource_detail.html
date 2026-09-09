@@ -8,10 +8,10 @@
   </div>
   <div class="heading-actions">
     {% if resource.is_retired %}<span class="badge badge-neutral">Retired</span>{% else %}<span class="badge badge-{{ resource.health_state|status_tone }}">{{ resource.get_health_state_display }}</span>{% endif %}
-    <form method="post" action="{% url 'console:resource-poll' resource.id %}" data-confirm="Queue a fresh bounded check of this approved resource?">
+    {% if operator_capabilities.operate_sources %}<form method="post" action="{% url 'console:resource-poll' resource.id %}" data-confirm="Queue a fresh bounded check of this approved resource?">
       {% csrf_token %}
       <button class="button button-primary" type="submit" {% if not resource.is_enabled or not resource.is_approved or active_run or resource.is_retired %}disabled{% endif %}>Poll resource now</button>
-    </form>
+    </form>{% endif %}
   </div>
 </section>
 <div class="detail-grid">
@@ -64,7 +64,7 @@
       <p>This resource keeps its own validators, content hash, link-set hash, health, and immutable redirect evidence.</p>
       {% if active_run %}<span class="badge badge-info">{{ active_run.get_status_display }} run</span>{% elif resource.is_retired %}<span class="badge badge-neutral">Scheduling stopped</span>{% else %}<span class="badge badge-positive">No active overlap</span>{% endif %}
     </section>
-    {% if not resource.is_retired %}
+    {% if not resource.is_retired and operator_capabilities.operate_sources %}
     <section class="action-card danger-card">
       <h3>Retire obsolete resource</h3>
       <p>Stops future checks while retaining every observation, run, link snapshot, and audit record. Active work must finish first.</p>

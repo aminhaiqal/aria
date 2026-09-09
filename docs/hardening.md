@@ -80,3 +80,40 @@ empty artifact volume. Never unpack it over a running evidence store.
 Schedule the encrypted backup daily from the host and run a restore drill at least weekly. Retain
 multiple generations in R2 so operator error or a late-discovered corruption is not immediately
 propagated to every recovery point.
+
+## 4D.3 least-privilege operator access
+
+The operator console now has independent permissions for console access, source operations,
+workflow recovery, textual-change review, impact review, textual-change publication, impact
+publication, and audit-log access. Migrations provision these composable Django groups:
+
+| Group | Granted boundary |
+| --- | --- |
+| ARIA Viewer | Read the operator console |
+| ARIA Source Operator | Read and operate source admission, polling, and retirement |
+| ARIA Workflow Operator | Read, retry workflows, and request evidence-bounded summaries |
+| ARIA Change Reviewer | Read and append textual-change decisions |
+| ARIA Impact Reviewer | Read and append regulatory-impact decisions |
+| ARIA Publisher | Read and publish reviewed changes and impacts |
+| ARIA Auditor | Read and inspect the audit trail |
+
+Roles are additive. Assign them to active staff users in Django Admin. A superuser keeps every
+boundary for emergency administration. `ARIA_ENFORCE_OPERATOR_ROLES=false` is the migration-safe
+local default: existing staff continue to work while roles are assigned. Before exposing ARIA,
+assign and test at least two administrator accounts, then set it to `true`. Mutation controls are
+hidden when a role lacks authority, and every direct denied attempt is fail-closed with an
+append-only `console.permission_denied` audit event.
+
+Console sign-in failures are keyed by a SHA-256 of the username and direct peer address, never the
+password. The Compose deployment shares these counters through Redis database 2. After
+`ARIA_LOGIN_RATE_LIMIT_ATTEMPTS` failures in the configured window, login returns HTTP 429 with a
+`Retry-After` header. Successful authentication clears that narrow key. Operator sessions expire
+after one hour by default, end when the browser closes, and slide only while actively used.
+
+For production, set `ARIA_REQUIRE_SEPARATE_PUBLISHER=true`. A person who recorded the current
+confirmation cannot publish that same textual change, and a person who approved or amended an
+impact cannot publish that same impact. Change publications now retain `published_by`, matching the
+existing impact publication attribution, and include the publisher identifier in the immutable
+event. The rule is also enforced below the console in the publication services, so a management
+command cannot bypass it. The change-publication command accepts `--publisher`; the Make target
+requires `PUBLISHER=<active-staff-username>`.

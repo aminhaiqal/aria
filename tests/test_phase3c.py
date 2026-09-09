@@ -731,3 +731,25 @@ class ReviewedChangePublicationTestCase(Phase3CFixture):
             self.client.post(reverse("reviewedchangepublication-list"), {}).status_code,
             405,
         )
+
+    @override_settings(REQUIRE_SEPARATE_PUBLISHER=True)
+    def test_two_person_rule_separates_confirmation_from_publication(self) -> None:
+        confirmation = record_comparison_review(
+            self.item,
+            decision=ComparisonReview.Decision.CONFIRMED,
+            reviewer=self.reviewer,
+            rationale="Confirmed against the exact before and after anchors.",
+        )
+        with self.assertRaisesMessage(ValidationError, "different authenticated publisher"):
+            publish_confirmed_comparison_changes(self.comparison, publisher=self.reviewer)
+
+        publisher = get_user_model().objects.create_superuser(
+            username="independent-change-publisher",
+            password="test-password",
+        )
+        result = publish_confirmed_comparison_changes(self.comparison, publisher=publisher)
+
+        publication = ReviewedChangePublication.objects.get(confirmation_review=confirmation)
+        self.assertEqual(result.published_count, 1)
+        self.assertEqual(publication.published_by, publisher)
+        self.assertEqual(publication.pipeline_event.payload["publisher_id"], str(publisher.pk))

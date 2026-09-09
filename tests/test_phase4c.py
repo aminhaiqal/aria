@@ -946,6 +946,20 @@ class ReviewedImpactPublicationTestCase(ImpactFixtureMixin, Phase3CFixture):
             405,
         )
 
+    @override_settings(REQUIRE_SEPARATE_PUBLISHER=True)
+    def test_two_person_rule_separates_impact_review_from_publication(self):
+        with self.assertRaisesMessage(ValidationError, "different authenticated publisher"):
+            publish_reviewed_impact(self.review, publisher=self.reviewer)
+
+        publisher = get_user_model().objects.create_superuser(
+            username="independent-impact-publisher",
+            password="test-password",
+        )
+        result = publish_reviewed_impact(self.review, publisher=publisher)
+
+        self.assertTrue(result.created)
+        self.assertEqual(result.publication.published_by, publisher)
+
     def test_stale_or_nonapproved_reviews_cannot_publish(self):
         context_review = record_impact_review(
             self.impact,

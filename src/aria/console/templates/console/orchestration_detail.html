@@ -2,7 +2,7 @@
 {% block content %}
 <section class="page-heading">
   <div><a class="eyebrow" href="{% url 'console:orchestration-list' %}">← Change workflows</a><h1>{% if workflow.document_version %}{{ workflow.document_version.identity.canonical_title|default:"Workflow trace" }}{% else %}Workflow trace{% endif %}</h1><p>Workflow {{ workflow.id }} · immutable artifact {{ workflow.source_artifact.sha256|short_hash:16 }}</p></div>
-  <div class="heading-actions"><span class="badge badge-{{ workflow.status|status_tone }}">{{ workflow.get_status_display }}</span>{% if retryable %}<form method="post" action="{% url 'console:orchestration-retry' workflow.id %}" data-confirm="Queue a retry from the last safe workflow boundary?">{% csrf_token %}<button class="button button-primary" type="submit">Retry workflow</button></form>{% endif %}</div>
+  <div class="heading-actions"><span class="badge badge-{{ workflow.status|status_tone }}">{{ workflow.get_status_display }}</span>{% if retryable and operator_capabilities.operate_workflows %}<form method="post" action="{% url 'console:orchestration-retry' workflow.id %}" data-confirm="Queue a retry from the last safe workflow boundary?">{% csrf_token %}<button class="button button-primary" type="submit">Retry workflow</button></form>{% endif %}</div>
 </section>
 
 {% if workflow.error_message %}<section class="attention-strip danger-card"><div><span class="attention-mark">!</span><div><strong>{{ workflow.error_code|default:"Workflow error" }}</strong><p>{{ workflow.error_message }}</p></div></div></section>{% endif %}

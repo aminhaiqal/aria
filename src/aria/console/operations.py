@@ -366,7 +366,10 @@ def publish_reviewed_comparison(comparison: DocumentComparison, *, user):
         raise ConsoleOperationError(
             "Publication requires complete review and at least one confirmed change."
         )
-    result = publish_confirmed_comparison_changes(comparison)
+    try:
+        result = publish_confirmed_comparison_changes(comparison, publisher=user)
+    except ValidationError as error:
+        raise ConsoleOperationError("; ".join(error.messages)) from error
     record_audit_event(
         action="console.reviewed_changes_published",
         target_type="document_comparison",

@@ -215,7 +215,8 @@ summarize:
 
 publish-reviewed:
 	@test -n "$(COMPARISON_ID)" || (echo "Set COMPARISON_ID=<uuid>" && exit 1)
-	docker compose exec api python manage.py publish_reviewed_changes --comparison $(COMPARISON_ID)
+	@test -n "$(PUBLISHER)" || (echo "Set PUBLISHER=<active-staff-username>" && exit 1)
+	docker compose exec api python manage.py publish_reviewed_changes --comparison $(COMPARISON_ID) --publisher $(PUBLISHER)
 
 audit-orchestrations:
 	docker compose exec api python manage.py audit_orchestrations

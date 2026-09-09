@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     "django.contrib.postgres",
     "django.contrib.staticfiles",
     "rest_framework",
+    "aria.access",
     "aria.authorities",
     "aria.collections",
     "aria.sources",
@@ -87,6 +88,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "aria.access.context_processors.operator_capabilities",
             ],
         },
     }
@@ -131,6 +133,9 @@ SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_AGE = max(300, int(os.getenv("ARIA_SESSION_COOKIE_AGE_SECONDS", "3600")))
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+SESSION_SAVE_EVERY_REQUEST = True
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
@@ -148,6 +153,23 @@ REST_FRAMEWORK = {
 }
 
 REDIS_URL = os.getenv("ARIA_REDIS_URL", "redis://localhost:6379/0")
+CACHE_URL = os.getenv("ARIA_CACHE_URL", "").strip()
+CACHES = {
+    "default": (
+        {"BACKEND": "django.core.cache.backends.redis.RedisCache", "LOCATION": CACHE_URL}
+        if CACHE_URL
+        else {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "aria-process-local",
+        }
+    )
+}
+ENFORCE_OPERATOR_ROLES = env_bool("ARIA_ENFORCE_OPERATOR_ROLES", False)
+REQUIRE_SEPARATE_PUBLISHER = env_bool("ARIA_REQUIRE_SEPARATE_PUBLISHER", False)
+LOGIN_RATE_LIMIT_ATTEMPTS = max(2, int(os.getenv("ARIA_LOGIN_RATE_LIMIT_ATTEMPTS", "5")))
+LOGIN_RATE_LIMIT_WINDOW_SECONDS = max(
+    60, int(os.getenv("ARIA_LOGIN_RATE_LIMIT_WINDOW_SECONDS", "900"))
+)
 OBJECT_STORAGE_BACKEND = os.getenv("ARIA_OBJECT_STORAGE_BACKEND", "filesystem")
 OBJECT_STORAGE_ROOT = Path(os.getenv("ARIA_OBJECT_STORAGE_ROOT", "/var/lib/aria/artifacts"))
 OBJECT_STORAGE_ENDPOINT = os.getenv("ARIA_OBJECT_STORAGE_ENDPOINT", "")

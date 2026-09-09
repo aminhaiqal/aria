@@ -2,7 +2,7 @@
 {% block content %}
 <section class="page-heading">
   <div><span class="eyebrow">Live evidence system</span><h1>Operational overview</h1><p>One view of source health, changed-artifact processing, review, and publication boundaries.</p></div>
-  <div class="heading-actions"><a class="button button-secondary" href="{% url 'console:audit-list' %}">Open audit trail</a><a class="button button-primary" href="{% url 'console:comparison-list' %}?review=pending">Review changes</a></div>
+  <div class="heading-actions">{% if operator_capabilities.view_audit_log %}<a class="button button-secondary" href="{% url 'console:audit-list' %}">Open audit trail</a>{% endif %}<a class="button button-primary" href="{% url 'console:comparison-list' %}?review=pending">Review changes</a></div>
 </section>
 
 <section class="metric-grid" aria-label="System metrics">

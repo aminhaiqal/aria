@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -85,6 +86,10 @@ def publish_reviewed_impact(
     existing = ReviewedImpactPublication.objects.filter(impact_review=review).first()
     if existing:
         return ImpactPublicationResult(publication=existing, created=False)
+    if settings.REQUIRE_SEPARATE_PUBLISHER and review.reviewer_id == publisher.pk:
+        raise ValidationError(
+            "A different authenticated publisher must release a reviewed regulatory impact."
+        )
     comparison = impact.comparison_item.comparison
     targets = _target_payload(review)
     if not any(target["disposition"] == "included" for target in targets):

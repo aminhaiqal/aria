@@ -976,6 +976,7 @@ class ReviewedChangePublicationSerializer(serializers.ModelSerializer):
             "comparison_item",
             "confirmation_review",
             "pipeline_event",
+            "published_by",
             "created_at",
         )
 

@@ -1,5 +1,8 @@
 from dataclasses import dataclass
 
+from django.conf import settings
+from django.contrib.auth.models import AbstractBaseUser
+from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from aria.comparisons.models import (
@@ -37,6 +40,8 @@ def _anchor_payload(item: ComparisonItem, side: str) -> dict | None:
 @transaction.atomic
 def publish_confirmed_comparison_changes(
     comparison: DocumentComparison,
+    *,
+    publisher: AbstractBaseUser | None = None,
 ) -> ChangePublicationSummary:
     items = list(
         comparison.items.exclude(change_type=ComparisonItem.ChangeType.UNCHANGED).select_related(
@@ -55,6 +60,12 @@ def publish_confirmed_comparison_changes(
         if existing is not None:
             publications.append((existing, False))
             continue
+        if settings.REQUIRE_SEPARATE_PUBLISHER and (
+            publisher is None or review.reviewer_id == publisher.pk
+        ):
+            raise ValidationError(
+                "A different authenticated publisher must release confirmed textual changes."
+            )
         event = record_pipeline_event(
             event_type="regulatory.textual_change.confirmed",
             aggregate_type="comparison_item",
@@ -84,6 +95,7 @@ def publish_confirmed_comparison_changes(
                     "rationale": review.rationale,
                     "reviewed_at": review.created_at.isoformat(),
                 },
+                "publisher_id": str(publisher.pk) if publisher is not None else "",
                 "legal_effect_assessed": False,
             },
         )
@@ -91,6 +103,7 @@ def publish_confirmed_comparison_changes(
             comparison_item=item,
             confirmation_review=review,
             pipeline_event=event,
+            published_by=publisher,
         )
         publications.append((publication, True))
     return ChangePublicationSummary(

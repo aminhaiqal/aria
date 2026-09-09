@@ -14,6 +14,12 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
+from aria.access.rate_limits import (
+    clear_login_failures,
+    login_is_blocked,
+    register_login_failure,
+)
+from aria.access.roles import can_access_console, operator_permission_required
 from aria.browser.models import (
     BrowserCapture,
     BrowserNetworkExchange,
@@ -66,7 +72,7 @@ from aria.reliability.soak import collect_autonomous_cycle_acceptance
 from aria.sources.models import SourceEndpoint
 
 staff_required = user_passes_test(
-    lambda user: user.is_active and user.is_staff,
+    can_access_console,
     login_url="console:login",
 )
 
@@ -80,11 +86,33 @@ class StaffLoginView(LoginView):
     template_name = "console/login.html"
     redirect_authenticated_user = False
 
+    def post(self, request, *args, **kwargs):
+        if login_is_blocked(request):
+            form = self.get_form()
+            form.add_error(None, "Too many sign-in attempts. Try again later.")
+            response = self.form_invalid(form)
+            response.status_code = 429
+            response["Retry-After"] = str(settings.LOGIN_RATE_LIMIT_WINDOW_SECONDS)
+            return response
+        return super().post(request, *args, **kwargs)
+
+    def form_invalid(self, form):
+        attempts = register_login_failure(self.request)
+        response = super().form_invalid(form)
+        if attempts >= settings.LOGIN_RATE_LIMIT_ATTEMPTS:
+            response.status_code = 429
+            response["Retry-After"] = str(settings.LOGIN_RATE_LIMIT_WINDOW_SECONDS)
+        return response
+
     def form_valid(self, form):
         user = form.get_user()
         if not user.is_active or not user.is_staff:
             form.add_error(None, "This console requires an active staff account.")
             return self.form_invalid(form)
+        if not can_access_console(user):
+            form.add_error(None, "This staff account has no ARIA console role.")
+            return self.form_invalid(form)
+        clear_login_failures(self.request)
         return super().form_valid(form)
 
 
@@ -336,6 +364,7 @@ def admission_detail(request, endpoint_id):
 
 
 @staff_required
+@operator_permission_required("operate_sources")
 @require_POST
 def admission_capture(request, endpoint_id):
     endpoint = get_object_or_404(SourceEndpoint, pk=endpoint_id)
@@ -349,6 +378,7 @@ def admission_capture(request, endpoint_id):
 
 
 @staff_required
+@operator_permission_required("operate_sources")
 @require_POST
 def admission_assess(request, endpoint_id):
     endpoint = get_object_or_404(SourceEndpoint, pk=endpoint_id)
@@ -371,6 +401,7 @@ def admission_assess(request, endpoint_id):
 
 
 @staff_required
+@operator_permission_required("operate_sources")
 @require_POST
 def admission_promote(request, endpoint_id):
     endpoint = get_object_or_404(SourceEndpoint, pk=endpoint_id)
@@ -455,6 +486,7 @@ def source_detail(request, endpoint_id):
 
 
 @staff_required
+@operator_permission_required("operate_sources")
 @require_POST
 def source_poll(request, endpoint_id):
     endpoint = get_object_or_404(SourceEndpoint, pk=endpoint_id)
@@ -468,6 +500,7 @@ def source_poll(request, endpoint_id):
 
 
 @staff_required
+@operator_permission_required("operate_sources")
 @require_POST
 def static_source_pilot(request, endpoint_id):
     endpoint = get_object_or_404(SourceEndpoint, pk=endpoint_id)
@@ -481,6 +514,7 @@ def static_source_pilot(request, endpoint_id):
 
 
 @staff_required
+@operator_permission_required("operate_sources")
 @require_POST
 def static_source_assess(request, endpoint_id):
     endpoint = get_object_or_404(SourceEndpoint, pk=endpoint_id)
@@ -503,6 +537,7 @@ def static_source_assess(request, endpoint_id):
 
 
 @staff_required
+@operator_permission_required("operate_sources")
 @require_POST
 def static_source_promote(request, endpoint_id):
     endpoint = get_object_or_404(SourceEndpoint, pk=endpoint_id)
@@ -568,6 +603,7 @@ def resource_detail(request, resource_id):
 
 
 @staff_required
+@operator_permission_required("operate_sources")
 @require_POST
 def resource_poll(request, resource_id):
     resource = get_object_or_404(MonitoredResource, pk=resource_id)
@@ -581,6 +617,7 @@ def resource_poll(request, resource_id):
 
 
 @staff_required
+@operator_permission_required("operate_sources")
 @require_POST
 def resource_retire(request, resource_id):
     resource = get_object_or_404(MonitoredResource, pk=resource_id)
@@ -694,6 +731,7 @@ def orchestration_detail(request, orchestration_id):
 
 
 @staff_required
+@operator_permission_required("operate_workflows")
 @require_POST
 def orchestration_retry(request, orchestration_id):
     workflow = get_object_or_404(ChangeOrchestration, pk=orchestration_id)
@@ -839,6 +877,7 @@ def comparison_detail(request, comparison_id):
 
 
 @staff_required
+@operator_permission_required("review_changes")
 @require_POST
 def comparison_item_review(request, item_id):
     item = get_object_or_404(
@@ -866,6 +905,7 @@ def comparison_item_review(request, item_id):
 
 
 @staff_required
+@operator_permission_required("operate_workflows")
 @require_POST
 def comparison_summarize(request, comparison_id):
     comparison = get_object_or_404(DocumentComparison, pk=comparison_id)
@@ -879,6 +919,7 @@ def comparison_summarize(request, comparison_id):
 
 
 @staff_required
+@operator_permission_required("publish_changes")
 @require_POST
 def comparison_publish(request, comparison_id):
     comparison = get_object_or_404(DocumentComparison, pk=comparison_id)
@@ -1037,6 +1078,7 @@ def impact_detail(request, impact_id):
 
 
 @staff_required
+@operator_permission_required("review_impacts")
 @require_POST
 def impact_review(request, impact_id):
     impact = get_object_or_404(
@@ -1070,6 +1112,7 @@ def impact_review(request, impact_id):
 
 
 @staff_required
+@operator_permission_required("publish_impacts")
 @require_POST
 def impact_publish(request, impact_id):
     impact = get_object_or_404(RegulatoryImpact, pk=impact_id)
@@ -1098,6 +1141,7 @@ def impact_publish(request, impact_id):
 
 
 @staff_required
+@operator_permission_required("view_audit_log")
 def audit_list(request):
     action = request.GET.get("action", "").strip()
     events = AuditEvent.objects.all()

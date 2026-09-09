@@ -129,6 +129,12 @@ class ComparisonSummaryAdmin(ReadOnlyAdmin):
 
 @admin.register(ReviewedChangePublication)
 class ReviewedChangePublicationAdmin(ReadOnlyAdmin):
-    list_display = ("comparison_item", "confirmation_review", "pipeline_event", "created_at")
+    list_display = (
+        "comparison_item",
+        "confirmation_review",
+        "published_by",
+        "pipeline_event",
+        "created_at",
+    )
     list_filter = ("comparison_item__change_type",)
     search_fields = ("comparison_item__fingerprint", "pipeline_event__event_type")

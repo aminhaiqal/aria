@@ -406,6 +406,13 @@ class ReviewedChangePublication(AppendOnlyModel):
         on_delete=models.PROTECT,
         related_name="reviewed_change_publication",
     )
+    published_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="reviewed_change_publications",
+        null=True,
+        blank=True,
+    )
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
 
     class Meta:
