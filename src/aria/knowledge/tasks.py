@@ -36,7 +36,7 @@ def embed_collection_sections(self, collection_id: str, provider_name: str) -> d
 def embed_document_version_sections(self, version_id: str, provider_name: str) -> dict:
     version = DocumentVersion.objects.get(pk=version_id)
     summary = project_section_embeddings(
-        version.sections.order_by("id"),
+        version.sections.select_related("document_version__identity").order_by("id"),
         provider_name=provider_name,
     )
     return summary.__dict__

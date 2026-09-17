@@ -45,6 +45,10 @@ class OpenRouterEmbeddingProviderTestCase(SimpleTestCase):
             inputs=["first", "second"],
             dimensions=384,
         )
+        self.assertEqual(
+            OpenRouterEmbeddingProvider(client=client).model,
+            "openai/text-embedding-3-small@aria-document-section-v2",
+        )
         self.assertEqual(result.vectors[0][0], 1.0)
         self.assertEqual(result.vectors[1][1], 1.0)
         self.assertEqual(result.prompt_tokens, 7)
@@ -227,7 +231,7 @@ class EmbedAllCurrentSectionsCommandTestCase(SimpleTestCase):
         current_sections_queryset.return_value.order_by.return_value = ordered_sections
         project_section_embeddings.return_value = EmbeddingProjectionSummary(
             provider="openrouter",
-            model="openai/text-embedding-3-small",
+            model="openai/text-embedding-3-small@aria-document-section-v2",
             dimensions=384,
             candidate_count=3,
             created_count=3,

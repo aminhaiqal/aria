@@ -221,8 +221,8 @@ endpoint, bucket, access key, and secret in `.env`. Raw artifact bytes are archi
 extraction and are never mutated. Normalized records, graph edges, full-text indexes, and vectors
 remain in the self-hosted PostgreSQL service.
 
-OpenRouter-hosted embeddings are optional. When selected, ARIA sends normalized section headings
-and text, plus hosted-vector search queries, through OpenRouter. Requests require Zero Data
+OpenRouter-hosted embeddings are optional. When selected, ARIA sends normalized document titles,
+section headings and text, plus hosted-vector search queries, through OpenRouter. Requests require Zero Data
 Retention routing and deny provider data collection by default. Source PDFs, R2 credentials,
 provenance records, and graph data remain local. The deterministic `local_hash` provider remains
 available as an offline fallback.

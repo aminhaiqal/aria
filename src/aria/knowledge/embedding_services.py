@@ -41,8 +41,21 @@ def current_sections_queryset(
     )
 
 
-def section_embedding_input(section: NormalizedSection) -> str:
-    return f"{section.heading}\n{section.text}"
+def section_embedding_input(
+    section: NormalizedSection,
+    *,
+    include_document_title: bool = False,
+) -> str:
+    parts = []
+    if include_document_title:
+        version = section.document_version
+        title = (version.title or version.identity.canonical_title).strip()
+        if title:
+            parts.append(f"Document title: {title}")
+    if section.heading:
+        parts.append(f"Section heading: {section.heading}")
+    parts.append(section.text)
+    return "\n".join(parts)
 
 
 def project_section_embeddings(
@@ -98,7 +111,13 @@ def project_section_embeddings(
     for offset in range(0, len(pending), selected_batch_size):
         batch_sections = pending[offset : offset + selected_batch_size]
         result = embedding_provider.embed_texts(
-            [section_embedding_input(section) for section in batch_sections]
+            [
+                section_embedding_input(
+                    section,
+                    include_document_title=selected_provider == "openrouter",
+                )
+                for section in batch_sections
+            ]
         )
         prompt_tokens += result.prompt_tokens
         with transaction.atomic():

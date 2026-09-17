@@ -32,14 +32,16 @@ from aria.sources.models import SourceEndpoint
 
 class FakeSemanticEmbeddingProvider:
     provider_name = "openrouter"
-    model = "openai/text-embedding-3-small"
+    model = "openai/text-embedding-3-small@aria-document-section-v2"
     dimensions = 384
 
     def __init__(self) -> None:
         self.calls = 0
+        self.inputs: list[str] = []
 
     def embed_texts(self, texts: list[str]) -> EmbeddingBatch:
         self.calls += 1
+        self.inputs.extend(texts)
         vectors = []
         for index, _ in enumerate(texts):
             vector = [0.0] * self.dimensions
@@ -267,6 +269,9 @@ class ExtractionPipelineTestCase(TestCase):
         self.assertEqual(replay.created_count, 0)
         self.assertEqual(replay.skipped_count, 2)
         self.assertEqual(provider.calls, 2)
+        self.assertTrue(
+            all("Document title: Personal Data Protection Act" in text for text in provider.inputs)
+        )
         self.assertEqual(SectionEmbedding.objects.filter(provider="openrouter").count(), 2)
         self.assertEqual(SectionEmbedding.objects.filter(provider="local_hash").count(), 2)
 

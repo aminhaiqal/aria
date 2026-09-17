@@ -16,7 +16,7 @@ Python SDK.
 When OpenRouter is selected for projection, ARIA sends this normalized string for each section:
 
 ```text
-{section heading}\n{section text}
+Document title: {document title}\nSection heading: {section heading}\n{section text}
 ```
 
 When a search selects the OpenRouter provider, ARIA also sends the query text to create its query
@@ -85,7 +85,8 @@ Permanent authentication or request errors fail without retrying forever.
 
 Projection identity is the normalized section, provider, model, and source-text SHA-256. A replay
 does not call OpenRouter for completed projections. New document versions or changed section hashes
-produce new vectors without mutating earlier records.
+produce new vectors without mutating earlier records. The stored model identity includes
+`@aria-document-section-v2` so title-aware projections coexist with earlier section-only vectors.
 
 Compare providers using the versioned eight-query JPDP benchmark:
 

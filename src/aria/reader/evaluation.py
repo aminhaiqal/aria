@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from urllib.parse import unquote
 
 from aria.reader.services import search_reader_documents
 
@@ -33,6 +34,10 @@ READER_RETRIEVAL_CASES = (
 )
 
 
+def _normalized_url_text(value: str) -> str:
+    return unquote(value).casefold()
+
+
 def evaluate_reader_retrieval(
     *,
     mode: str = "hybrid",
@@ -56,7 +61,8 @@ def evaluate_reader_retrieval(
             (
                 index
                 for index, document in enumerate(documents, start=1)
-                if case.expected_url_fragment in document["canonical_url"]
+                if _normalized_url_text(case.expected_url_fragment)
+                in _normalized_url_text(document["canonical_url"])
             ),
             None,
         )

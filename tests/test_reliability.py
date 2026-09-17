@@ -204,7 +204,10 @@ class ReliabilityFixture(TestCase):
             )
             for provider, model in (
                 ("local_hash", "aria-token-hash-v1"),
-                ("openrouter", "text-embedding-3-small"),
+                (
+                    "openrouter",
+                    "text-embedding-3-small@aria-document-section-v2",
+                ),
             ):
                 SectionEmbedding.objects.create(
                     normalized_section=section,

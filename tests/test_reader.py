@@ -24,7 +24,11 @@ from aria.documents.models import (
 from aria.extraction.models import ExtractedBlock, ExtractedDocument, ExtractionRun
 from aria.fetching.models import FetchAttempt
 from aria.knowledge.embeddings import EmbeddingError
-from aria.reader.evaluation import ReaderRetrievalCase, evaluate_reader_retrieval
+from aria.reader.evaluation import (
+    ReaderRetrievalCase,
+    _normalized_url_text,
+    evaluate_reader_retrieval,
+)
 from aria.reader.services import search_reader_documents
 from aria.reliability.models import SourceReliabilityAssessment
 from aria.reliability.soak import collect_autonomous_cycle_acceptance
@@ -305,7 +309,7 @@ class ReaderInterfaceTestCase(TestCase):
                     name="fixture",
                     query="protect personal data processing",
                     authority_slug=self.authority.slug,
-                    expected_url_fragment="data-processing/",
+                    expected_url_fragment="DATA-PROCESSING/",
                 ),
             ),
         )
@@ -314,6 +318,12 @@ class ReaderInterfaceTestCase(TestCase):
         self.assertEqual(report["mean_reciprocal_rank"], 1.0)
         self.assertEqual(report["hit_at_3"], 1.0)
         self.assertEqual(report["cases"][0]["rank"], 1)
+
+    def test_reader_benchmark_matches_encoded_urls_case_insensitively(self) -> None:
+        expected = _normalized_url_text("GOVERNMENT PROCUREMENT ACT 2026.pdf")
+        observed = _normalized_url_text("Act%20882%20-%20GOVERNMENT%20PROCUREMENT%20ACT%202026.pdf")
+
+        self.assertIn(expected, observed)
 
     def test_vector_only_failure_returns_service_unavailable(self) -> None:
         self.client.force_login(self.reader)

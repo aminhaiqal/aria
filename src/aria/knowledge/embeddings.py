@@ -10,6 +10,7 @@ from django.core.exceptions import ImproperlyConfigured
 from aria.openrouter import OpenRouterClient, OpenRouterError, RetryableOpenRouterError
 
 VECTOR_DIMENSIONS = 384
+OPENROUTER_EMBEDDING_INPUT_VERSION = "aria-document-section-v2"
 TOKEN_PATTERN = re.compile(r"\w+", flags=re.UNICODE)
 SUPPORTED_PROVIDERS = frozenset({"local_hash", "openrouter"})
 
@@ -47,11 +48,13 @@ def embedding_configuration(provider_name: str | None = None) -> tuple[str, str,
         raise ImproperlyConfigured(
             f"ARIA_EMBEDDING_DIMENSIONS must be {VECTOR_DIMENSIONS} for the current schema."
         )
-    model = (
-        settings.LOCAL_EMBEDDING_MODEL
-        if provider == "local_hash"
-        else settings.OPENROUTER_EMBEDDING_MODEL
-    )
+    if provider == "local_hash":
+        model = settings.LOCAL_EMBEDDING_MODEL
+    else:
+        model = (
+            f"{settings.OPENROUTER_EMBEDDING_MODEL}@"
+            f"{OPENROUTER_EMBEDDING_INPUT_VERSION}"
+        )
     return provider, model, dimensions
 
 
@@ -116,6 +119,7 @@ class OpenRouterEmbeddingProvider:
 
     def __init__(self, *, client=None) -> None:
         _, self.model, self.dimensions = embedding_configuration(self.provider_name)
+        self.request_model = settings.OPENROUTER_EMBEDDING_MODEL
         if client is not None:
             self.client = client
             return
@@ -129,7 +133,7 @@ class OpenRouterEmbeddingProvider:
             return EmbeddingBatch(vectors=())
         try:
             response = self.client.create_embeddings(
-                model=self.model,
+                model=self.request_model,
                 inputs=[text if text.strip() else " " for text in texts],
                 dimensions=self.dimensions,
             )
