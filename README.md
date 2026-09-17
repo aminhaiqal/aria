@@ -68,7 +68,7 @@ outputs are explicit derivatives and never replace or mutate the official source
 - Phase 3D.3 evidence-gated downstream change orchestration: implemented
 - Phase 3D.5 self-hosted operator console: implemented
 - Phase 3D.6 bounded self-hosted browser retrieval: implemented
-- Phase 3D.7 controlled AGC JavaScript-source admission: complete and promoted to daily polling
+- Phase 3D.7 controlled AGC JavaScript-source admission: complete and governed by hourly polling
 - Phase 3D.8 source reliability, transition alerts, and repair planning: implemented
 - Phase 3D.9 governed source packs and source-admission workbench: implemented
 - Phase 3D.10 guarded static-source admission and multi-source confidence: implemented

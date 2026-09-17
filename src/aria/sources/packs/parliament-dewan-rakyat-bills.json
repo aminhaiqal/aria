@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "slug": "parliament-dewan-rakyat-bills",
-  "version": 2,
+  "version": 3,
   "authority": {
     "slug": "parliament-of-malaysia",
     "name": "Parliament of Malaysia",
@@ -21,7 +21,7 @@
     "default_legal_status": "Official parliamentary bill publication; not enacted law",
     "is_evidence_eligible": true,
     "priority": 20,
-    "expected_update_frequency": "During parliamentary sittings; proposed daily after validation",
+    "expected_update_frequency": "During parliamentary sittings; poll hourly after validation",
     "is_enabled": true
   },
   "endpoint": {
@@ -29,7 +29,7 @@
     "discovery_url": "https://www.parlimen.gov.my/portal/bills-dewan-rakyat.html?lang=en&uweb=dr",
     "connector_type": "html_listing",
     "allowed_domains": ["parlimen.gov.my"],
-    "polling_interval_minutes": 1440,
+    "polling_interval_minutes": 60,
     "pagination_strategy": "none",
     "expected_content_types": ["text/html", "application/pdf"],
     "requires_javascript": false,

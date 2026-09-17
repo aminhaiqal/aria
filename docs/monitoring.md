@@ -20,9 +20,10 @@ Celery Beat every minute
   -> extraction/versioning only when candidate bytes changed
 ```
 
-JPDP is currently the only enabled official source. Its root and detail cadence is six hours; the
-official English RSS cadence is one hour. The scheduler's one-minute tick only finds due work; it
-does not request every resource every minute.
+Every admitted official-source endpoint and approved monitored resource uses a one-hour cadence.
+The scheduler's one-minute tick only finds and staggers due work; it does not request every
+resource every minute. Conditional requests and content hashes prevent unchanged bytes from
+re-entering extraction, OCR, embedding, or comparison work.
 
 ## Monitoring contract
 

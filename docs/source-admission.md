@@ -121,7 +121,8 @@ set and no disappearances. The first v2 run preserved and processed all 25 PDFs;
 created 25 unchanged artifact observations without duplicate versions. Admission passed 15/15
 gates with 25/25 R2 artifacts, extractions, and graph projections, plus 351/351 local and 351/351
 OpenAI section embeddings. Exact assessment `76149eea-8bb2-4156-ab9a-b7fcfb60efbf` promoted the
-source to a daily schedule. The resulting source reliability state is `healthy` with no findings.
+source to the configured schedule. Source-pack v3 reconciles that cadence to hourly while retaining
+the admission evidence. The resulting source reliability state is `healthy` with no findings.
 
 The earlier connector-v1 attempt remains immutable failed evidence: the listing completed, but its
 stateless PDF requests received HTML error pages. The content-type gate prevented those responses

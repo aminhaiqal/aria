@@ -154,10 +154,10 @@ successful extraction → knowledge-graph lineage for every candidate in the lat
 If the official listing changes between the two captures, repeatability correctly fails. Review
 the change and take two new close-together captures rather than weakening the gate. After all
 checks pass, `promote_browser_source --confirm` re-runs the gates inside a database transaction,
-records audit and pipeline events, and schedules the first daily check. It cannot bypass a failed
+records audit and pipeline events, and schedules the first configured hourly check. It cannot bypass a failed
 gate.
 
 The initial admission completed on 2026-08-06 with two matching 20-candidate captures and 20/20
 artifact, extraction, and knowledge-graph lineage checks. The source was promoted through the
-guarded command and now polls daily; reseeding preserves that promoted state. Connector version 2
+guarded command and now polls at the governed hourly cadence; reseeding preserves that promoted state. Connector version 2
 was verified on 2026-09-02 with a fresh bounded 20-candidate capture and 20/20 artifact checks.

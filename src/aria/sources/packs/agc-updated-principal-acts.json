@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "slug": "agc-updated-principal-acts",
-  "version": 2,
+  "version": 3,
   "authority": {
     "slug": "attorney-generals-chambers-malaysia",
     "name": "Attorney General's Chambers of Malaysia",
@@ -21,7 +21,7 @@
     "default_legal_status": "Official federal legislation publication",
     "is_evidence_eligible": true,
     "priority": 20,
-    "expected_update_frequency": "Ad hoc; pilot daily after admission",
+    "expected_update_frequency": "Ad hoc; poll hourly after admission",
     "is_enabled": true
   },
   "endpoint": {
@@ -29,7 +29,7 @@
     "discovery_url": "https://lom.agc.gov.my/principal.php?type=updated",
     "connector_type": "javascript_listing",
     "allowed_domains": ["lom.agc.gov.my"],
-    "polling_interval_minutes": 1440,
+    "polling_interval_minutes": 60,
     "pagination_strategy": "none",
     "expected_content_types": ["text/html", "application/pdf"],
     "requires_javascript": true,
