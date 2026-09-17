@@ -139,6 +139,7 @@ def validate_repository(root: Path = ROOT) -> None:
         validate_lock(lock_path)
     validate_dockerfile(root / "Dockerfile")
     validate_compose_images(root / "compose.yaml")
+    validate_compose_images(root / "compose.production.yaml")
     for compose_name in ("compose.production.yaml", "compose.vps.yaml"):
         if not (root / compose_name).is_file():
             raise SupplyChainError(f"{compose_name} is required")
@@ -205,7 +206,7 @@ def validate_runtime_config(config: dict[str, Any]) -> None:
         if not artifact_mount or artifact_mount.get("read_only") is True:
             raise SupplyChainError(f"{service_name} requires the evidence artifact write boundary")
 
-    for service_name in ("frontend-assets", "redis", "prometheus"):
+    for service_name in ("frontend-assets", "redis", "redis-init", "prometheus"):
         service = services.get(service_name, {})
         if service.get("read_only") is not True:
             raise SupplyChainError(f"{service_name} must use a read-only root filesystem")
@@ -215,6 +216,16 @@ def validate_runtime_config(config: dict[str, Any]) -> None:
             raise SupplyChainError(f"{service_name} must disable privilege escalation")
         for field in ("pids_limit", "mem_limit", "cpus"):
             _require_positive(service_name, service, field)
+
+    redis_init = services["redis-init"]
+    if redis_init.get("user") != "root" or redis_init.get("cap_add") != ["CHOWN"]:
+        raise SupplyChainError("redis-init must have only the CHOWN initialization capability")
+    if services["redis"].get("user") != "redis":
+        raise SupplyChainError("Redis must run directly as its unprivileged image user")
+    if services["redis"].get("depends_on", {}).get("redis-init", {}).get("condition") != (
+        "service_completed_successfully"
+    ):
+        raise SupplyChainError("Redis must wait for its volume ownership initializer")
 
     for service_name in ("postgres", "redis"):
         for field in ("pids_limit", "mem_limit", "cpus"):

@@ -38,7 +38,26 @@ services:
     mem_limit: 2g
     cpus: "2.0"
 
+  redis-init:
+    image: redis:7.4-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
+    user: root
+    command: ["sh", "-c", "chown -R redis:redis /data"]
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 32
+    mem_limit: 64m
+    cpus: "0.25"
+    volumes:
+      - redis-data:/data
+    restart: "no"
+
   redis:
+    user: redis
     read_only: true
     tmpfs:
       - /tmp:size=16777216,mode=1777
@@ -49,6 +68,9 @@ services:
     pids_limit: 128
     mem_limit: 512m
     cpus: "1.0"
+    depends_on:
+      redis-init:
+        condition: service_completed_successfully
 
   migrate:
     <<: *hardened-app

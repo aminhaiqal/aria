@@ -51,7 +51,7 @@ def runtime_config() -> dict:
         )
     }
     services["api"]["ports"] = [{"host_ip": "127.0.0.1"}]
-    for name in ("frontend-assets", "redis", "prometheus"):
+    for name in ("frontend-assets", "redis", "redis-init", "prometheus"):
         services[name] = {
             "read_only": True,
             "cap_drop": ["ALL"],
@@ -61,6 +61,11 @@ def runtime_config() -> dict:
             "cpus": 1,
         }
     services["prometheus"]["ports"] = [{"host_ip": "127.0.0.1"}]
+    services["redis-init"].update({"user": "root", "cap_add": ["CHOWN"]})
+    services["redis"]["user"] = "redis"
+    services["redis"]["depends_on"] = {
+        "redis-init": {"condition": "service_completed_successfully"}
+    }
     services["postgres"] = {
         "pids_limit": 128,
         "mem_limit": "536870912",
