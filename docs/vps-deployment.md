@@ -1,6 +1,8 @@
 # VPS deployment
 
-ARIA runs on the VPS as an isolated Docker Compose project. Only the API joins the existing
+ARIA runs on the VPS as an isolated Docker Compose project. Application code and the reader bundle
+run directly from the immutable, read-only container image; production does not bind-mount the
+host source tree. Only the API joins the existing
 attachable `memora_public` edge network; PostgreSQL, Redis, and every worker remain on ARIA's
 private bridge network. Caddy reaches the API through the `aria-api` network alias. The API's
 optional host port remains bound to loopback for recovery and diagnostics.

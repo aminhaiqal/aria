@@ -194,8 +194,10 @@ def validate_runtime_config(config: dict[str, Any]) -> None:
         if "ARIA_RELEASE_REVISION" not in environment:
             raise SupplyChainError(f"{service_name} has no immutable release identity input")
         app_mount = _volume(service, "/app")
-        if not app_mount or app_mount.get("read_only") is not True:
-            raise SupplyChainError(f"{service_name} must mount application code read-only")
+        if app_mount:
+            raise SupplyChainError(
+                f"{service_name} must run application code from its immutable image"
+            )
 
     for service_name in sorted(ARTIFACT_READ_ONLY):
         artifact_mount = _volume(services[service_name], "/var/lib/aria/artifacts")

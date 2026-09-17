@@ -24,6 +24,7 @@ RUN addgroup --system aria \
 
 COPY requirements.lock ./
 RUN pip install --require-hashes --requirement requirements.lock
+COPY config/certificates ./config/certificates
 COPY src ./src
 COPY manage.py ./manage.py
 COPY --from=reader-ui /reader/dist /app/frontend/reader/dist

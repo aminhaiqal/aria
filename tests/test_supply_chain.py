@@ -28,7 +28,6 @@ def hardened_service(*, artifact_read_only: bool) -> dict:
         "cpus": 1,
         "environment": {**PRODUCTION_ENVIRONMENT, "ARIA_RELEASE_REVISION": "unknown"},
         "volumes": [
-            {"target": "/app", "read_only": True},
             {
                 "target": "/var/lib/aria/artifacts",
                 "read_only": artifact_read_only,
@@ -110,6 +109,15 @@ class ProductionIsolationTests(SimpleTestCase):
         with self.assertRaisesMessage(SupplyChainError, "read-only root"):
             validate_runtime_config(config)
 
+    def test_production_source_bind_is_rejected(self) -> None:
+        config = deepcopy(runtime_config())
+        config["services"]["api"]["volumes"].append(
+            {"target": "/app", "read_only": True}
+        )
+
+        with self.assertRaisesMessage(SupplyChainError, "immutable image"):
+            validate_runtime_config(config)
+
     def test_public_api_port_is_rejected(self) -> None:
         config = deepcopy(runtime_config())
         config["services"]["api"]["ports"][0]["host_ip"] = "0.0.0.0"
@@ -119,7 +127,7 @@ class ProductionIsolationTests(SimpleTestCase):
 
     def test_reader_cannot_mutate_evidence_artifacts(self) -> None:
         config = deepcopy(runtime_config())
-        config["services"]["api"]["volumes"][1]["read_only"] = False
+        config["services"]["api"]["volumes"][0]["read_only"] = False
 
         with self.assertRaisesMessage(SupplyChainError, "must not write"):
             validate_runtime_config(config)
