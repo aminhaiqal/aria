@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "slug": "jpdp-act-709",
-  "version": 3,
+  "version": 4,
   "authority": {
     "slug": "personal-data-protection-commissioner-malaysia",
     "name": "Personal Data Protection Commissioner, Malaysia",
@@ -21,7 +21,7 @@
     "default_legal_status": "Official publication",
     "is_evidence_eligible": true,
     "priority": 10,
-    "expected_update_frequency": "Ad hoc; poll hourly",
+    "expected_update_frequency": "Ad hoc; poll every three hours",
     "is_enabled": true
   },
   "endpoint": {
@@ -29,7 +29,7 @@
     "discovery_url": "https://www.pdp.gov.my/ppdpv1/en/akta/pdp-act-2010-en/",
     "connector_type": "html_listing",
     "allowed_domains": ["pdp.gov.my"],
-    "polling_interval_minutes": 60,
+    "polling_interval_minutes": 180,
     "pagination_strategy": "none",
     "expected_content_types": ["text/html", "application/pdf"],
     "requires_javascript": false,
@@ -111,7 +111,7 @@
       "title": "JPDP English official site feed",
       "is_approved": true,
       "approval_basis": "Declared as application/rss+xml by the approved JPDP listing page",
-      "polling_interval_minutes": 60,
+      "polling_interval_minutes": 180,
       "metadata": {
         "declaration_page": "https://www.pdp.gov.my/ppdpv1/en/akta/pdp-act-2010-en/",
         "excludes": ["comments feeds"]
@@ -123,6 +123,6 @@
     "metadata_title_key": "title",
     "resource_type": "detail_page",
     "approval_basis": "Backfilled from prior approved JPDP listing evidence",
-    "polling_interval_minutes": 60
+    "polling_interval_minutes": 180
   }
 }

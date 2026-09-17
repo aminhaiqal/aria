@@ -31,18 +31,18 @@ class SourcePackValidationTestCase(TestCase):
         self.assertIn("parliament-dewan-rakyat-bills", available_source_packs())
         self.assertEqual(len(self.pack.checksum), 64)
 
-    def test_repository_packs_use_hourly_monitoring_policy(self) -> None:
+    def test_repository_packs_use_three_hour_monitoring_policy(self) -> None:
         for slug in available_source_packs():
             pack = load_source_pack(slug)
-            self.assertEqual(pack.version, 3)
-            self.assertEqual(pack.definition["endpoint"]["polling_interval_minutes"], 60)
+            self.assertEqual(pack.version, 4)
+            self.assertEqual(pack.definition["endpoint"]["polling_interval_minutes"], 180)
             for resource in pack.definition["resources"]:
-                self.assertEqual(resource.get("polling_interval_minutes", 60), 60)
+                self.assertEqual(resource.get("polling_interval_minutes", 180), 180)
 
         jpdp = load_source_pack("jpdp-act-709")
         self.assertEqual(
             jpdp.definition["detail_resource_backfill"]["polling_interval_minutes"],
-            60,
+            180,
         )
 
     def test_pack_rejects_credentials_unsafe_domains_and_side_effect_paths(self) -> None:
