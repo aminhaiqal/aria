@@ -165,12 +165,15 @@ dashboard's six headline numbers show 24-hour source success, lowest evidence co
 and workflow latency, oldest active work, and the human-review backlog. The remaining panels show
 throughput, evidence-stage coverage, workflow states, source health, and operational exceptions.
 
-For the production HTTPS route, provision the repository's Caddy configuration and a proxied
-Cloudflare DNS record for `metrics.aria.axelyn.com`. Production pins Grafana's canonical root URL
-to that hostname, keeps its host-published port on loopback, and permits the Caddy edge network to
-reach only the Grafana container alias. Prometheus never joins the edge network or receives a
-public route. Grafana authentication remains mandatory; Cloudflare Access is the recommended
-additional perimeter when its identity policy has been configured.
+For the production HTTPS route, provision the repository's Caddy configuration and a Cloudflare
+DNS-only `A` record for `metrics.aria.axelyn.com`. The nested hostname is not covered by the
+standard `*.axelyn.com` Universal SSL certificate, so proxying it requires an additional edge
+certificate that explicitly includes the hostname. Caddy obtains and renews the public certificate
+in the DNS-only arrangement. Production pins Grafana's canonical root URL to that hostname, keeps
+its host-published port on loopback, and permits the Caddy edge network to reach only the Grafana
+container alias. Prometheus never joins the edge network or receives a public route. Grafana
+authentication remains mandatory. Cloudflare proxying and Access can be added after an edge
+certificate and identity policy have been configured for the nested hostname.
 
 Every HTTP response also carries a bounded `X-Request-ID`. A safe incoming ID is preserved for
 cross-service tracing; malformed or log-injection-shaped values are replaced with a UUID. The same
