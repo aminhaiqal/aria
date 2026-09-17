@@ -1,4 +1,7 @@
+import re
 from dataclasses import dataclass
+from pathlib import PurePosixPath
+from urllib.parse import unquote, urlsplit
 
 from django.conf import settings
 from django.db import transaction
@@ -50,6 +53,10 @@ def section_embedding_input(
     if include_document_title:
         version = section.document_version
         title = (version.title or version.identity.canonical_title).strip()
+        if not title or title.startswith(("http://", "https://")):
+            source_url = version.canonical_url or version.identity.canonical_url or title
+            filename = unquote(PurePosixPath(urlsplit(source_url).path).name).strip()
+            title = re.sub(r"[-_]+", " ", filename).strip()
         if title:
             parts.append(f"Document title: {title}")
     if section.heading:

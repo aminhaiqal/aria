@@ -2,6 +2,7 @@ import hashlib
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -22,7 +23,7 @@ from aria.extraction.models import ExtractedDocument, ExtractionRun
 from aria.extraction.services import extract_artifact
 from aria.fetching.client import FetchResponse
 from aria.fetching.services import begin_fetch_attempt, complete_fetch
-from aria.knowledge.embedding_services import project_section_embeddings
+from aria.knowledge.embedding_services import project_section_embeddings, section_embedding_input
 from aria.knowledge.embeddings import EmbeddingBatch, embed_text
 from aria.knowledge.evaluation import RetrievalCase, evaluate_embedding_provider
 from aria.knowledge.models import GraphEdge, GraphNode, SectionEmbedding
@@ -32,7 +33,7 @@ from aria.sources.models import SourceEndpoint
 
 class FakeSemanticEmbeddingProvider:
     provider_name = "openrouter"
-    model = "openai/text-embedding-3-small@aria-document-section-v2"
+    model = "openai/text-embedding-3-small@aria-document-section-v3"
     dimensions = 384
 
     def __init__(self) -> None:
@@ -51,6 +52,31 @@ class FakeSemanticEmbeddingProvider:
 
 
 class ExtractorTestCase(SimpleTestCase):
+    def test_embedding_input_derives_missing_title_from_canonical_url(self) -> None:
+        identity = SimpleNamespace(
+            canonical_title="",
+            canonical_url="https://authority.example/publications/ignored/",
+        )
+        version = SimpleNamespace(
+            title="",
+            canonical_url=(
+                "https://authority.example/publications/"
+                "appointment-of-data-protection-officer/"
+            ),
+            identity=identity,
+        )
+        section = SimpleNamespace(
+            document_version=version,
+            heading="Application",
+            text="Official section text.",
+        )
+
+        self.assertEqual(
+            section_embedding_input(section, include_document_title=True),
+            "Document title: appointment of data protection officer\n"
+            "Section heading: Application\nOfficial section text.",
+        )
+
     def test_betterdocs_html_is_split_into_traceable_blocks(self) -> None:
         document = HTMLExtractor().extract(
             b"""

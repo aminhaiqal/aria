@@ -10,7 +10,7 @@ from django.core.exceptions import ImproperlyConfigured
 from aria.openrouter import OpenRouterClient, OpenRouterError, RetryableOpenRouterError
 
 VECTOR_DIMENSIONS = 384
-OPENROUTER_EMBEDDING_INPUT_VERSION = "aria-document-section-v2"
+OPENROUTER_EMBEDDING_INPUT_VERSION = "aria-document-section-v3"
 TOKEN_PATTERN = re.compile(r"\w+", flags=re.UNICODE)
 SUPPORTED_PROVIDERS = frozenset({"local_hash", "openrouter"})
 

@@ -86,7 +86,8 @@ Permanent authentication or request errors fail without retrying forever.
 Projection identity is the normalized section, provider, model, and source-text SHA-256. A replay
 does not call OpenRouter for completed projections. New document versions or changed section hashes
 produce new vectors without mutating earlier records. The stored model identity includes
-`@aria-document-section-v2` so title-aware projections coexist with earlier section-only vectors.
+`@aria-document-section-v3` so canonical-URL-derived titles are included when an official
+source omits document title metadata, while the projection coexists with earlier vectors.
 
 Compare providers using the versioned eight-query JPDP benchmark:
 

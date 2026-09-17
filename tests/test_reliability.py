@@ -206,7 +206,7 @@ class ReliabilityFixture(TestCase):
                 ("local_hash", "aria-token-hash-v1"),
                 (
                     "openrouter",
-                    "text-embedding-3-small@aria-document-section-v2",
+                    "text-embedding-3-small@aria-document-section-v3",
                 ),
             ):
                 SectionEmbedding.objects.create(
