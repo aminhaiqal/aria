@@ -40,6 +40,18 @@ PRODUCTION_ENVIRONMENT = {
     "ARIA_OBJECT_STORAGE_BACKEND": "s3",
     "ARIA_BACKUP_UPLOAD_TO_R2": "true",
 }
+GRAFANA_SECURITY_ENVIRONMENT = {
+    "GF_AUTH_ANONYMOUS_ENABLED": "false",
+    "GF_USERS_ALLOW_SIGN_UP": "false",
+    "GF_USERS_ALLOW_ORG_CREATE": "false",
+    "GF_SECURITY_DISABLE_GRAVATAR": "true",
+    "GF_ANALYTICS_REPORTING_ENABLED": "false",
+    "GF_ANALYTICS_CHECK_FOR_UPDATES": "false",
+    "GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES": "false",
+    "GF_PLUGINS_PLUGIN_ADMIN_ENABLED": "false",
+    "GF_PLUGINS_PREINSTALL_DISABLED": "true",
+    "GF_PLUGINS_PREINSTALL_AUTO_UPDATE": "false",
+}
 
 
 class SupplyChainError(RuntimeError):
@@ -208,7 +220,7 @@ def validate_runtime_config(config: dict[str, Any]) -> None:
         if not artifact_mount or artifact_mount.get("read_only") is True:
             raise SupplyChainError(f"{service_name} requires the evidence artifact write boundary")
 
-    for service_name in ("frontend-assets", "redis", "redis-init", "prometheus"):
+    for service_name in ("frontend-assets", "grafana", "redis", "redis-init", "prometheus"):
         service = services.get(service_name, {})
         if service.get("read_only") is not True:
             raise SupplyChainError(f"{service_name} must use a read-only root filesystem")
@@ -253,8 +265,19 @@ def validate_runtime_config(config: dict[str, Any]) -> None:
         raise SupplyChainError(
             "prometheus must share only the private backend network with the API"
         )
+    if services["grafana"].get("user") != "472":
+        raise SupplyChainError("Grafana must run as its unprivileged image user")
+    grafana_environment = services["grafana"].get("environment", {})
+    for name, expected in GRAFANA_SECURITY_ENVIRONMENT.items():
+        if grafana_environment.get(name) != expected:
+            raise SupplyChainError(
+                f"Grafana does not enforce security setting {name}={expected}"
+            )
+    if set(services["grafana"].get("networks", {})) != {"backend"}:
+        raise SupplyChainError("Grafana must use only the private observability network")
 
     _validate_local_port("api", services["api"])
+    _validate_local_port("grafana", services["grafana"])
     _validate_local_port("prometheus", services["prometheus"])
 
 

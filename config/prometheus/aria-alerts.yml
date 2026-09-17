@@ -29,3 +29,19 @@ groups:
           severity: warning
         annotations:
           summary: ARIA has an unhealthy official source endpoint
+      - alert: AriaSourceRunSuccessRateLow
+        expr: >-
+          (aria_source_run_success_ratio{window="24h"} < 0.95)
+          and on() (sum(aria_source_runs_window{window="24h",status=~"completed|failed"}) > 0)
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: ARIA source-run success fell below 95 percent over 24 hours
+      - alert: AriaPipelineWorkStalled
+        expr: aria_pipeline_oldest_active_age_seconds > 1800
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: ARIA has active pipeline work older than 30 minutes

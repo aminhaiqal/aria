@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 from django.test import SimpleTestCase
 
 from scripts.verify_supply_chain import (
+    GRAFANA_SECURITY_ENVIRONMENT,
     PRODUCTION_ENVIRONMENT,
     SupplyChainError,
     validate_dockerfile,
@@ -62,7 +63,7 @@ def runtime_config() -> dict:
             },
         }
     )
-    for name in ("frontend-assets", "redis", "redis-init", "prometheus"):
+    for name in ("frontend-assets", "grafana", "redis", "redis-init", "prometheus"):
         services[name] = {
             "read_only": True,
             "cap_drop": ["ALL"],
@@ -73,6 +74,14 @@ def runtime_config() -> dict:
         }
     services["prometheus"]["ports"] = [{"host_ip": "127.0.0.1"}]
     services["prometheus"]["networks"] = {"backend": {}}
+    services["grafana"].update(
+        {
+            "user": "472",
+            "environment": GRAFANA_SECURITY_ENVIRONMENT.copy(),
+            "ports": [{"host_ip": "127.0.0.1"}],
+            "networks": {"backend": {}},
+        }
+    )
     services["redis-init"].update(
         {
             "user": "root",
@@ -158,6 +167,27 @@ class ProductionIsolationTests(SimpleTestCase):
         config["services"]["prometheus"]["networks"] = {"default": {}}
 
         with self.assertRaisesMessage(SupplyChainError, "private backend network"):
+            validate_runtime_config(config)
+
+    def test_grafana_requires_loopback_and_private_network(self) -> None:
+        config = deepcopy(runtime_config())
+        config["services"]["grafana"]["ports"][0]["host_ip"] = "0.0.0.0"
+
+        with self.assertRaisesMessage(SupplyChainError, "127.0.0.1"):
+            validate_runtime_config(config)
+
+        config = deepcopy(runtime_config())
+        config["services"]["grafana"]["networks"] = {"default": {}}
+        with self.assertRaisesMessage(SupplyChainError, "private observability network"):
+            validate_runtime_config(config)
+
+    def test_grafana_disables_network_plugin_updates(self) -> None:
+        config = deepcopy(runtime_config())
+        config["services"]["grafana"]["environment"][
+            "GF_PLUGINS_PREINSTALL_AUTO_UPDATE"
+        ] = "true"
+
+        with self.assertRaisesMessage(SupplyChainError, "PREINSTALL_AUTO_UPDATE=false"):
             validate_runtime_config(config)
 
     def test_redis_initializer_requires_minimal_volume_capabilities(self) -> None:

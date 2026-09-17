@@ -80,6 +80,16 @@ class OperationalMetricsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response["Content-Type"].startswith("text/plain"))
         self.assertIn('aria_source_runs{status="failed"} 1', payload)
+        self.assertIn('aria_source_runs_window{window="24h",status="failed"} 1', payload)
+        self.assertIn('aria_source_run_success_ratio{window="24h"} 0', payload)
+        self.assertIn("aria_source_run_duration_quantile_seconds", payload)
+        self.assertIn("aria_orchestration_duration_quantile_seconds", payload)
+        self.assertIn("aria_pipeline_oldest_active_age_seconds 0.000", payload)
+        self.assertIn(
+            'aria_artifact_observations_window{window="24h",content_changed="false"} 0',
+            payload,
+        )
+        self.assertIn('aria_evidence_coverage_ratio{stage="artifact"} NaN', payload)
         self.assertIn('aria_outbox_events{status="failed"} 0', payload)
         self.assertIn("aria_scheduler_worker_heartbeat_age_seconds +Inf", payload)
         self.assertNotIn("Secret metrics source title", payload)

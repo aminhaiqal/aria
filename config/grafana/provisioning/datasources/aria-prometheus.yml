@@ -1,0 +1,17 @@
+apiVersion: 1
+
+deleteDatasources:
+  - name: ARIA Prometheus
+    orgId: 1
+
+datasources:
+  - name: ARIA Prometheus
+    uid: aria-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: 30s

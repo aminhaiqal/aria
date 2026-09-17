@@ -127,25 +127,42 @@ behind the public reader hostname.
 
 The metrics deliberately use only bounded state labels. They report enabled endpoint health,
 source-run and change-workflow states, outbox delivery states, review backlogs, the append-only
-source-structure incident count, and a scheduler-worker heartbeat. Official URLs, document titles,
-artifact hashes, user IDs, profile names, and evidence text never become metric labels.
+source-structure incident count, and a scheduler-worker heartbeat. Rolling 24-hour metrics add
+source success, changed-versus-unchanged artifact throughput, p50/p95 source-run and workflow
+latency, oldest active-work age, and aggregate artifact, extraction, graph, and embedding coverage.
+Official URLs, document titles, artifact hashes, user IDs, profile names, and evidence text never
+become metric labels.
 
 The minute-level heartbeat is published by Beat to the normal discovery queue and written to the
 shared cache when a core worker executes it. Its age therefore proves the scheduler, broker, and a
 core worker can complete a small task together. `+Inf` is expected when only the lightweight reader
 is running; it becomes an alert only when scheduled workers are supposed to be active.
 
-Set `ARIA_METRICS_TOKEN` in `.env`, then run:
+Set `ARIA_METRICS_TOKEN`, `ARIA_GRAFANA_ADMIN_USER`, and a distinct
+`ARIA_GRAFANA_ADMIN_PASSWORD` in `.env`, then run:
 
 ```text
 make observability-check
 make start-observability
 ```
 
-The opt-in Compose profile runs a self-hosted Prometheus instance on `127.0.0.1:9090` by default,
-keeps its token in a mode-077 temporary file, persists its time series in a named volume, and ships
-alerts for scrape failure, stale scheduler-worker heartbeat, failed outbox delivery, and unhealthy
-official endpoints. It is excluded from `make start`, so local reader resource use does not grow.
+The opt-in Compose profile runs self-hosted Prometheus on `127.0.0.1:9090` and Grafana on
+`127.0.0.1:3002` by default. Prometheus keeps its token in a mode-077 temporary file and persists
+time series in a named volume. Grafana has anonymous access and sign-up disabled, persists only its
+local state, and provisions the read-only `ARIA Pipeline Performance` dashboard and private
+Prometheus data source directly from the repository. Both services remain outside the public edge
+network and are excluded from `make start`.
+
+Reach the VPS dashboard through an SSH tunnel rather than exposing another public hostname:
+
+```text
+ssh -L 3002:127.0.0.1:3002 memora_vps
+```
+
+Then open `http://localhost:3002` and sign in with the configured Grafana credentials. The
+dashboard's six headline numbers show 24-hour source success, lowest evidence coverage, p95 source
+and workflow latency, oldest active work, and the human-review backlog. The remaining panels show
+throughput, evidence-stage coverage, workflow states, source health, and operational exceptions.
 
 Every HTTP response also carries a bounded `X-Request-ID`. A safe incoming ID is preserved for
 cross-service tracing; malformed or log-injection-shaped values are replaced with a UUID. The same

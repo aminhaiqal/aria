@@ -11,7 +11,7 @@ help:
 		'make start-ocr      Start OCR processing' \
 		'make start-browser  Start bounded Chromium processing' \
 		'make start-all      Start the complete stack' \
-		'make start-observability  Start private Prometheus metrics' \
+		'make start-observability  Start private Prometheus and Grafana' \
 		'make backup         Create an encrypted local backup (optionally upload to R2)' \
 		'make supply-chain-check  Verify immutable dependencies and production isolation' \
 		'make security-scan  Scan source and dependency locks for high-risk findings' \
@@ -49,7 +49,8 @@ start-all: ensure-env
 
 start-observability: ensure-env
 	@test -n "$(ARIA_METRICS_TOKEN)" || rg -q '^ARIA_METRICS_TOKEN=.+$$' .env || (echo "Set ARIA_METRICS_TOKEN in the environment or .env" && exit 1)
-	docker compose --profile observability up -d --wait --wait-timeout 180 prometheus
+	@test -n "$(ARIA_GRAFANA_ADMIN_PASSWORD)" || rg -q '^ARIA_GRAFANA_ADMIN_PASSWORD=.+$$' .env || (echo "Set ARIA_GRAFANA_ADMIN_PASSWORD in the environment or .env" && exit 1)
+	docker compose --profile observability up -d --wait --wait-timeout 180 prometheus grafana
 
 stop:
 	docker compose down
@@ -262,6 +263,8 @@ restore-drill: ensure-env
 
 observability-check:
 	docker run --rm --entrypoint /bin/sh -v "$(CURDIR)/config/prometheus:/etc/prometheus:ro" prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996 -c 'printf test > /tmp/aria-metrics-token && exec /bin/promtool check config /etc/prometheus/prometheus.yml'
+	python3 -m json.tool config/grafana/dashboards/aria-pipeline-performance.json >/dev/null
+	docker compose --profile observability config --quiet
 
 supply-chain-check:
 	python3 scripts/verify_supply_chain.py
