@@ -29,7 +29,7 @@ from aria.reader.evaluation import (
     _normalized_url_text,
     evaluate_reader_retrieval,
 )
-from aria.reader.services import search_reader_documents
+from aria.reader.services import _title_overlap_score, search_reader_documents
 from aria.reliability.models import SourceReliabilityAssessment
 from aria.reliability.soak import collect_autonomous_cycle_acceptance
 from aria.sources.models import SourceEndpoint, SourcePackSnapshot
@@ -324,6 +324,20 @@ class ReaderInterfaceTestCase(TestCase):
         observed = _normalized_url_text("Act%20882%20-%20GOVERNMENT%20PROCUREMENT%20ACT%202026.pdf")
 
         self.assertIn(expected, observed)
+
+    def test_title_overlap_favors_the_named_official_publication(self) -> None:
+        query = "When is an organization required to appoint a data protection officer?"
+
+        expected = _title_overlap_score(
+            query,
+            "appointment-of-data-protection-officer",
+        )
+        adjacent = _title_overlap_score(
+            query,
+            "data-protection-impact-assessment-guideline",
+        )
+
+        self.assertGreater(expected, adjacent)
 
     def test_vector_only_failure_returns_service_unavailable(self) -> None:
         self.client.force_login(self.reader)

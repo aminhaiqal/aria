@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections import OrderedDict
 from datetime import date
 from pathlib import PurePosixPath
@@ -32,6 +33,29 @@ from aria.knowledge.embeddings import (
 from aria.quality.models import DocumentQualityAssessment
 
 SEARCH_MODES = frozenset({"hybrid", "full_text", "vector"})
+TITLE_MATCH_WEIGHT = 0.025
+TITLE_QUERY_STOP_WORDS = frozenset(
+    {
+        "and",
+        "are",
+        "does",
+        "for",
+        "from",
+        "how",
+        "into",
+        "that",
+        "the",
+        "this",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "why",
+        "with",
+    }
+)
+WORD_PATTERN = re.compile(r"[^\W_]+", flags=re.UNICODE)
 
 
 class ReaderQueryError(ValueError):
@@ -49,6 +73,18 @@ def _document_title(version: DocumentVersion, identity: DocumentIdentity) -> str
         filename = unquote(PurePosixPath(urlsplit(source_url).path).name).strip()
         return filename or source_url
     return title
+
+
+def _title_overlap_score(query_text: str, title: str) -> float:
+    query_tokens = {
+        token
+        for token in WORD_PATTERN.findall(query_text.casefold())
+        if len(token) > 2 and token not in TITLE_QUERY_STOP_WORDS
+    }
+    if not query_tokens:
+        return 0.0
+    title_tokens = set(WORD_PATTERN.findall(title.casefold()))
+    return len(query_tokens & title_tokens) / len(query_tokens)
 
 
 def _bounded_excerpt(text: str, query_text: str, *, maximum: int = 620) -> tuple[str, bool]:
@@ -319,9 +355,13 @@ def search_reader_documents(
             .order_by("-text_rank", "id")[:candidate_limit]
         )
         for rank, section in enumerate(text_results, start=1):
+            title_overlap_score = _title_overlap_score(
+                query_text,
+                _document_title(section.document_version, section.document_version.identity),
+            )
             scores[section.id] = {
                 "section": section,
-                "score": 1 / (60 + rank),
+                "score": (1 / (60 + rank)) + (TITLE_MATCH_WEIGHT * title_overlap_score),
                 "text_rank": float(section.text_rank),
                 "vector_distance": None,
             }
