@@ -7,9 +7,11 @@ from typing import Protocol
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
+from aria.openrouter import OpenRouterClient, OpenRouterError, RetryableOpenRouterError
+
 VECTOR_DIMENSIONS = 384
 TOKEN_PATTERN = re.compile(r"\w+", flags=re.UNICODE)
-SUPPORTED_PROVIDERS = frozenset({"local_hash", "openai"})
+SUPPORTED_PROVIDERS = frozenset({"local_hash", "openrouter"})
 
 
 class EmbeddingError(RuntimeError):
@@ -38,7 +40,7 @@ def embedding_configuration(provider_name: str | None = None) -> tuple[str, str,
     provider = provider_name or settings.EMBEDDING_PROVIDER
     if provider not in SUPPORTED_PROVIDERS:
         raise ImproperlyConfigured(
-            f"Unsupported embedding provider '{provider}'. Expected local_hash or openai."
+            f"Unsupported embedding provider '{provider}'. Expected local_hash or openrouter."
         )
     dimensions = settings.EMBEDDING_DIMENSIONS
     if dimensions != VECTOR_DIMENSIONS:
@@ -48,7 +50,7 @@ def embedding_configuration(provider_name: str | None = None) -> tuple[str, str,
     model = (
         settings.LOCAL_EMBEDDING_MODEL
         if provider == "local_hash"
-        else settings.OPENAI_EMBEDDING_MODEL
+        else settings.OPENROUTER_EMBEDDING_MODEL
     )
     return provider, model, dimensions
 
@@ -109,69 +111,40 @@ class LocalHashEmbeddingProvider:
         )
 
 
-class OpenAIEmbeddingProvider:
-    provider_name = "openai"
+class OpenRouterEmbeddingProvider:
+    provider_name = "openrouter"
 
     def __init__(self, *, client=None) -> None:
         _, self.model, self.dimensions = embedding_configuration(self.provider_name)
         if client is not None:
             self.client = client
             return
-        if not settings.OPENAI_API_KEY:
-            raise EmbeddingError("OPENAI_API_KEY is required for OpenAI embeddings.")
-        from openai import OpenAI
-
-        client_options = {
-            "api_key": settings.OPENAI_API_KEY,
-            "timeout": settings.OPENAI_TIMEOUT_SECONDS,
-            "max_retries": settings.OPENAI_MAX_RETRIES,
-        }
-        if settings.OPENAI_BASE_URL:
-            client_options["base_url"] = settings.OPENAI_BASE_URL
-        self.client = OpenAI(**client_options)
+        try:
+            self.client = OpenRouterClient()
+        except OpenRouterError as error:
+            raise EmbeddingError(str(error)) from error
 
     def embed_texts(self, texts: list[str]) -> EmbeddingBatch:
         if not texts:
             return EmbeddingBatch(vectors=())
         try:
-            response = self.client.embeddings.create(
+            response = self.client.create_embeddings(
                 model=self.model,
-                input=[text if text.strip() else " " for text in texts],
+                inputs=[text if text.strip() else " " for text in texts],
                 dimensions=self.dimensions,
-                encoding_format="float",
             )
-        except Exception as error:
-            try:
-                from openai import (
-                    APIConnectionError,
-                    APITimeoutError,
-                    InternalServerError,
-                    OpenAIError,
-                    RateLimitError,
-                )
-            except ImportError:
-                raise EmbeddingError("The OpenAI Python package is unavailable.") from error
-            if isinstance(
-                error,
-                (APIConnectionError, APITimeoutError, InternalServerError, RateLimitError),
-            ):
-                raise RetryableEmbeddingError(str(error)) from error
-            if isinstance(error, OpenAIError):
-                raise EmbeddingError(str(error)) from error
-            raise
-
-        ordered = sorted(response.data, key=lambda item: item.index)
-        if [item.index for item in ordered] != list(range(len(texts))):
-            raise EmbeddingError("Embedding provider returned invalid response indexes.")
+        except RetryableOpenRouterError as error:
+            raise RetryableEmbeddingError(str(error)) from error
+        except OpenRouterError as error:
+            raise EmbeddingError(str(error)) from error
         vectors = _validate_vectors(
-            [item.embedding for item in ordered],
+            response.vectors,
             expected_count=len(texts),
             dimensions=self.dimensions,
         )
-        usage = getattr(response, "usage", None)
         return EmbeddingBatch(
             vectors=vectors,
-            prompt_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
+            prompt_tokens=response.prompt_tokens,
         )
 
 
@@ -183,7 +156,7 @@ def get_embedding_provider(
     provider, _, _ = embedding_configuration(provider_name)
     if provider == "local_hash":
         return LocalHashEmbeddingProvider()
-    return OpenAIEmbeddingProvider(client=client)
+    return OpenRouterEmbeddingProvider(client=client)
 
 
 def embed_text(text: str, *, provider_name: str | None = None) -> list[float]:

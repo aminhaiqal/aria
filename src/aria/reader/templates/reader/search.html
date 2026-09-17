@@ -39,7 +39,7 @@
     {% if result.embedding %}
     <div class="provider-note {% if result.embedding.query_sent_to_provider %}is-hosted{% endif %}">
       <strong>{{ result.embedding.provider }}</strong>
-      {% if result.embedding.query_sent_to_provider %}<span>The query text was sent to OpenAI for its vector.</span>{% else %}<span>The query vector was created locally.</span>{% endif %}
+      {% if result.embedding.query_sent_to_provider %}<span>The query text was sent through OpenRouter for its vector.</span>{% else %}<span>The query vector was created locally.</span>{% endif %}
     </div>
     {% endif %}
   </header>

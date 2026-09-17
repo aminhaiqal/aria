@@ -475,7 +475,7 @@ class ConsoleAdmissionWorkbenchTestCase(TestCase):
         self.assertFalse(self.endpoint.is_enabled)
 
 
-@override_settings(ORCHESTRATION_AUTO_GPT_SUMMARIES=False, OPENAI_API_KEY="test-key")
+@override_settings(ORCHESTRATION_AUTO_GPT_SUMMARIES=False, OPENROUTER_API_KEY="test-key")
 class ConsoleComparisonTestCase(Phase3CFixture):
     def setUp(self) -> None:
         super().setUp()

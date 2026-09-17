@@ -7,7 +7,7 @@ from typing import Literal
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from aria.comparisons.models import ComparisonItem, ComparisonReview, DocumentComparison
 from aria.events.services import record_audit_event
@@ -18,6 +18,7 @@ from aria.impacts.models import (
     RegulatoryImpact,
 )
 from aria.impacts.services import add_impact_target, create_regulatory_impact
+from aria.openrouter import OpenRouterClient, OpenRouterError, RetryableOpenRouterError
 
 IMPACT_PROMPT_VERSION = "aria-impact-candidate-v1"
 DETERMINISTIC_MODEL = "aria-impact-rules-v1"
@@ -55,6 +56,8 @@ DispositionValue = Literal["included", "excluded"]
 
 
 class StructuredImpactTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     dimension: DimensionValue
     code: str = Field(min_length=1, max_length=128)
     disposition: DispositionValue
@@ -62,6 +65,8 @@ class StructuredImpactTarget(BaseModel):
 
 
 class StructuredImpactCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     impact_type: ImpactTypeValue
     title: str = Field(min_length=1, max_length=300)
     statement: str = Field(min_length=1, max_length=2000)
@@ -72,6 +77,8 @@ class StructuredImpactCandidate(BaseModel):
 
 
 class StructuredImpactCandidates(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     comparison_item_id: str
     confirmation_review_id: str
     legal_effect_not_assessed: bool
@@ -101,7 +108,7 @@ def _bounded_anchor(item: ComparisonItem, side: str) -> dict | None:
     anchor = item.before_anchor if side == "before" else item.after_anchor
     if anchor is None:
         return None
-    maximum = settings.OPENAI_IMPACT_MAX_CHARS_PER_ANCHOR
+    maximum = settings.OPENROUTER_IMPACT_MAX_CHARS_PER_ANCHOR
     return {
         "anchor_id": str(anchor.id),
         "canonical_key": anchor.canonical_key,
@@ -337,60 +344,28 @@ def _deterministic_output(
     )
 
 
-def _openai_client():
-    if not settings.OPENAI_API_KEY:
-        raise ImpactGenerationError("OPENAI_API_KEY is required for GPT impact candidates.")
-    from openai import OpenAI
-
-    options = {
-        "api_key": settings.OPENAI_API_KEY,
-        "timeout": settings.OPENAI_TIMEOUT_SECONDS,
-        "max_retries": settings.OPENAI_MAX_RETRIES,
-    }
-    if settings.OPENAI_BASE_URL:
-        options["base_url"] = settings.OPENAI_BASE_URL
-    return OpenAI(**options)
-
-
-def _request_openai(payload: dict, *, client=None):
-    selected_client = client or _openai_client()
+def _request_openrouter(payload: dict, *, client=None):
     try:
-        response = selected_client.responses.parse(
-            model=settings.OPENAI_IMPACT_MODEL,
-            reasoning={"effort": settings.OPENAI_IMPACT_REASONING_EFFORT},
-            input=[
-                {"role": "system", "content": IMPACT_SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": json.dumps(payload, ensure_ascii=False, sort_keys=True),
-                },
-            ],
-            text_format=StructuredImpactCandidates,
-            max_output_tokens=settings.OPENAI_IMPACT_MAX_OUTPUT_TOKENS,
-            store=False,
+        selected_client = client or OpenRouterClient()
+    except OpenRouterError as error:
+        raise ImpactGenerationError(str(error)) from error
+    try:
+        result = selected_client.generate_structured(
+            model=settings.OPENROUTER_IMPACT_MODEL,
+            system_prompt=IMPACT_SYSTEM_PROMPT,
+            input_payload=payload,
+            output_model=StructuredImpactCandidates,
+            schema_name="aria_impact_candidates",
+            reasoning_effort=settings.OPENROUTER_IMPACT_REASONING_EFFORT,
+            max_output_tokens=settings.OPENROUTER_IMPACT_MAX_OUTPUT_TOKENS,
         )
-    except Exception as error:
-        try:
-            from openai import (
-                APIConnectionError,
-                APITimeoutError,
-                InternalServerError,
-                OpenAIError,
-                RateLimitError,
-            )
-        except ImportError:
-            raise ImpactGenerationError("The OpenAI Python package is unavailable.") from error
-        if isinstance(
-            error,
-            (APIConnectionError, APITimeoutError, InternalServerError, RateLimitError),
-        ):
-            raise RetryableImpactGenerationError(str(error)) from error
-        if isinstance(error, OpenAIError):
-            raise ImpactGenerationError(str(error)) from error
-        raise
-    if response.output_parsed is None:
-        raise ImpactGenerationError("OpenAI returned no parsed structured impact candidates.")
-    return response, response.output_parsed
+    except RetryableOpenRouterError as error:
+        raise RetryableImpactGenerationError(str(error)) from error
+    except OpenRouterError as error:
+        raise ImpactGenerationError(str(error)) from error
+    if not isinstance(result.output, StructuredImpactCandidates):
+        raise ImpactGenerationError("OpenRouter returned invalid structured impact candidates.")
+    return result, result.output
 
 
 def _materialize_candidates(
@@ -405,7 +380,7 @@ def _materialize_candidates(
                 impact_type=candidate.impact_type,
                 origin=(
                     RegulatoryImpact.Origin.GPT
-                    if generation.provider == "openai"
+                    if generation.provider == "openrouter"
                     else RegulatoryImpact.Origin.DETERMINISTIC
                 ),
                 title=candidate.title,
@@ -425,7 +400,7 @@ def _materialize_candidates(
                     disposition=target.disposition,
                     origin=(
                         ImpactTarget.Origin.GPT
-                        if generation.provider == "openai"
+                        if generation.provider == "openrouter"
                         else ImpactTarget.Origin.DETERMINISTIC
                     ),
                     rationale=target.rationale,
@@ -443,11 +418,15 @@ def generate_impact_candidates(
     provider: str = "deterministic",
     client=None,
 ) -> ImpactGenerationResult:
-    if provider not in {"deterministic", "openai"}:
-        raise ImpactGenerationError("Provider must be deterministic or openai.")
+    if provider not in {"deterministic", "openrouter"}:
+        raise ImpactGenerationError("Provider must be deterministic or openrouter.")
     payload, confirmation = build_impact_input(item, taxonomy)
     input_hash = _input_hash(payload)
-    model = DETERMINISTIC_MODEL if provider == "deterministic" else settings.OPENAI_IMPACT_MODEL
+    model = (
+        DETERMINISTIC_MODEL
+        if provider == "deterministic"
+        else settings.OPENROUTER_IMPACT_MODEL
+    )
     generation, created = ImpactGeneration.objects.get_or_create(
         provider=provider,
         model=model,
@@ -488,7 +467,7 @@ def generate_impact_candidates(
             response = None
             output = _deterministic_output(payload, taxonomy)
         else:
-            response, output = _request_openai(payload, client=client)
+            response, output = _request_openrouter(payload, client=client)
         _validate_output(output, payload, taxonomy)
         impacts = _materialize_candidates(generation, output)
     except Exception as error:
@@ -507,12 +486,11 @@ def generate_impact_candidates(
         )
         raise
 
-    usage = getattr(response, "usage", None) if response is not None else None
     generation.status = ImpactGeneration.Status.COMPLETED
     generation.output = output.model_dump(mode="json")
-    generation.response_id = str(getattr(response, "id", "") or "")
-    generation.input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
-    generation.output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
+    generation.response_id = response.response_id if response is not None else ""
+    generation.input_tokens = response.input_tokens if response is not None else 0
+    generation.output_tokens = response.output_tokens if response is not None else 0
     generation.finished_at = timezone.now()
     generation.save(
         update_fields=(

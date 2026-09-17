@@ -2,7 +2,7 @@
 ARIA_SBOM_VERSION ?= $(shell git rev-parse --verify HEAD)
 VPS_COMPOSE = docker compose -f compose.yaml -f compose.production.yaml -f compose.vps.yaml
 
-.PHONY: help ensure-env start start-workers start-ocr start-browser start-all start-observability stop stop-heavy status health logs-core bootstrap build up down logs migrate makemigrations test lint check frontend-build frontend-test frontend-format reader-e2e shell superuser list-source-packs plan-source-pack apply-source-pack plan-impact-taxonomy apply-impact-taxonomy extract-impacts publish-impact pilot-source audit-static promote-static source-confidence source-soak poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings evaluate-reader quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage backup backup-verify restore-drill observability-check supply-chain-check security-scan sbom production-readiness release-check vps-start vps-status vps-readiness vps-stop
+.PHONY: help ensure-env start start-workers start-ocr start-browser start-all start-observability stop stop-heavy status health logs-core bootstrap build up down logs migrate makemigrations test lint check frontend-build frontend-test frontend-format reader-e2e shell superuser list-source-packs plan-source-pack apply-source-pack plan-impact-taxonomy apply-impact-taxonomy extract-impacts publish-impact pilot-source audit-static promote-static source-confidence source-soak poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openrouter verify-openrouter evaluate-embeddings evaluate-reader quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage backup backup-verify restore-drill observability-check supply-chain-check security-scan sbom production-readiness release-check vps-start vps-status vps-readiness vps-stop
 
 help:
 	@printf '%s\n' \
@@ -205,8 +205,11 @@ plan-ocr:
 ocr:
 	docker compose exec ocr-worker python manage.py queue_ocr --sync
 
-embed-openai:
-	docker compose exec api python manage.py embed_sections --provider openai --sync
+embed-openrouter:
+	docker compose exec api python manage.py embed_sections --provider openrouter --sync
+
+verify-openrouter:
+	docker compose exec api python manage.py verify_openrouter
 
 evaluate-embeddings:
 	docker compose exec api python manage.py evaluate_embeddings

@@ -4,7 +4,7 @@ from typing import Literal
 
 from django.conf import settings
 from django.utils import timezone
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from aria.comparisons.contracts import SUMMARY_PROMPT_VERSION
 from aria.comparisons.models import (
@@ -14,6 +14,7 @@ from aria.comparisons.models import (
     DocumentComparison,
 )
 from aria.events.services import record_audit_event
+from aria.openrouter import OpenRouterClient, OpenRouterError, RetryableOpenRouterError
 
 SUMMARY_SYSTEM_PROMPT = """You summarize deterministic textual comparisons of official
 regulatory publications. Use only the supplied before/after text. Do not infer legal effect,
@@ -32,12 +33,16 @@ SummaryChangeType = Literal[
 
 
 class SummaryChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     comparison_item_id: str
     change_type: SummaryChangeType
     explanation: str = Field(min_length=1, max_length=1200)
 
 
 class StructuredComparisonSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str = Field(min_length=1, max_length=300)
     overview: str = Field(min_length=1, max_length=2400)
     changes: list[SummaryChange]
@@ -75,7 +80,7 @@ def _bounded_anchor_text(item: ComparisonItem, side: str) -> dict | None:
     anchor = item.before_anchor if side == "before" else item.after_anchor
     if anchor is None:
         return None
-    maximum = settings.OPENAI_SUMMARY_MAX_CHARS_PER_ANCHOR
+    maximum = settings.OPENROUTER_SUMMARY_MAX_CHARS_PER_ANCHOR
     text = anchor.text
     return {
         "canonical_key": anchor.canonical_key,
@@ -90,10 +95,10 @@ def build_summary_input(comparison: DocumentComparison) -> dict:
     items = _latest_confirmed_items(comparison)
     if not items:
         raise SummaryEligibilityError("At least one currently confirmed change is required.")
-    if len(items) > settings.OPENAI_SUMMARY_MAX_ITEMS:
+    if len(items) > settings.OPENROUTER_SUMMARY_MAX_ITEMS:
         raise SummaryEligibilityError(
             f"Comparison has {len(items)} confirmed items; the configured maximum is "
-            f"{settings.OPENAI_SUMMARY_MAX_ITEMS}."
+            f"{settings.OPENROUTER_SUMMARY_MAX_ITEMS}."
         )
     return {
         "document_title": comparison.identity.canonical_title,
@@ -127,62 +132,30 @@ def _validate_summary_output(output: StructuredComparisonSummary, payload: dict)
         raise SummaryError("Structured summary changed a deterministic change classification.")
 
 
-def _openai_client():
-    if not settings.OPENAI_API_KEY:
-        raise SummaryError("OPENAI_API_KEY is required for GPT summaries.")
-    from openai import OpenAI
-
-    options = {
-        "api_key": settings.OPENAI_API_KEY,
-        "timeout": settings.OPENAI_TIMEOUT_SECONDS,
-        "max_retries": settings.OPENAI_MAX_RETRIES,
-    }
-    if settings.OPENAI_BASE_URL:
-        options["base_url"] = settings.OPENAI_BASE_URL
-    return OpenAI(**options)
-
-
 def _request_structured_summary(payload: dict, *, client=None):
-    selected_client = client or _openai_client()
     try:
-        response = selected_client.responses.parse(
-            model=settings.OPENAI_SUMMARY_MODEL,
-            reasoning={"effort": settings.OPENAI_SUMMARY_REASONING_EFFORT},
-            input=[
-                {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": json.dumps(payload, ensure_ascii=False, sort_keys=True),
-                },
-            ],
-            text_format=StructuredComparisonSummary,
-            max_output_tokens=settings.OPENAI_SUMMARY_MAX_OUTPUT_TOKENS,
-            store=False,
+        selected_client = client or OpenRouterClient()
+    except OpenRouterError as error:
+        raise SummaryError(str(error)) from error
+    try:
+        result = selected_client.generate_structured(
+            model=settings.OPENROUTER_SUMMARY_MODEL,
+            system_prompt=SUMMARY_SYSTEM_PROMPT,
+            input_payload=payload,
+            output_model=StructuredComparisonSummary,
+            schema_name="aria_comparison_summary",
+            reasoning_effort=settings.OPENROUTER_SUMMARY_REASONING_EFFORT,
+            max_output_tokens=settings.OPENROUTER_SUMMARY_MAX_OUTPUT_TOKENS,
         )
-    except Exception as error:
-        try:
-            from openai import (
-                APIConnectionError,
-                APITimeoutError,
-                InternalServerError,
-                OpenAIError,
-                RateLimitError,
-            )
-        except ImportError:
-            raise SummaryError("The OpenAI Python package is unavailable.") from error
-        if isinstance(
-            error,
-            (APIConnectionError, APITimeoutError, InternalServerError, RateLimitError),
-        ):
-            raise RetryableSummaryError(str(error)) from error
-        if isinstance(error, OpenAIError):
-            raise SummaryError(str(error)) from error
-        raise
-    output = response.output_parsed
-    if output is None:
-        raise SummaryError("OpenAI returned no parsed structured summary.")
+    except RetryableOpenRouterError as error:
+        raise RetryableSummaryError(str(error)) from error
+    except OpenRouterError as error:
+        raise SummaryError(str(error)) from error
+    output = result.output
+    if not isinstance(output, StructuredComparisonSummary):
+        raise SummaryError("OpenRouter returned an invalid structured summary.")
     _validate_summary_output(output, payload)
-    return response, output
+    return result, output
 
 
 def generate_comparison_summary(
@@ -194,8 +167,8 @@ def generate_comparison_summary(
     input_hash = _summary_input_hash(payload)
     summary, created = ComparisonSummary.objects.get_or_create(
         comparison=comparison,
-        provider="openai",
-        model=settings.OPENAI_SUMMARY_MODEL,
+        provider="openrouter",
+        model=settings.OPENROUTER_SUMMARY_MODEL,
         prompt_version=SUMMARY_PROMPT_VERSION,
         input_hash=input_hash,
         defaults={"input_snapshot": payload},
@@ -227,12 +200,11 @@ def generate_comparison_summary(
         )
         raise
 
-    usage = getattr(response, "usage", None)
     summary.status = ComparisonSummary.Status.COMPLETED
     summary.output = output.model_dump(mode="json")
-    summary.response_id = str(getattr(response, "id", "") or "")
-    summary.input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
-    summary.output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
+    summary.response_id = response.response_id
+    summary.input_tokens = response.input_tokens
+    summary.output_tokens = response.output_tokens
     summary.finished_at = timezone.now()
     summary.save(
         update_fields=(

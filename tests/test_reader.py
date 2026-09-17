@@ -368,7 +368,7 @@ class ReaderInterfaceTestCase(TestCase):
         )
         ComparisonSummary.objects.create(
             comparison=comparison,
-            provider="openai",
+            provider="openrouter",
             model="gpt-test",
             prompt_version="reader-test-v1",
             input_hash="0" * 64,

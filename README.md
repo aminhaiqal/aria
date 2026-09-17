@@ -25,7 +25,7 @@ publications before any AI interpretation is introduced.
 - BetterDocs detail-page routing to archived primary publications with stable landing-page identity
 - Stable document identities, immutable content versions, and append-only evidence links
 - A structural evidence graph from authority to raw artifact in PostgreSQL
-- PostgreSQL full-text search plus pgvector retrieval with local and OpenAI embedding providers
+- PostgreSQL full-text search plus pgvector retrieval with local and OpenRouter embedding providers
 - Provenance-gated bilingual structural anchors and deterministic immutable-version comparisons
 - Append-only human review, optional structured GPT summaries, and reviewed-change outbox events
 - Deterministic, corpus-aware extraction quality runs with provenance-backed findings
@@ -92,7 +92,7 @@ outputs are explicit derivatives and never replace or mutate the official source
   vulnerability scanning: implemented
 - Phase 4D.6 fail-closed production readiness policy and unified release gate: implemented
 - Phase 2 source breadth: JPDP, AGC Updated Principal Acts, and Parliament Dewan Rakyat bills are
-  operational with complete R2, extraction, graph, local-vector, and OpenAI-vector coverage
+  operational with complete R2, extraction, graph, local-vector, and hosted-vector coverage
 - Operational acceptance still pending: observe the first autonomous AGC and Parliament daily
   cycles through the durable soak gate; manual pilot success is not presented as autonomous proof
 - Next implementation step: satisfy the production readiness gate, expose a private Cloudflare
@@ -182,8 +182,9 @@ make extract         # replay every archived artifact through extraction locally
 make route-linked    # route and queue official files linked by archived JPDP pages
 make plan-ocr        # list the deterministic OCR input set and current statuses
 make ocr             # process OCR synchronously inside the isolated OCR container
-make embed-openai    # populate missing OpenAI vectors for the current JPDP corpus
-make evaluate-embeddings # compare local and OpenAI vector retrieval on the JPDP benchmark
+make embed-openrouter # populate missing OpenRouter vectors for the current JPDP corpus
+make verify-openrouter # make one structured-output and one embedding connectivity probe
+make evaluate-embeddings # compare local and OpenRouter vector retrieval on the JPDP benchmark
 make evaluate-reader  # require hit@3 across JPDP, AGC, and Parliament reader cases
 make quality         # assess the current JPDP extraction corpus without network access
 make audit-lineage   # read-only audit of version provenance and representation lineage
@@ -220,10 +221,11 @@ endpoint, bucket, access key, and secret in `.env`. Raw artifact bytes are archi
 extraction and are never mutated. Normalized records, graph edges, full-text indexes, and vectors
 remain in the self-hosted PostgreSQL service.
 
-OpenAI embeddings are optional. When selected, ARIA sends normalized section headings and text,
-plus the text of OpenAI-backed search queries, to the embeddings endpoint. Source PDFs, R2
-credentials, provenance records, and graph data remain local. The deterministic `local_hash`
-provider remains available as an offline fallback.
+OpenRouter-hosted embeddings are optional. When selected, ARIA sends normalized section headings
+and text, plus hosted-vector search queries, through OpenRouter. Requests require Zero Data
+Retention routing and deny provider data collection by default. Source PDFs, R2 credentials,
+provenance records, and graph data remain local. The deterministic `local_hash` provider remains
+available as an offline fallback.
 
 See [Foundation architecture](docs/foundation.md), [Phase 2 retrieval](docs/retrieval.md),
 [Phase 3A extraction and evidence graph](docs/knowledge-graph.md),

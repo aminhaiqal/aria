@@ -82,7 +82,9 @@ def project_section_embeddings(
         )
 
     selected_batch_size = batch_size or (
-        settings.OPENAI_EMBEDDING_BATCH_SIZE if selected_provider == "openai" else 256
+        settings.OPENROUTER_EMBEDDING_BATCH_SIZE
+        if selected_provider == "openrouter"
+        else 256
     )
     if selected_batch_size < 1:
         raise ValueError("Embedding batch size must be positive.")

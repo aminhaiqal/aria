@@ -19,7 +19,7 @@ React reader / operator
  Django auth + reader APIs + console ---- PostgreSQL + pgvector
        |                       |
        |                       +---- pipeline events + outbox + audit
-       |                       +---- local + optional OpenAI vectors
+       |                       +---- local + optional OpenRouter vectors
        v
  Redis broker <--------- Celery beat
        |
@@ -86,8 +86,8 @@ language packs. This bounds resource use and keeps OCR system packages out of th
 11. Graph edges are deterministic structural projections and always record their source object.
     Phase 3A does not infer legal meaning or cross-document legal relationships.
 12. Embedding projections are append-only by section, provider, model, dimension, and source-text
-    hash. The 384-dimensional local hash remains an offline lexical fallback; the optional OpenAI
-    provider adds semantic retrieval without replacing local vectors.
+    hash. The 384-dimensional local hash remains an offline lexical fallback; the optional
+    OpenRouter provider adds semantic retrieval without replacing local vectors.
 13. Quality runs hash both their ruleset configuration and the complete immutable collection
     corpus. An unchanged replay reuses the completed run; changed evidence creates a new run.
 14. Quality assessment never mutates source artifacts, extracted text, document versions, or
@@ -141,9 +141,9 @@ can be added at the host boundary later. Cloudflare R2 is the intended hosted ex
 artifact storage. The default filesystem backend remains fully self-hosted in a named Docker
 volume.
 
-OpenAI embeddings are an opt-in exception. The repository and `.env.example` keep `local_hash` as
-the default. A deployment can activate OpenAI for better semantic retrieval or select
-`local_hash` per request without changing or deleting either projection set.
+OpenRouter-hosted embeddings are an opt-in exception. The repository and `.env.example` keep
+`local_hash` as the offline default. A deployment can activate OpenRouter for better semantic
+retrieval or select `local_hash` per request without changing or deleting either projection set.
 
 ## Next slice
 

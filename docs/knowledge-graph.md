@@ -77,15 +77,15 @@ other interpreted relationships require a later reviewed extraction phase.
 PostgreSQL provides a GIN full-text index over headings and section text. pgvector provides an HNSW
 cosine index over 384-dimensional section projections. The default `aria-token-hash-v1` provider is
 a deterministic local lexical projection: it validates the private vector pipeline without calling
-a hosted model and must not be described as a semantic embedding model. The optional
-`text-embedding-3-small` provider requests 384-dimensional OpenAI vectors into the same local
-schema. Both projection sets coexist and are independently idempotent.
+a hosted model and must not be described as a semantic embedding model. The optional OpenRouter
+provider requests 384-dimensional hosted vectors into the same local schema. Both projection sets
+coexist and are independently idempotent.
 
 The administrator-only search endpoint supports `hybrid`, `full_text`, and `vector` modes:
 
 ```text
 GET /api/v1/knowledge-search/?q=personal+data+protection&mode=hybrid
-GET /api/v1/knowledge-search/?q=privacy+risk&mode=vector&embedding_provider=openai
+GET /api/v1/knowledge-search/?q=privacy+risk&mode=vector&embedding_provider=openrouter
 ```
 
 Hybrid ranking uses reciprocal-rank fusion. Results include the authority, collection, identity,
@@ -116,8 +116,8 @@ Extraction quality is assessed over immutable document versions after projection
 ARIA_EMBEDDING_PROVIDER=local_hash
 ARIA_LOCAL_EMBEDDING_MODEL=aria-token-hash-v1
 ARIA_EMBEDDING_DIMENSIONS=384
-OPENAI_API_KEY=
-ARIA_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+OPENROUTER_API_KEY=
+ARIA_OPENROUTER_EMBEDDING_MODEL=openai/text-embedding-3-small
 ARIA_PDF_OCR_MIN_CHARACTERS_PER_PAGE=40
 ```
 
@@ -127,7 +127,7 @@ creates a new append-only embedding projection rather than overwriting an earlie
 Populate and evaluate the optional provider with:
 
 ```bash
-docker compose exec api python manage.py embed_sections --provider openai --sync
+docker compose exec api python manage.py embed_sections --provider openrouter --sync
 docker compose exec api python manage.py evaluate_embeddings
 ```
 

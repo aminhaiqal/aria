@@ -868,7 +868,7 @@ def comparison_detail(request, comparison_id):
             if review_state["item_count"]
             else 100,
             "latest_summary": latest_summary,
-            "summary_enabled": bool(settings.OPENAI_API_KEY),
+            "summary_enabled": bool(settings.OPENROUTER_API_KEY),
             "summary_in_flight": summary_in_flight,
             "published_count": published_count,
             "publication_form": PublicationConfirmationForm(),

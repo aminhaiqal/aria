@@ -69,7 +69,7 @@ type SearchFields = {
   dateFrom: string
   dateTo: string
   mode: "hybrid" | "full_text" | "vector"
-  provider: "local_hash" | "openai"
+  provider: "local_hash" | "openrouter"
   profile: string
   query: string
 }
@@ -83,7 +83,7 @@ function fieldsFromParameters(parameters: URLSearchParams): SearchFields {
     dateFrom: parameters.get("date_from") || "",
     dateTo: parameters.get("date_to") || "",
     mode: mode === "full_text" || mode === "vector" ? mode : "hybrid",
-    provider: provider === "openai" ? "openai" : "local_hash",
+    provider: provider === "openrouter" ? "openrouter" : "local_hash",
     profile: parameters.get("profile") || ALL,
     query: parameters.get("q") || "",
   }
@@ -488,7 +488,7 @@ export function SearchPage({ bootstrap }: { bootstrap: ReaderBootstrap }) {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="local_hash">Local hash</SelectItem>
-                      <SelectItem value="openai">OpenAI</SelectItem>
+                      <SelectItem value="openrouter">OpenRouter</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -740,7 +740,7 @@ export function SearchPage({ bootstrap }: { bootstrap: ReaderBootstrap }) {
                       {result.embedding.provider} · {result.embedding.model}
                     </strong>
                     {result.embedding.query_sent_to_provider
-                      ? "This query was sent to OpenAI to create its vector."
+                      ? "This query was sent through OpenRouter to create its vector."
                       : "This query vector was created locally."}
                   </span>
                 </div>

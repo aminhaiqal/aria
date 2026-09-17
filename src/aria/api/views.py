@@ -536,7 +536,7 @@ class KnowledgeSearchViewSet(GenericViewSet):
             requested_provider = request.query_params.get("embedding_provider", "").strip()
             if requested_provider and requested_provider not in SUPPORTED_PROVIDERS:
                 return Response(
-                    {"detail": "embedding_provider must be local_hash or openai."},
+                    {"detail": "embedding_provider must be local_hash or openrouter."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             try:

@@ -102,17 +102,17 @@ ARIA_READER_SEARCH_RATE=60/min
 ARIA_READER_DOCUMENT_RATE=120/min
 ```
 
-The repository defaults to the self-hosted `local_hash` provider. A deployment that already has
-complete OpenAI vectors can set `ARIA_READER_EMBEDDING_PROVIDER=openai`. In that mode only the query
-text is sent to the OpenAI embeddings endpoint to create its vector; source PDFs, credentials,
-provenance, and stored vectors remain local. The interface discloses this per search. If semantic
-ranking fails, hybrid mode visibly falls back to full text; vector-only mode returns HTTP 503
-instead of disguising a different ranking method.
+The repository defaults to the self-hosted `local_hash` provider. A deployment with complete
+OpenRouter vectors can set `ARIA_READER_EMBEDDING_PROVIDER=openrouter`. In that mode only the query
+text is sent through OpenRouter to create its vector; source PDFs, credentials, provenance, and
+stored vectors remain local. The interface discloses this per search. If semantic ranking fails,
+hybrid mode visibly falls back to full text; vector-only mode returns HTTP 503 instead of disguising
+a different ranking method.
 
 The reader retrieval contract is:
 
 ```text
-GET /api/reader/v1/search/?q=...&mode=hybrid&embedding_provider=openai&profile=<profile-uuid>
+GET /api/reader/v1/search/?q=...&mode=hybrid&embedding_provider=openrouter&profile=<profile-uuid>
 GET /api/reader/v1/options/
 GET /api/reader/v1/documents/<identity-uuid>/?profile=<profile-uuid>
 GET|POST /api/reader/v1/profiles/
@@ -140,7 +140,7 @@ authority:
 - AGC — Government Procurement Act 2026; and
 - Parliament — Cybercrimes Bill 2026.
 
-Run the live OpenAI hybrid acceptance threshold with:
+Run the live OpenRouter hybrid acceptance threshold with:
 
 ```bash
 make evaluate-reader

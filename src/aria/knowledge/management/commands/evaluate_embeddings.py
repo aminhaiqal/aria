@@ -24,7 +24,7 @@ class Command(BaseCommand):
             "--providers",
             nargs="+",
             choices=sorted(SUPPORTED_PROVIDERS),
-            default=["local_hash", "openai"],
+            default=["local_hash", "openrouter"],
         )
         parser.add_argument("--json", action="store_true")
 

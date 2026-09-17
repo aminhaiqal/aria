@@ -58,7 +58,7 @@ human review. ARIA checks the current decision for every non-unchanged item. If 
 at least one is confirmed, and `ARIA_AUTO_GPT_SUMMARIES=true`, one structured GPT summary task is
 queued. The summary receives only the already bounded, confirmed comparison input described in
 [Phase 3C version comparison](version-comparison.md). It cannot change classifications or publish
-an event. With `OPENAI_API_KEY` populated, automatic summaries default on unless explicitly
+an event. With `OPENROUTER_API_KEY` populated, automatic summaries default on unless explicitly
 disabled; `.env.example` keeps the feature off for deliberate local setup.
 
 ## Recovery and OCR

@@ -28,7 +28,7 @@ class ReaderSearchForm(forms.Form):
         required=False,
         choices=(
             ("", "Configured default"),
-            ("openai", "OpenAI semantic"),
+            ("openrouter", "OpenRouter semantic"),
             ("local_hash", "Local lexical vector"),
         ),
     )

@@ -69,12 +69,11 @@ artifact hashes and locators and states `legal_effect_assessed=false`.
 ## Structured GPT summaries
 
 GPT is an optional presentation layer after deterministic comparison and human confirmation. ARIA
-uses the OpenAI Responses API with a Pydantic structured-output schema, `store=false`, and the
-current configurable default `gpt-5.6-sol`. OpenAI's current guidance describes GPT-5.6 model roles
-and recommends the Responses API for reasoning workflows; Structured Outputs guarantees adherence
-to a supplied schema and supports Pydantic parsing in the Python SDK. See the official
-[GPT-5.6 model guidance](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.6)
-and [Structured Outputs guide](https://developers.openai.com/api/docs/guides/structured-outputs).
+uses OpenRouter chat completions with a strict JSON Schema generated from Pydantic and the current
+configurable default `openai/gpt-5.6-sol`. The integration uses direct HTTP rather than a provider
+SDK. OpenRouter is required to route only to endpoints that support the supplied parameters, Zero
+Data Retention, and denied data collection. See the official
+[OpenRouter Structured Outputs guide](https://openrouter.ai/docs/guides/features/structured-outputs).
 
 The hosted request contains only:
 
@@ -88,7 +87,7 @@ It does not contain PDF bytes, R2 details, artifact hashes, source locators, ext
 review rationale, database credentials, or unconfirmed candidates. Output validation requires each
 confirmed item exactly once, preserves its deterministic change type, and requires
 `legal_effect_not_assessed=true`. Review current
-[OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data) before using hosted
+[OpenRouter ZDR controls](https://openrouter.ai/docs/guides/features/zdr) before using hosted
 summaries for non-public material.
 
 Phase 3D.3 can queue this summary automatically only after every non-unchanged comparison item has

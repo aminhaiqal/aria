@@ -29,8 +29,8 @@ from aria.sources.models import SourceEndpoint
 
 
 @override_settings(
-    EMBEDDING_PROVIDER="openai",
-    OPENAI_EMBEDDING_MODEL="text-embedding-3-small",
+    EMBEDDING_PROVIDER="openrouter",
+    OPENROUTER_EMBEDDING_MODEL="text-embedding-3-small",
     LOCAL_EMBEDDING_MODEL="aria-token-hash-v1",
     EMBEDDING_DIMENSIONS=384,
     SOURCE_FRESHNESS_GRACE_MINUTES=60,
@@ -204,7 +204,7 @@ class ReliabilityFixture(TestCase):
             )
             for provider, model in (
                 ("local_hash", "aria-token-hash-v1"),
-                ("openai", "text-embedding-3-small"),
+                ("openrouter", "text-embedding-3-small"),
             ):
                 SectionEmbedding.objects.create(
                     normalized_section=section,

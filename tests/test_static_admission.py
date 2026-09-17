@@ -20,8 +20,8 @@ from tests.test_reliability import ReliabilityFixture
 
 
 @override_settings(
-    EMBEDDING_PROVIDER="openai",
-    OPENAI_EMBEDDING_MODEL="text-embedding-3-small",
+    EMBEDDING_PROVIDER="openrouter",
+    OPENROUTER_EMBEDDING_MODEL="text-embedding-3-small",
     LOCAL_EMBEDDING_MODEL="aria-token-hash-v1",
     EMBEDDING_DIMENSIONS=384,
     SOURCE_FRESHNESS_GRACE_MINUTES=60,

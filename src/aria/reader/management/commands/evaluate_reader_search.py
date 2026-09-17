@@ -17,7 +17,7 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--provider",
-            choices=("local_hash", "openai"),
+            choices=("local_hash", "openrouter"),
             default=settings.READER_EMBEDDING_PROVIDER,
         )
         parser.add_argument("--require-hit-at-3", type=float, default=None)

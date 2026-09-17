@@ -16,7 +16,7 @@ class Command(BaseCommand):
         parser.add_argument("comparison_item_id")
         parser.add_argument(
             "--provider",
-            choices=("deterministic", "openai"),
+            choices=("deterministic", "openrouter"),
             default="deterministic",
         )
         parser.add_argument("--taxonomy-slug", default="aria-my-business-applicability")

@@ -31,8 +31,8 @@ from aria.sources.models import SourceEndpoint
 
 
 class FakeSemanticEmbeddingProvider:
-    provider_name = "openai"
-    model = "text-embedding-3-small"
+    provider_name = "openrouter"
+    model = "openai/text-embedding-3-small"
     dimensions = 384
 
     def __init__(self) -> None:
@@ -253,7 +253,7 @@ class ExtractionPipelineTestCase(TestCase):
         self.assertEqual(result["authority"]["name"], self.authority.name)
         self.assertEqual(result["document"]["canonical_url"], "https://example.com/acts/act-709/")
 
-    def test_openai_embeddings_are_parallel_idempotent_and_selectable(self) -> None:
+    def test_openrouter_embeddings_are_parallel_idempotent_and_selectable(self) -> None:
         with override_settings(OBJECT_STORAGE_ROOT=self.storage_root):
             extract_artifact(self.artifact)
         sections = NormalizedSection.objects.order_by("id")
@@ -267,7 +267,7 @@ class ExtractionPipelineTestCase(TestCase):
         self.assertEqual(replay.created_count, 0)
         self.assertEqual(replay.skipped_count, 2)
         self.assertEqual(provider.calls, 2)
-        self.assertEqual(SectionEmbedding.objects.filter(provider="openai").count(), 2)
+        self.assertEqual(SectionEmbedding.objects.filter(provider="openrouter").count(), 2)
         self.assertEqual(SectionEmbedding.objects.filter(provider="local_hash").count(), 2)
 
         user = get_user_model().objects.create_superuser(
@@ -282,19 +282,19 @@ class ExtractionPipelineTestCase(TestCase):
                 {
                     "q": "privacy obligations",
                     "mode": "vector",
-                    "embedding_provider": "openai",
+                    "embedding_provider": "openrouter",
                 },
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["embedding"]["provider"], "openai")
+        self.assertEqual(response.json()["embedding"]["provider"], "openrouter")
         self.assertEqual(response.json()["results"][0]["artifact"]["sha256"], self.artifact.sha256)
 
     @override_settings(
-        EMBEDDING_PROVIDER="openai",
-        OPENAI_EMBEDDING_MODEL="text-embedding-3-small",
+        EMBEDDING_PROVIDER="openrouter",
+        OPENROUTER_EMBEDDING_MODEL="openai/text-embedding-3-small",
     )
-    def test_openai_ingestion_keeps_local_fallback_and_queues_hosted_projection(self) -> None:
+    def test_openrouter_ingestion_keeps_local_fallback_and_queues_hosted_projection(self) -> None:
         with override_settings(OBJECT_STORAGE_ROOT=self.storage_root):
             extract_artifact(self.artifact)
         version = DocumentVersion.objects.get()
@@ -322,7 +322,7 @@ class ExtractionPipelineTestCase(TestCase):
             project_document_version(version)
 
         self.assertTrue(section.embeddings.filter(provider="local_hash").exists())
-        delay.assert_called_once_with(str(version.id), "openai")
+        delay.assert_called_once_with(str(version.id), "openrouter")
 
     def test_retrieval_evaluation_reports_ranked_evidence(self) -> None:
         with override_settings(OBJECT_STORAGE_ROOT=self.storage_root):
@@ -334,7 +334,7 @@ class ExtractionPipelineTestCase(TestCase):
         )
         result = evaluate_embedding_provider(
             self.collection,
-            provider_name="openai",
+            provider_name="openrouter",
             provider=provider,
             cases=(
                 RetrievalCase(

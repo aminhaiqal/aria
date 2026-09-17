@@ -58,7 +58,7 @@ class BackupEnvelopeTests(SimpleTestCase):
             os.environ,
             {
                 "PATH": "/usr/bin",
-                "OPENAI_API_KEY": "secret",
+                "OPENROUTER_API_KEY": "secret",
                 "ARIA_OBJECT_STORAGE_SECRET_KEY": "secret",
             },
             clear=True,

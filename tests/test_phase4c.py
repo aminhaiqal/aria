@@ -3,7 +3,6 @@ import hmac
 import json
 from dataclasses import replace
 from io import StringIO
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import httpx
@@ -50,6 +49,7 @@ from aria.impacts.taxonomies import (
     build_taxonomy_plan,
     load_taxonomy_definition,
 )
+from aria.openrouter import OpenRouterStructuredResult
 from tests.test_phase3c import Phase3CFixture
 
 
@@ -330,10 +330,10 @@ class ApplicabilityTaxonomyTestCase(ImpactFixtureMixin, Phase3CFixture):
 
 
 @override_settings(
-    OPENAI_IMPACT_MODEL="gpt-5.6-sol",
-    OPENAI_IMPACT_REASONING_EFFORT="low",
-    OPENAI_IMPACT_MAX_OUTPUT_TOKENS=3000,
-    OPENAI_IMPACT_MAX_CHARS_PER_ANCHOR=12000,
+    OPENROUTER_IMPACT_MODEL="openai/gpt-5.6-sol",
+    OPENROUTER_IMPACT_REASONING_EFFORT="low",
+    OPENROUTER_IMPACT_MAX_OUTPUT_TOKENS=3000,
+    OPENROUTER_IMPACT_MAX_CHARS_PER_ANCHOR=12000,
 )
 class ImpactGenerationTestCase(ImpactFixtureMixin, Phase3CFixture):
     def setUp(self) -> None:
@@ -396,26 +396,27 @@ class ImpactGenerationTestCase(ImpactFixtureMixin, Phase3CFixture):
             generate_impact_candidates(
                 self.item,
                 self.taxonomy,
-                provider="openai",
+                provider="openrouter",
                 client=client,
             )
 
-        client.responses.parse.assert_not_called()
+        client.generate_structured.assert_not_called()
         self.assertEqual(ImpactGeneration.objects.count(), 0)
 
-    def test_openai_structured_output_is_validated_then_materialized(self):
+    def test_openrouter_structured_output_is_validated_then_materialized(self):
         self.confirm_change()
         client = MagicMock()
-        client.responses.parse.return_value = SimpleNamespace(
-            id="resp-impact-1",
-            output_parsed=self._structured_output(),
-            usage=SimpleNamespace(input_tokens=321, output_tokens=123),
+        client.generate_structured.return_value = OpenRouterStructuredResult(
+            response_id="resp-impact-1",
+            output=self._structured_output(),
+            input_tokens=321,
+            output_tokens=123,
         )
 
         result = generate_impact_candidates(
             self.item,
             self.taxonomy,
-            provider="openai",
+            provider="openrouter",
             client=client,
         )
 
@@ -426,9 +427,9 @@ class ImpactGenerationTestCase(ImpactFixtureMixin, Phase3CFixture):
         impact = generation.generated_impacts.get()
         self.assertEqual(impact.origin, RegulatoryImpact.Origin.GPT)
         self.assertEqual(impact.targets.get().term.code, "data-user")
-        request = client.responses.parse.call_args.kwargs
-        self.assertIs(request["text_format"], StructuredImpactCandidates)
-        self.assertFalse(request["store"])
+        request = client.generate_structured.call_args.kwargs
+        self.assertIs(request["output_model"], StructuredImpactCandidates)
+        self.assertEqual(request["model"], "openai/gpt-5.6-sol")
 
         self.client.force_login(self.reviewer)
         response = self.client.get(reverse("impactgeneration-detail", args=[generation.id]))
@@ -438,17 +439,16 @@ class ImpactGenerationTestCase(ImpactFixtureMixin, Phase3CFixture):
     def test_hallucinated_anchor_or_taxonomy_code_fails_without_partial_impacts(self):
         self.confirm_change()
         client = MagicMock()
-        client.responses.parse.return_value = SimpleNamespace(
-            id="resp-impact-invalid",
-            output_parsed=self._structured_output(anchor_ids=["not-an-anchor"]),
-            usage=None,
+        client.generate_structured.return_value = OpenRouterStructuredResult(
+            response_id="resp-impact-invalid",
+            output=self._structured_output(anchor_ids=["not-an-anchor"]),
         )
 
         with self.assertRaisesMessage(ImpactGenerationError, "exact anchor"):
             generate_impact_candidates(
                 self.item,
                 self.taxonomy,
-                provider="openai",
+                provider="openrouter",
                 client=client,
             )
 
@@ -456,16 +456,15 @@ class ImpactGenerationTestCase(ImpactFixtureMixin, Phase3CFixture):
         self.assertEqual(failed.status, ImpactGeneration.Status.FAILED)
         self.assertEqual(RegulatoryImpact.objects.count(), 0)
 
-        client.responses.parse.return_value = SimpleNamespace(
-            id="resp-impact-invalid-term",
-            output_parsed=self._structured_output(target_code="invented-role"),
-            usage=None,
+        client.generate_structured.return_value = OpenRouterStructuredResult(
+            response_id="resp-impact-invalid-term",
+            output=self._structured_output(target_code="invented-role"),
         )
         with self.assertRaisesMessage(ImpactGenerationError, "unknown applicability"):
             generate_impact_candidates(
                 self.item,
                 self.taxonomy,
-                provider="openai",
+                provider="openrouter",
                 client=client,
             )
         self.assertEqual(RegulatoryImpact.objects.count(), 0)

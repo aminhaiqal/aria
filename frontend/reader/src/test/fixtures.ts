@@ -183,7 +183,7 @@ export const documentResponse: DocumentPayload = {
   comparison: null,
   gpt_summary: {
     id: "55555555-5555-4555-8555-555555555555",
-    provider: "openai",
+    provider: "openrouter",
     model: "gpt-test",
     prompt_version: "reader-test-v1",
     output: {

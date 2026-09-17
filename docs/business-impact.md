@@ -60,15 +60,16 @@ Phase 4C.3 adds two candidate providers behind one evidence contract:
 - `deterministic` applies a small, versioned ruleset for explicit obligation, reporting,
   registration, deadline, prohibition, penalty, exemption, permission, governance, and
   record-keeping wording; and
-- `openai` uses the Responses API with a strict Pydantic structured-output schema to propose
-  concise statements and controlled targets.
+- `openrouter` uses chat completions with a strict Pydantic-derived JSON Schema to propose concise
+  statements and controlled targets.
 
 Both providers accept exactly one currently confirmed comparison item and one installed taxonomy
 version. Input snapshots contain bounded before/after anchor text plus anchor, artifact, review,
 and taxonomy IDs/hashes. Output is rejected unless it preserves the item and review IDs, cites
 every available exact anchor once, keeps the legal-effect flag false, and uses only supplied
 taxonomy terms. Schema-valid GPT output still passes these application-level evidence checks before
-any impact record is written. This follows the [official OpenAI Structured Outputs guidance](https://developers.openai.com/api/docs/guides/structured-outputs)
+any impact record is written. This follows the
+[official OpenRouter Structured Outputs guidance](https://openrouter.ai/docs/guides/features/structured-outputs)
 while retaining ARIA's stricter domain validation.
 
 Every attempt is represented by a mutable `ImpactGeneration` execution record with provider,
@@ -85,7 +86,7 @@ make extract-impacts ITEM_ID=<comparison-item-uuid>
 Select GPT explicitly when desired:
 
 ```bash
-make extract-impacts ITEM_ID=<comparison-item-uuid> PROVIDER=openai
+make extract-impacts ITEM_ID=<comparison-item-uuid> PROVIDER=openrouter
 ```
 
 Asynchronous command calls use the existing self-hosted `diff` worker queue. Candidate generation

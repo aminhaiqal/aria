@@ -240,7 +240,7 @@ def _validate_search_inputs(
     if mode not in SEARCH_MODES:
         raise ReaderQueryError("Search mode must be hybrid, full_text, or vector.")
     if provider_name and provider_name not in SUPPORTED_PROVIDERS:
-        raise ReaderQueryError("Embedding provider must be local_hash or openai.")
+        raise ReaderQueryError("Embedding provider must be local_hash or openrouter.")
     if page < 1 or page > settings.READER_MAX_SEARCH_PAGES:
         raise ReaderQueryError(
             f"Page must be between 1 and {settings.READER_MAX_SEARCH_PAGES}."
@@ -335,7 +335,7 @@ def search_reader_documents(
                 "provider": provider,
                 "model": model,
                 "dimensions": dimensions,
-                "query_sent_to_provider": provider == "openai",
+                "query_sent_to_provider": provider == "openrouter",
             }
             if any(query_vector):
                 vector_results = (

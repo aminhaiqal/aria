@@ -350,7 +350,7 @@ class ComparisonSummary(TimeStampedModel):
         on_delete=models.PROTECT,
         related_name="summaries",
     )
-    provider = models.CharField(max_length=64, default="openai")
+    provider = models.CharField(max_length=64, default="openrouter")
     model = models.CharField(max_length=128)
     prompt_version = models.CharField(max_length=128)
     input_hash = models.CharField(
