@@ -58,9 +58,12 @@ For a non-AGC endpoint, pass its UUID directly to either management command.
 
 ## Operator surfaces
 
-The dashboard shows current source reliability alerts and the latest assessment per source. The
-source list adds a reliability state beside HTTP health. Source detail displays freshness,
-candidate stability, R2/extraction/graph coverage, both embedding projections, and findings.
+The operator console shows current source reliability alerts and the latest assessment per source.
+The source list adds a reliability state beside HTTP health. Source detail displays freshness,
+candidate stability, R2/extraction/graph coverage, both embedding projections, and findings. The
+provisioned `ARIA Source Reliability & Freshness` Grafana dashboard provides the time-series view:
+per-source freshness headroom, scheduled polling, last-success age, stage coverage, failure counts,
+and stable finding codes. Source slugs and endpoint UUIDs are its only source identifiers.
 
 Assessment evidence is also available through the staff-only, read-only endpoint:
 

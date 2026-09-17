@@ -1,14 +1,17 @@
 import re
+from datetime import timedelta
 
 from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from aria.authorities.models import Authority
 from aria.collections.models import PublicationCollection
 from aria.discovery.models import SourceRun
 from aria.health.metrics import pipeline_heartbeat
 from aria.health.tasks import heartbeat_scheduler_worker
+from aria.reliability.models import SourceReliabilityAssessment
 from aria.sources.models import SourceEndpoint
 
 OBSERVABILITY_SETTINGS = override_settings(
@@ -48,12 +51,47 @@ class OperationalMetricsTests(TestCase):
             allowed_domains=["secret.example.com"],
             expected_content_types=["text/html"],
         )
+        now = timezone.now()
+        self.endpoint.last_successful_run_at = now - timedelta(minutes=10)
+        self.endpoint.next_poll_at = now + timedelta(minutes=20)
+        self.endpoint.consecutive_failures = 1
+        self.endpoint.health_state = SourceEndpoint.HealthState.DEGRADED
+        self.endpoint.save(
+            update_fields=(
+                "last_successful_run_at",
+                "next_poll_at",
+                "consecutive_failures",
+                "health_state",
+                "updated_at",
+            )
+        )
         SourceRun.objects.create(
             endpoint=self.endpoint,
             trigger=SourceRun.Trigger.SCHEDULED,
             status=SourceRun.Status.FAILED,
             idempotency_key="metrics-failed-run",
             connector_configuration_version=1,
+        )
+        SourceReliabilityAssessment.objects.create(
+            endpoint=self.endpoint,
+            status=SourceReliabilityAssessment.Status.WARNING,
+            assessment_signature="a" * 64,
+            freshness_deadline=now + timedelta(minutes=30),
+            candidate_count=4,
+            artifact_ready_count=4,
+            extraction_ready_count=3,
+            graph_ready_count=2,
+            section_count=10,
+            local_embedding_count=10,
+            configured_embedding_count=8,
+            findings=[
+                {
+                    "code": "extraction_coverage",
+                    "severity": "warning",
+                    "detail": "Sensitive finding detail that metrics must omit.",
+                }
+            ],
+            assessed_at=now,
         )
 
     def test_metrics_are_disabled_when_no_token_is_configured(self) -> None:
@@ -70,7 +108,7 @@ class OperationalMetricsTests(TestCase):
             403,
         )
 
-    def test_metrics_expose_bounded_states_without_source_identifiers(self) -> None:
+    def test_metrics_expose_bounded_source_dimensions_without_sensitive_content(self) -> None:
         response = self.client.get(
             reverse("health:metrics"),
             HTTP_AUTHORIZATION="Bearer test-metrics-token-with-enough-entropy",
@@ -89,11 +127,39 @@ class OperationalMetricsTests(TestCase):
             'aria_artifact_observations_window{window="24h",content_changed="false"} 0',
             payload,
         )
-        self.assertIn('aria_evidence_coverage_ratio{stage="artifact"} NaN', payload)
+        self.assertIn('aria_evidence_coverage_ratio{stage="artifact"} 1', payload)
         self.assertIn('aria_outbox_events{status="failed"} 0', payload)
         self.assertIn("aria_scheduler_worker_heartbeat_age_seconds +Inf", payload)
+        source_labels = (
+            'source="metrics-regulator/metrics-publications",'
+            f'endpoint="{self.endpoint.id}"'
+        )
+        self.assertIn(
+            f'aria_source_reliability_info{{{source_labels},status="warning"}} 1',
+            payload,
+        )
+        self.assertIn(
+            f'aria_source_http_health_info{{{source_labels},health_state="degraded"}} 1',
+            payload,
+        )
+        self.assertIn(f"aria_source_consecutive_failures{{{source_labels}}} 1", payload)
+        self.assertIn(
+            f'aria_source_coverage_ratio{{{source_labels},stage="extraction"}} 0.75',
+            payload,
+        )
+        self.assertIn(
+            f'aria_source_scheduled_runs_window{{{source_labels},window="7d",'
+            'status="failed"} 1',
+            payload,
+        )
+        self.assertIn(
+            f'aria_source_reliability_findings{{{source_labels},'
+            'code="extraction_coverage",severity="warning"} 1',
+            payload,
+        )
         self.assertNotIn("Secret metrics source title", payload)
         self.assertNotIn("secret.example.com", payload)
+        self.assertNotIn("Sensitive finding detail", payload)
 
     def test_scheduler_worker_task_records_a_fresh_shared_heartbeat(self) -> None:
         result = heartbeat_scheduler_worker.run()

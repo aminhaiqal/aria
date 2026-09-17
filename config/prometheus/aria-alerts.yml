@@ -29,6 +29,45 @@ groups:
           severity: warning
         annotations:
           summary: ARIA has an unhealthy official source endpoint
+      - alert: AriaSourceReliabilityNeedsAttention
+        expr: aria_source_reliability_info{status=~"warning|critical"} == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: ARIA source reliability needs attention
+          description: >-
+            Source {{ $labels.source }} has remained in {{ $labels.status }} state for 15 minutes.
+      - alert: AriaSourceFreshnessExpired
+        expr: aria_source_freshness_headroom_seconds < 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: ARIA official-source evidence is stale
+          description: >-
+            Source {{ $labels.source }} is past its evidence freshness deadline.
+      - alert: AriaSourcePollOverdue
+        expr: aria_source_poll_overdue_seconds > 900
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: ARIA source poll is overdue
+          description: >-
+            Source {{ $labels.source }} is more than 15 minutes past its scheduled poll.
+      - alert: AriaSourceCoverageIncomplete
+        expr: >-
+          (aria_source_coverage_ratio < 1)
+          and on (source, endpoint)
+          (aria_source_reliability_info{status=~"warning|critical"} == 1)
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: ARIA source evidence coverage is incomplete
+          description: >-
+            Source {{ $labels.source }} remains incomplete at the {{ $labels.stage }} stage.
       - alert: AriaSourceRunSuccessRateLow
         expr: >-
           (aria_source_run_success_ratio{window="24h"} < 0.95)

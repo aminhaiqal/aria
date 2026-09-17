@@ -267,6 +267,7 @@ restore-drill: ensure-env
 observability-check:
 	docker run --rm --entrypoint /bin/sh -v "$(CURDIR)/config/prometheus:/etc/prometheus:ro" prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996 -c 'printf test > /tmp/aria-metrics-token && exec /bin/promtool check config /etc/prometheus/prometheus.yml'
 	python3 -m json.tool config/grafana/dashboards/aria-pipeline-performance.json >/dev/null
+	python3 -m json.tool config/grafana/dashboards/aria-source-reliability.json >/dev/null
 	docker run --rm -v "$(CURDIR)/deploy/caddy/aria.Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 	docker compose --profile observability config --quiet
 

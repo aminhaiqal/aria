@@ -1,10 +1,11 @@
 import hmac
 import math
+from collections import Counter
 from datetime import datetime, timedelta
 
 from django.conf import settings
 from django.core.cache import cache
-from django.db.models import Count
+from django.db.models import Count, OuterRef, Subquery
 from django.utils import timezone
 
 from aria.artifacts.models import ArtifactObservation
@@ -19,6 +20,8 @@ from aria.sources.models import SourceEndpoint
 PIPELINE_HEARTBEAT_KEY = "aria:heartbeat:scheduler-worker"
 PERFORMANCE_WINDOW = timedelta(hours=24)
 PERFORMANCE_WINDOW_LABEL = "24h"
+SOURCE_RELIABILITY_WINDOW = timedelta(days=7)
+SOURCE_RELIABILITY_WINDOW_LABEL = "7d"
 
 
 def record_pipeline_heartbeat() -> datetime:
@@ -65,7 +68,224 @@ def _metric_family(name: str, help_text: str, values: dict[str, int], label: str
 def _metric_value(value: float) -> str:
     if math.isnan(value):
         return "NaN"
+    if math.isinf(value):
+        return "+Inf" if value > 0 else "-Inf"
     return f"{value:.6f}".rstrip("0").rstrip(".")
+
+
+def _metric_label_value(value: object) -> str:
+    return str(value).replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+
+
+def _source_labels(endpoint: SourceEndpoint) -> str:
+    authority_slug = endpoint.collection.authority.slug
+    collection_slug = endpoint.collection.slug
+    source = f"{authority_slug}/{collection_slug}"
+    return (
+        f'source="{_metric_label_value(source)}",'
+        f'endpoint="{_metric_label_value(endpoint.id)}"'
+    )
+
+
+def _ratio(ready: int | None, total: int | None) -> float:
+    if ready is None or total is None or total == 0:
+        return math.nan
+    return ready / total
+
+
+def _source_reliability_metrics(now: datetime) -> list[str]:
+    latest_assessment = SourceReliabilityAssessment.objects.filter(
+        endpoint=OuterRef("pk")
+    ).order_by("-assessed_at", "-id")
+    endpoints = list(
+        SourceEndpoint.objects.filter(is_enabled=True)
+        .select_related("collection", "collection__authority")
+        .annotate(
+            reliability_status=Subquery(latest_assessment.values("status")[:1]),
+            freshness_deadline=Subquery(
+                latest_assessment.values("freshness_deadline")[:1]
+            ),
+            reliability_candidate_count=Subquery(
+                latest_assessment.values("candidate_count")[:1]
+            ),
+            artifact_ready_count=Subquery(
+                latest_assessment.values("artifact_ready_count")[:1]
+            ),
+            extraction_ready_count=Subquery(
+                latest_assessment.values("extraction_ready_count")[:1]
+            ),
+            graph_ready_count=Subquery(
+                latest_assessment.values("graph_ready_count")[:1]
+            ),
+            section_count=Subquery(latest_assessment.values("section_count")[:1]),
+            local_embedding_count=Subquery(
+                latest_assessment.values("local_embedding_count")[:1]
+            ),
+            configured_embedding_count=Subquery(
+                latest_assessment.values("configured_embedding_count")[:1]
+            ),
+            reliability_findings=Subquery(latest_assessment.values("findings")[:1]),
+        )
+        .order_by("collection__authority__slug", "collection__slug", "id")
+    )
+    endpoint_ids = [endpoint.id for endpoint in endpoints]
+    scheduled_counts = {
+        (row["endpoint_id"], row["status"]): row["count"]
+        for row in SourceRun.objects.filter(
+            endpoint_id__in=endpoint_ids,
+            trigger=SourceRun.Trigger.SCHEDULED,
+            created_at__gte=now - SOURCE_RELIABILITY_WINDOW,
+        )
+        .values("endpoint_id", "status")
+        .annotate(count=Count("id"))
+    }
+
+    metric_help = (
+        (
+            "aria_source_reliability_info",
+            "Current end-to-end source reliability state for each enabled endpoint.",
+            "gauge",
+        ),
+        (
+            "aria_source_http_health_info",
+            "Current HTTP monitoring health state for each enabled endpoint.",
+            "gauge",
+        ),
+        (
+            "aria_source_last_success_age_seconds",
+            "Age of the latest successful run for each enabled endpoint.",
+            "gauge",
+        ),
+        (
+            "aria_source_freshness_headroom_seconds",
+            "Seconds remaining until source freshness expires; negative values are stale.",
+            "gauge",
+        ),
+        (
+            "aria_source_poll_overdue_seconds",
+            "Seconds an enabled endpoint is past its next scheduled poll.",
+            "gauge",
+        ),
+        (
+            "aria_source_consecutive_failures",
+            "Consecutive failed monitoring runs for each enabled endpoint.",
+            "gauge",
+        ),
+        (
+            "aria_source_candidate_count",
+            "Candidate count in the latest source reliability assessment.",
+            "gauge",
+        ),
+        (
+            "aria_source_coverage_ratio",
+            "Latest source evidence coverage by pipeline stage.",
+            "gauge",
+        ),
+        (
+            "aria_source_scheduled_runs_window",
+            "Scheduled source runs created in the bounded rolling window by state.",
+            "gauge",
+        ),
+        (
+            "aria_source_reliability_findings",
+            "Current source reliability findings by stable code and severity.",
+            "gauge",
+        ),
+    )
+    lines = [line for name, help_text, metric_type in metric_help for line in (
+        f"# HELP {name} {help_text}",
+        f"# TYPE {name} {metric_type}",
+    )]
+
+    for endpoint in endpoints:
+        labels = _source_labels(endpoint)
+        reliability_status = endpoint.reliability_status or "unknown"
+        lines.extend(
+            (
+                f'aria_source_reliability_info{{{labels},status="{reliability_status}"}} 1',
+                (
+                    f'aria_source_http_health_info{{{labels},'
+                    f'health_state="{endpoint.health_state}"}} 1'
+                ),
+            )
+        )
+        last_success_age = (
+            max(0.0, (now - endpoint.last_successful_run_at).total_seconds())
+            if endpoint.last_successful_run_at
+            else math.inf
+        )
+        freshness_headroom = (
+            (endpoint.freshness_deadline - now).total_seconds()
+            if endpoint.freshness_deadline
+            else math.nan
+        )
+        poll_overdue = (
+            max(0.0, (now - endpoint.next_poll_at).total_seconds())
+            if endpoint.next_poll_at
+            else math.inf
+        )
+        lines.extend(
+            (
+                f"aria_source_last_success_age_seconds{{{labels}}} "
+                f"{_metric_value(last_success_age)}",
+                f"aria_source_freshness_headroom_seconds{{{labels}}} "
+                f"{_metric_value(freshness_headroom)}",
+                f"aria_source_poll_overdue_seconds{{{labels}}} "
+                f"{_metric_value(poll_overdue)}",
+                f"aria_source_consecutive_failures{{{labels}}} "
+                f"{endpoint.consecutive_failures}",
+                f"aria_source_candidate_count{{{labels}}} "
+                f"{endpoint.reliability_candidate_count or 0}",
+            )
+        )
+        coverage = {
+            "artifact": _ratio(
+                endpoint.artifact_ready_count,
+                endpoint.reliability_candidate_count,
+            ),
+            "extraction": _ratio(
+                endpoint.extraction_ready_count,
+                endpoint.reliability_candidate_count,
+            ),
+            "graph": _ratio(
+                endpoint.graph_ready_count,
+                endpoint.reliability_candidate_count,
+            ),
+            "local_embedding": _ratio(
+                endpoint.local_embedding_count,
+                endpoint.section_count,
+            ),
+            "configured_embedding": _ratio(
+                endpoint.configured_embedding_count,
+                endpoint.section_count,
+            ),
+        }
+        lines.extend(
+            f'aria_source_coverage_ratio{{{labels},stage="{stage}"}} '
+            f"{_metric_value(value)}"
+            for stage, value in coverage.items()
+        )
+        lines.extend(
+            f'aria_source_scheduled_runs_window{{{labels},'
+            f'window="{SOURCE_RELIABILITY_WINDOW_LABEL}",status="{status}"}} '
+            f'{scheduled_counts.get((endpoint.id, status), 0)}'
+            for status in SourceRun.Status.values
+        )
+        finding_counts = Counter(
+            (
+                str(finding.get("code", "unknown")),
+                str(finding.get("severity", "unknown")),
+            )
+            for finding in (endpoint.reliability_findings or [])
+            if isinstance(finding, dict)
+        )
+        lines.extend(
+            f'aria_source_reliability_findings{{{labels},'
+            f'code="{_metric_label_value(code)}",'
+            f'severity="{_metric_label_value(severity)}"}} {count}'
+            for (code, severity), count in sorted(finding_counts.items())
+        )
+    return lines
 
 
 def _nearest_rank(values: list[float], quantile: float) -> float:
@@ -271,6 +491,7 @@ def render_operational_metrics() -> str:
             "health_state",
         )
     )
+    lines.extend(_source_reliability_metrics(now))
     lines.extend(
         _metric_family(
             "aria_source_runs",
