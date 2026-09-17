@@ -47,8 +47,10 @@ services:
       - ALL
     cap_add:
       - CHOWN
+      - DAC_READ_SEARCH
     security_opt:
       - no-new-privileges:true
+    network_mode: none
     pids_limit: 32
     mem_limit: 64m
     cpus: "0.25"

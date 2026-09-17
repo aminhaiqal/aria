@@ -220,8 +220,15 @@ def validate_runtime_config(config: dict[str, Any]) -> None:
             _require_positive(service_name, service, field)
 
     redis_init = services["redis-init"]
-    if redis_init.get("user") != "root" or redis_init.get("cap_add") != ["CHOWN"]:
-        raise SupplyChainError("redis-init must have only the CHOWN initialization capability")
+    if redis_init.get("user") != "root" or redis_init.get("cap_add") != [
+        "CHOWN",
+        "DAC_READ_SEARCH",
+    ]:
+        raise SupplyChainError(
+            "redis-init must have only the CHOWN and DAC_READ_SEARCH initialization capabilities"
+        )
+    if redis_init.get("network_mode") != "none":
+        raise SupplyChainError("redis-init must run without network access")
     if services["redis"].get("user") != "redis":
         raise SupplyChainError("Redis must run directly as its unprivileged image user")
     if services["redis"].get("depends_on", {}).get("redis-init", {}).get("condition") != (

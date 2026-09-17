@@ -60,7 +60,13 @@ def runtime_config() -> dict:
             "cpus": 1,
         }
     services["prometheus"]["ports"] = [{"host_ip": "127.0.0.1"}]
-    services["redis-init"].update({"user": "root", "cap_add": ["CHOWN"]})
+    services["redis-init"].update(
+        {
+            "user": "root",
+            "cap_add": ["CHOWN", "DAC_READ_SEARCH"],
+            "network_mode": "none",
+        }
+    )
     services["redis"]["user"] = "redis"
     services["redis"]["depends_on"] = {
         "redis-init": {"condition": "service_completed_successfully"}
@@ -123,6 +129,20 @@ class ProductionIsolationTests(SimpleTestCase):
         config["services"]["api"]["ports"][0]["host_ip"] = "0.0.0.0"
 
         with self.assertRaisesMessage(SupplyChainError, "127.0.0.1"):
+            validate_runtime_config(config)
+
+    def test_redis_initializer_requires_minimal_volume_capabilities(self) -> None:
+        config = deepcopy(runtime_config())
+        config["services"]["redis-init"]["cap_add"].append("DAC_OVERRIDE")
+
+        with self.assertRaisesMessage(SupplyChainError, "initialization capabilities"):
+            validate_runtime_config(config)
+
+    def test_redis_initializer_cannot_access_network(self) -> None:
+        config = deepcopy(runtime_config())
+        config["services"]["redis-init"]["network_mode"] = "default"
+
+        with self.assertRaisesMessage(SupplyChainError, "without network access"):
             validate_runtime_config(config)
 
     def test_reader_cannot_mutate_evidence_artifacts(self) -> None:
