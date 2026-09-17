@@ -93,7 +93,7 @@ services:
     ports:
       - "${ARIA_BIND_ADDRESS:-127.0.0.1}:${ARIA_WEB_PORT:-8000}:8000"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live/', timeout=2)"]
+      test: ["CMD", "python", "-c", "import os, urllib.request; host = os.environ.get('ARIA_ALLOWED_HOSTS', '127.0.0.1').split(',')[0].strip() or '127.0.0.1'; request = urllib.request.Request('http://127.0.0.1:8000/health/live/', headers={'Host': host}); urllib.request.urlopen(request, timeout=2)"]
       interval: 10s
       timeout: 5s
       retries: 12

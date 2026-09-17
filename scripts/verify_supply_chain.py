@@ -240,6 +240,16 @@ def validate_runtime_config(config: dict[str, Any]) -> None:
         for field in ("pids_limit", "mem_limit", "cpus"):
             _require_positive(service_name, services.get(service_name, {}), field)
 
+    api_healthcheck = services["api"].get("healthcheck", {}).get("test", [])
+    api_healthcheck_command = " ".join(str(part) for part in api_healthcheck)
+    if (
+        "/health/live/" not in api_healthcheck_command
+        or "ARIA_ALLOWED_HOSTS" not in api_healthcheck_command
+    ):
+        raise SupplyChainError(
+            "api health check must use the configured allowed host for the liveness probe"
+        )
+
     _validate_local_port("api", services["api"])
     _validate_local_port("prometheus", services["prometheus"])
 

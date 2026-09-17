@@ -49,7 +49,19 @@ def runtime_config() -> dict:
             "worker",
         )
     }
-    services["api"]["ports"] = [{"host_ip": "127.0.0.1"}]
+    services["api"].update(
+        {
+            "ports": [{"host_ip": "127.0.0.1"}],
+            "healthcheck": {
+                "test": [
+                    "CMD",
+                    "python",
+                    "-c",
+                    "probe ARIA_ALLOWED_HOSTS at /health/live/",
+                ]
+            },
+        }
+    )
     for name in ("frontend-assets", "redis", "redis-init", "prometheus"):
         services[name] = {
             "read_only": True,
@@ -129,6 +141,15 @@ class ProductionIsolationTests(SimpleTestCase):
         config["services"]["api"]["ports"][0]["host_ip"] = "0.0.0.0"
 
         with self.assertRaisesMessage(SupplyChainError, "127.0.0.1"):
+            validate_runtime_config(config)
+
+    def test_api_healthcheck_must_use_configured_allowed_host(self) -> None:
+        config = deepcopy(runtime_config())
+        config["services"]["api"]["healthcheck"]["test"][-1] = (
+            "probe 127.0.0.1 at /health/live/"
+        )
+
+        with self.assertRaisesMessage(SupplyChainError, "configured allowed host"):
             validate_runtime_config(config)
 
     def test_redis_initializer_requires_minimal_volume_capabilities(self) -> None:
