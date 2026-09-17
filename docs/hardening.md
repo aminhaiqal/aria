@@ -152,7 +152,9 @@ time series in a named volume. Grafana has anonymous access and sign-up disabled
 local state, and provisions the read-only `ARIA Pipeline Performance` dashboard and private
 Prometheus data source directly from the repository. Both are excluded from `make start`. The base
 profile keeps both services outside the edge network; the VPS override permits only Grafana to
-join it through the stable `aria-grafana` alias.
+join it through the stable `aria-grafana` alias. Grafana uses the provisioned ARIA Pipeline
+Performance dashboard as its server home page, so an authenticated operator lands on live ARIA
+metrics instead of Grafana's generic welcome screen.
 
 Before enabling the production hostname, reach the dashboard through an SSH tunnel:
 

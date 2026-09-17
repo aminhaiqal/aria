@@ -9,6 +9,7 @@ DATASOURCE = (
     ROOT / "config" / "grafana" / "provisioning" / "datasources" / "aria-prometheus.yml"
 )
 CADDYFILE = ROOT / "deploy" / "caddy" / "aria.Caddyfile"
+COMPOSE = ROOT / "compose.yaml"
 
 
 class GrafanaProvisioningTests(SimpleTestCase):
@@ -36,6 +37,15 @@ class GrafanaProvisioningTests(SimpleTestCase):
         self.assertIn("url: http://prometheus:9090", datasource)
         self.assertIn("editable: false", datasource)
         self.assertNotIn("localhost", datasource)
+
+    def test_pipeline_dashboard_is_the_server_home_page(self) -> None:
+        compose = COMPOSE.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: "
+            "/etc/grafana/dashboards/aria-pipeline-performance.json",
+            compose,
+        )
 
     def test_public_metrics_route_exposes_only_grafana(self) -> None:
         caddyfile = CADDYFILE.read_text(encoding="utf-8")

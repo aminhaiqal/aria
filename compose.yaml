@@ -270,6 +270,7 @@ services:
       GF_PLUGINS_PLUGIN_ADMIN_ENABLED: "false"
       GF_PLUGINS_PREINSTALL_DISABLED: "true"
       GF_PLUGINS_PREINSTALL_AUTO_UPDATE: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/aria-pipeline-performance.json
       GF_SERVER_DOMAIN: ${ARIA_GRAFANA_DOMAIN:-localhost}
       GF_SERVER_ROOT_URL: ${ARIA_GRAFANA_ROOT_URL:-http://localhost:3002}
       GF_SERVER_ENFORCE_DOMAIN: ${ARIA_GRAFANA_ENFORCE_DOMAIN:-false}
