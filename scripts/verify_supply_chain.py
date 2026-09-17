@@ -249,6 +249,10 @@ def validate_runtime_config(config: dict[str, Any]) -> None:
         raise SupplyChainError(
             "api health check must use the configured allowed host for the liveness probe"
         )
+    if set(services["prometheus"].get("networks", {})) != {"backend"}:
+        raise SupplyChainError(
+            "prometheus must share only the private backend network with the API"
+        )
 
     _validate_local_port("api", services["api"])
     _validate_local_port("prometheus", services["prometheus"])

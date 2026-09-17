@@ -72,6 +72,7 @@ def runtime_config() -> dict:
             "cpus": 1,
         }
     services["prometheus"]["ports"] = [{"host_ip": "127.0.0.1"}]
+    services["prometheus"]["networks"] = {"backend": {}}
     services["redis-init"].update(
         {
             "user": "root",
@@ -150,6 +151,13 @@ class ProductionIsolationTests(SimpleTestCase):
         )
 
         with self.assertRaisesMessage(SupplyChainError, "configured allowed host"):
+            validate_runtime_config(config)
+
+    def test_prometheus_requires_private_api_network(self) -> None:
+        config = deepcopy(runtime_config())
+        config["services"]["prometheus"]["networks"] = {"default": {}}
+
+        with self.assertRaisesMessage(SupplyChainError, "private backend network"):
             validate_runtime_config(config)
 
     def test_redis_initializer_requires_minimal_volume_capabilities(self) -> None:
