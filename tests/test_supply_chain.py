@@ -11,6 +11,7 @@ from scripts.verify_supply_chain import (
     validate_lock,
     validate_repository,
     validate_runtime_config,
+    validate_vps_edge_config,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -117,3 +118,17 @@ class ProductionIsolationTests(SimpleTestCase):
 
         with self.assertRaisesMessage(SupplyChainError, "must not write"):
             validate_runtime_config(config)
+
+    def test_only_api_may_join_external_vps_edge(self) -> None:
+        config = runtime_config()
+        config["networks"] = {"edge": {"external": True}}
+        config["services"]["api"]["networks"] = {
+            "backend": {},
+            "edge": {"aliases": ["aria-api"]},
+        }
+
+        validate_vps_edge_config(config)
+
+        config["services"]["postgres"]["networks"] = {"edge": {}}
+        with self.assertRaisesMessage(SupplyChainError, "only the API"):
+            validate_vps_edge_config(config)

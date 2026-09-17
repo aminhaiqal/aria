@@ -1,7 +1,8 @@
 .DEFAULT_GOAL := help
 ARIA_SBOM_VERSION ?= $(shell git rev-parse --verify HEAD)
+VPS_COMPOSE = docker compose -f compose.yaml -f compose.production.yaml -f compose.vps.yaml
 
-.PHONY: help ensure-env start start-workers start-ocr start-browser start-all start-observability stop stop-heavy status health logs-core bootstrap build up down logs migrate makemigrations test lint check frontend-build frontend-test frontend-format reader-e2e shell superuser list-source-packs plan-source-pack apply-source-pack plan-impact-taxonomy apply-impact-taxonomy extract-impacts publish-impact pilot-source audit-static promote-static source-confidence source-soak poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings evaluate-reader quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage backup backup-verify restore-drill observability-check supply-chain-check security-scan sbom production-readiness release-check
+.PHONY: help ensure-env start start-workers start-ocr start-browser start-all start-observability stop stop-heavy status health logs-core bootstrap build up down logs migrate makemigrations test lint check frontend-build frontend-test frontend-format reader-e2e shell superuser list-source-packs plan-source-pack apply-source-pack plan-impact-taxonomy apply-impact-taxonomy extract-impacts publish-impact pilot-source audit-static promote-static source-confidence source-soak poll-jpdp seed-agc pilot-agc audit-agc promote-agc assess-sources repair-source repair-source-apply rehearse-change poll-resource extract route-linked plan-ocr ocr embed-openai evaluate-embeddings evaluate-reader quality audit-lineage classify-lineage anchors compare summarize publish-reviewed audit-orchestrations retry-orchestration verify-storage backup backup-verify restore-drill observability-check supply-chain-check security-scan sbom production-readiness release-check vps-start vps-status vps-readiness vps-stop
 
 help:
 	@printf '%s\n' \
@@ -17,6 +18,10 @@ help:
 		'make sbom           Generate build/aria-sbom.spdx.json' \
 		'make production-readiness  Probe a hardened deployment before exposure' \
 		'make release-check  Run the complete local release gate' \
+		'make vps-start      Start the hardened VPS deployment' \
+		'make vps-status     Show hardened VPS service status' \
+		'make vps-readiness  Run live VPS policy and R2 probes' \
+		'make vps-stop       Stop VPS services without deleting data' \
 		'make status         Show service health' \
 		'make health         Check application readiness' \
 		'make stop           Stop everything without deleting data'
@@ -282,3 +287,16 @@ release-check: supply-chain-check
 	$(MAKE) observability-check
 	$(MAKE) security-scan
 	$(MAKE) sbom
+
+vps-start: ensure-env supply-chain-check
+	ARIA_RELEASE_REVISION="$$(git rev-parse --verify HEAD)" $(VPS_COMPOSE) up --build -d --wait --wait-timeout 600
+
+vps-status:
+	$(VPS_COMPOSE) ps
+
+vps-readiness: ensure-env supply-chain-check
+	ARIA_RELEASE_REVISION="$$(git rev-parse --verify HEAD)" $(VPS_COMPOSE) --profile operations run --rm api python manage.py check_production_readiness
+	ARIA_RELEASE_REVISION="$$(git rev-parse --verify HEAD)" $(VPS_COMPOSE) --profile operations run --rm api python manage.py verify_object_storage
+
+vps-stop:
+	$(VPS_COMPOSE) down

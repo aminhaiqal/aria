@@ -155,6 +155,9 @@ make frontend-build  # rebuild and publish the hashed reader bundle into the Com
 make reader-e2e      # test login, shadcn interaction, CSP, and logout in Chromium
 make release-check   # run the complete local build, test, scan, and SBOM gate
 make production-readiness # verify hardened settings, live dependencies, roles, migrations, and R2
+make vps-start       # start the hardened VPS deployment on the external edge network
+make vps-readiness   # run live policy, dependency, role, migration, and R2 probes
+make vps-stop        # stop the VPS deployment without deleting persistent volumes
 make makemigrations  # generate model migrations
 make migrate         # apply migrations
 make list-source-packs # list validated repository source contracts

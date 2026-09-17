@@ -139,8 +139,9 @@ def validate_repository(root: Path = ROOT) -> None:
         validate_lock(lock_path)
     validate_dockerfile(root / "Dockerfile")
     validate_compose_images(root / "compose.yaml")
-    if not (root / "compose.production.yaml").is_file():
-        raise SupplyChainError("compose.production.yaml is required")
+    for compose_name in ("compose.production.yaml", "compose.vps.yaml"):
+        if not (root / compose_name).is_file():
+            raise SupplyChainError(f"{compose_name} is required")
 
 
 def _require_positive(service_name: str, service: dict[str, Any], field: str) -> None:
@@ -223,7 +224,24 @@ def validate_runtime_config(config: dict[str, Any]) -> None:
     _validate_local_port("prometheus", services["prometheus"])
 
 
-def resolved_production_config(root: Path = ROOT) -> dict[str, Any]:
+def validate_vps_edge_config(config: dict[str, Any]) -> None:
+    services = config.get("services", {})
+    edge_consumers = {
+        service_name
+        for service_name, service in services.items()
+        if "edge" in service.get("networks", {})
+    }
+    if edge_consumers != {"api"}:
+        raise SupplyChainError("only the API may join the VPS edge network")
+    api_edge = services["api"]["networks"]["edge"]
+    if "aria-api" not in api_edge.get("aliases", []):
+        raise SupplyChainError("the VPS edge network must expose only the aria-api alias")
+    edge = config.get("networks", {}).get("edge", {})
+    if edge.get("external") is not True:
+        raise SupplyChainError("the VPS edge network must be externally managed")
+
+
+def _resolved_compose_config(root: Path, *, include_vps: bool) -> dict[str, Any]:
     command = [
         "docker",
         "compose",
@@ -235,11 +253,10 @@ def resolved_production_config(root: Path = ROOT) -> dict[str, Any]:
         "compose.yaml",
         "-f",
         "compose.production.yaml",
-        "config",
-        "--no-env-resolution",
-        "--format",
-        "json",
     ]
+    if include_vps:
+        command.extend(("-f", "compose.vps.yaml"))
+    command.extend(("config", "--no-env-resolution", "--format", "json"))
     try:
         result = subprocess.run(
             command,
@@ -258,10 +275,21 @@ def resolved_production_config(root: Path = ROOT) -> dict[str, Any]:
     return json.loads(result.stdout)
 
 
+def resolved_production_config(root: Path = ROOT) -> dict[str, Any]:
+    return _resolved_compose_config(root, include_vps=False)
+
+
+def resolved_vps_config(root: Path = ROOT) -> dict[str, Any]:
+    return _resolved_compose_config(root, include_vps=True)
+
+
 def main() -> int:
     try:
         validate_repository()
         validate_runtime_config(resolved_production_config())
+        vps_config = resolved_vps_config()
+        validate_runtime_config(vps_config)
+        validate_vps_edge_config(vps_config)
     except (SupplyChainError, json.JSONDecodeError) as error:
         print(f"Supply-chain check failed: {error}", file=sys.stderr)
         return 1

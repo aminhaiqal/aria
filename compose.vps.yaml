@@ -1,0 +1,12 @@
+services:
+  api:
+    networks:
+      backend: {}
+      edge:
+        aliases:
+          - aria-api
+
+networks:
+  edge:
+    name: ${ARIA_EDGE_NETWORK:-memora_public}
+    external: true
