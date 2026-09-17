@@ -51,6 +51,9 @@ GRAFANA_SECURITY_ENVIRONMENT = {
     "GF_PLUGINS_PLUGIN_ADMIN_ENABLED": "false",
     "GF_PLUGINS_PREINSTALL_DISABLED": "true",
     "GF_PLUGINS_PREINSTALL_AUTO_UPDATE": "false",
+    "GF_SERVER_DOMAIN": "metrics.aria.axelyn.com",
+    "GF_SERVER_ROOT_URL": "https://metrics.aria.axelyn.com",
+    "GF_SERVER_ENFORCE_DOMAIN": "true",
 }
 
 
@@ -179,7 +182,9 @@ def _validate_local_port(service_name: str, service: dict[str, Any]) -> None:
         raise SupplyChainError(f"{service_name} must publish only on 127.0.0.1")
 
 
-def validate_runtime_config(config: dict[str, Any]) -> None:
+def validate_runtime_config(
+    config: dict[str, Any], *, grafana_uses_edge: bool = False
+) -> None:
     services = config.get("services", {})
     missing = HARDENED_APP_SERVICES - services.keys()
     if missing:
@@ -273,8 +278,11 @@ def validate_runtime_config(config: dict[str, Any]) -> None:
             raise SupplyChainError(
                 f"Grafana does not enforce security setting {name}={expected}"
             )
-    if set(services["grafana"].get("networks", {})) != {"backend"}:
-        raise SupplyChainError("Grafana must use only the private observability network")
+    expected_grafana_networks = {"backend", "edge"} if grafana_uses_edge else {"backend"}
+    if set(services["grafana"].get("networks", {})) != expected_grafana_networks:
+        raise SupplyChainError(
+            "Grafana must use only its approved observability networks"
+        )
 
     _validate_local_port("api", services["api"])
     _validate_local_port("grafana", services["grafana"])
@@ -288,11 +296,14 @@ def validate_vps_edge_config(config: dict[str, Any]) -> None:
         for service_name, service in services.items()
         if "edge" in service.get("networks", {})
     }
-    if edge_consumers != {"api"}:
-        raise SupplyChainError("only the API may join the VPS edge network")
+    if edge_consumers != {"api", "grafana"}:
+        raise SupplyChainError("only ARIA's approved web surfaces may join the VPS edge network")
     api_edge = services["api"]["networks"]["edge"]
     if "aria-api" not in api_edge.get("aliases", []):
-        raise SupplyChainError("the VPS edge network must expose only the aria-api alias")
+        raise SupplyChainError("the VPS edge network must expose the aria-api alias")
+    grafana_edge = services["grafana"]["networks"]["edge"]
+    if "aria-grafana" not in grafana_edge.get("aliases", []):
+        raise SupplyChainError("the VPS edge network must expose the aria-grafana alias")
     edge = config.get("networks", {}).get("edge", {})
     if edge.get("external") is not True:
         raise SupplyChainError("the VPS edge network must be externally managed")
@@ -345,7 +356,7 @@ def main() -> int:
         validate_repository()
         validate_runtime_config(resolved_production_config())
         vps_config = resolved_vps_config()
-        validate_runtime_config(vps_config)
+        validate_runtime_config(vps_config, grafana_uses_edge=True)
         validate_vps_edge_config(vps_config)
     except (SupplyChainError, json.JSONDecodeError) as error:
         print(f"Supply-chain check failed: {error}", file=sys.stderr)

@@ -150,10 +150,11 @@ The opt-in Compose profile runs self-hosted Prometheus on `127.0.0.1:9090` and G
 `127.0.0.1:3002` by default. Prometheus keeps its token in a mode-077 temporary file and persists
 time series in a named volume. Grafana has anonymous access and sign-up disabled, persists only its
 local state, and provisions the read-only `ARIA Pipeline Performance` dashboard and private
-Prometheus data source directly from the repository. Both services remain outside the public edge
-network and are excluded from `make start`.
+Prometheus data source directly from the repository. Both are excluded from `make start`. The base
+profile keeps both services outside the edge network; the VPS override permits only Grafana to
+join it through the stable `aria-grafana` alias.
 
-Reach the VPS dashboard through an SSH tunnel rather than exposing another public hostname:
+Before enabling the production hostname, reach the dashboard through an SSH tunnel:
 
 ```text
 ssh -L 3002:127.0.0.1:3002 memora_vps
@@ -163,6 +164,13 @@ Then open `http://localhost:3002` and sign in with the configured Grafana creden
 dashboard's six headline numbers show 24-hour source success, lowest evidence coverage, p95 source
 and workflow latency, oldest active work, and the human-review backlog. The remaining panels show
 throughput, evidence-stage coverage, workflow states, source health, and operational exceptions.
+
+For the production HTTPS route, provision the repository's Caddy configuration and a proxied
+Cloudflare DNS record for `metrics.aria.axelyn.com`. Production pins Grafana's canonical root URL
+to that hostname, keeps its host-published port on loopback, and permits the Caddy edge network to
+reach only the Grafana container alias. Prometheus never joins the edge network or receives a
+public route. Grafana authentication remains mandatory; Cloudflare Access is the recommended
+additional perimeter when its identity policy has been configured.
 
 Every HTTP response also carries a bounded `X-Request-ID`. A safe incoming ID is preserved for
 cross-service tracing; malformed or log-injection-shaped values are replaced with a UUID. The same

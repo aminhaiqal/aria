@@ -6,6 +6,13 @@ services:
         aliases:
           - aria-api
 
+  grafana:
+    networks:
+      backend: {}
+      edge:
+        aliases:
+          - aria-grafana
+
 networks:
   edge:
     name: ${ARIA_EDGE_NETWORK:-memora_public}

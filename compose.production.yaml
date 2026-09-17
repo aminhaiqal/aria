@@ -133,6 +133,10 @@ services:
     cpus: "0.5"
 
   grafana:
+    environment:
+      GF_SERVER_DOMAIN: ${ARIA_GRAFANA_DOMAIN:-metrics.aria.axelyn.com}
+      GF_SERVER_ROOT_URL: ${ARIA_GRAFANA_ROOT_URL:-https://metrics.aria.axelyn.com}
+      GF_SERVER_ENFORCE_DOMAIN: "true"
     pids_limit: 128
     mem_limit: 384m
     cpus: "0.5"

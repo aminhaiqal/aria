@@ -8,6 +8,7 @@ DASHBOARD = ROOT / "config" / "grafana" / "dashboards" / "aria-pipeline-performa
 DATASOURCE = (
     ROOT / "config" / "grafana" / "provisioning" / "datasources" / "aria-prometheus.yml"
 )
+CADDYFILE = ROOT / "deploy" / "caddy" / "aria.Caddyfile"
 
 
 class GrafanaProvisioningTests(SimpleTestCase):
@@ -35,3 +36,13 @@ class GrafanaProvisioningTests(SimpleTestCase):
         self.assertIn("url: http://prometheus:9090", datasource)
         self.assertIn("editable: false", datasource)
         self.assertNotIn("localhost", datasource)
+
+    def test_public_metrics_route_exposes_only_grafana(self) -> None:
+        caddyfile = CADDYFILE.read_text(encoding="utf-8")
+
+        self.assertIn("metrics.aria.axelyn.com {", caddyfile)
+        self.assertIn("reverse_proxy aria-grafana:3000", caddyfile)
+        self.assertIn('X-Robots-Tag "noindex, nofollow, noarchive"', caddyfile)
+        metrics_block = caddyfile.split("metrics.aria.axelyn.com {", 1)[1]
+        self.assertNotIn("prometheus", metrics_block)
+        self.assertNotIn(":9090", metrics_block)

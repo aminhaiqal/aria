@@ -15,8 +15,10 @@ compose.production.yaml
 compose.vps.yaml
 ```
 
-Set `ARIA_ALLOWED_HOSTS=aria.memora.com.my,api,aria-api` and
-`ARIA_CSRF_TRUSTED_ORIGINS=https://aria.memora.com.my` in the VPS `.env`. Production also requires
+Set `ARIA_ALLOWED_HOSTS=aria.axelyn.com,api,aria-api` and
+`ARIA_CSRF_TRUSTED_ORIGINS=https://aria.axelyn.com` in the VPS `.env`. Set the Grafana public URL
+to `https://metrics.aria.axelyn.com`; the production Compose override enforces that domain and
+redirect target. Production also requires
 unique application, PostgreSQL, Redis, metrics, and backup-encryption secrets; scoped R2
 credentials; an immutable `ARIA_RELEASE_REVISION`; and distinct reviewer and publisher accounts.
 
@@ -29,9 +31,12 @@ make vps-readiness
 ```
 
 `make vps-readiness` must pass before adding the Caddy block from
-`deploy/caddy/aria.Caddyfile` or creating public DNS. The expected Cloudflare DNS record is a
-proxied `A` record for `aria.memora.com.my` pointing to the VPS origin address. Keep PostgreSQL,
-Redis, Prometheus, and the loopback API port out of public firewall rules.
+`deploy/caddy/aria.Caddyfile` or creating public DNS. The expected Cloudflare records are proxied
+`A` records for `aria.axelyn.com` and `metrics.aria.axelyn.com` pointing to the VPS origin address.
+The shared edge proxy may reach only `aria-api` and `aria-grafana`; Grafana still requires its own
+login. Put Cloudflare Access in front of the metrics hostname when the account identity policy is
+available. Keep PostgreSQL, Redis, Prometheus, and the loopback API and Grafana ports out of public
+firewall rules.
 
 Stop ARIA without deleting its volumes:
 

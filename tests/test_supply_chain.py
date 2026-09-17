@@ -178,7 +178,7 @@ class ProductionIsolationTests(SimpleTestCase):
 
         config = deepcopy(runtime_config())
         config["services"]["grafana"]["networks"] = {"default": {}}
-        with self.assertRaisesMessage(SupplyChainError, "private observability network"):
+        with self.assertRaisesMessage(SupplyChainError, "approved observability networks"):
             validate_runtime_config(config)
 
     def test_grafana_disables_network_plugin_updates(self) -> None:
@@ -211,16 +211,35 @@ class ProductionIsolationTests(SimpleTestCase):
         with self.assertRaisesMessage(SupplyChainError, "must not write"):
             validate_runtime_config(config)
 
-    def test_only_api_may_join_external_vps_edge(self) -> None:
+    def test_only_approved_web_surfaces_may_join_external_vps_edge(self) -> None:
         config = runtime_config()
         config["networks"] = {"edge": {"external": True}}
         config["services"]["api"]["networks"] = {
             "backend": {},
             "edge": {"aliases": ["aria-api"]},
         }
+        config["services"]["grafana"]["networks"] = {
+            "backend": {},
+            "edge": {"aliases": ["aria-grafana"]},
+        }
 
         validate_vps_edge_config(config)
 
         config["services"]["postgres"]["networks"] = {"edge": {}}
-        with self.assertRaisesMessage(SupplyChainError, "only the API"):
+        with self.assertRaisesMessage(SupplyChainError, "approved web surfaces"):
+            validate_vps_edge_config(config)
+
+    def test_vps_grafana_requires_a_stable_edge_alias(self) -> None:
+        config = runtime_config()
+        config["networks"] = {"edge": {"external": True}}
+        config["services"]["api"]["networks"] = {
+            "backend": {},
+            "edge": {"aliases": ["aria-api"]},
+        }
+        config["services"]["grafana"]["networks"] = {
+            "backend": {},
+            "edge": {"aliases": []},
+        }
+
+        with self.assertRaisesMessage(SupplyChainError, "aria-grafana alias"):
             validate_vps_edge_config(config)
