@@ -87,8 +87,8 @@ outputs are explicit derivatives and never replace or mutate the official source
 - Phase 4D.1 source-structure drift quarantine and approved selector fallbacks: implemented
 - Phase 4D.2 encrypted PostgreSQL backup, R2 copy, and disposable restore drill: implemented
 - Phase 4D.3 least-privilege operator roles, login throttling, and two-person release: implemented
-- Phase 4D.4 private metrics, self-hosted Grafana pipeline and source-reliability dashboards,
-  correlation IDs, heartbeat, and alerts: implemented
+- Phase 4D.4 private metrics, self-hosted Grafana pipeline, source-reliability, and governed-release
+  dashboards, correlation IDs, heartbeat, and alerts: implemented
 - Phase 4D.5 immutable base images, hashed Python locks, production isolation, SBOM, and local
   vulnerability scanning: implemented
 - Phase 4D.6 fail-closed production readiness policy and unified release gate: implemented

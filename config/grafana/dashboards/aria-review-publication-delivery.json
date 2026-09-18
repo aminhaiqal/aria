@@ -1,0 +1,759 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {"type": "grafana", "uid": "-- Grafana --"},
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Human-review demand, publication readiness, explicit releases, delivery health, and reader-impact outcomes for ARIA governed outputs.",
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Pipeline performance",
+      "tooltip": "Open the aggregate pipeline scorecard",
+      "type": "link",
+      "url": "/d/aria-pipeline-performance"
+    },
+    {
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Source reliability & freshness",
+      "tooltip": "Open per-source reliability diagnostics",
+      "type": "link",
+      "url": "/d/aria-source-reliability"
+    }
+  ],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "aria-prometheus"},
+      "description": "Change and impact items that are unreviewed or currently need more context.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 1},
+              {"color": "red", "value": 10}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 4, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(aria_review_queue) or vector(0)",
+          "instant": true,
+          "legendFormat": "Waiting",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Review queue",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aria-prometheus"},
+      "description": "How long the oldest change or impact has been waiting for a human decision.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 86400},
+              {"color": "red", "value": 259200}
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 4, "x": 4, "y": 0},
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "max(aria_review_oldest_age_seconds)",
+          "legendFormat": "Oldest",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Oldest review wait",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aria-prometheus"},
+      "description": "Currently confirmed changes and approved impacts eligible for explicit publication.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 1},
+              {"color": "red", "value": 10}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 4, "x": 8, "y": 0},
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(aria_publication_ready) or vector(0)",
+          "instant": true,
+          "legendFormat": "Ready",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Ready to publish",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aria-prometheus"},
+      "description": "Time since the oldest eligible item received its publication-enabling review.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 43200},
+              {"color": "red", "value": 86400}
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 4, "x": 12, "y": 0},
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "max(aria_publication_ready_oldest_age_seconds)",
+          "legendFormat": "Oldest",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Oldest ready item",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aria-prometheus"},
+      "description": "Reviewed-impact webhook events currently in a failed state.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "red", "value": 1}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 4, "x": 16, "y": 0},
+      "id": 5,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(aria_impact_delivery_events{status=\"failed\"}) or vector(0)",
+          "instant": true,
+          "legendFormat": "Failed",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Failed deliveries",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aria-prometheus"},
+      "description": "Age of the oldest reviewed-impact webhook pending while delivery is configured.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 300},
+              {"color": "red", "value": 900}
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 4, "x": 20, "y": 0},
+      "id": 6,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "aria_impact_delivery_oldest_pending_age_seconds",
+          "legendFormat": "Oldest",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Oldest pending delivery",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aria-prometheus"},
+      "description": "Current human-review demand split between textual changes and regulatory impacts.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 1},
+              {"color": "red", "value": 10}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 5},
+      "id": 7,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showUnfilled": true,
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "aria_review_queue",
+          "legendFormat": "{{kind}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Review queue by kind",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aria-prometheus"},
+      "description": "Human decisions recorded during the rolling seven-day window, including superseding decisions.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 5},
+      "id": 8,
+      "options": {
+        "legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "aria_review_decisions_window{window=\"7d\"}",
+          "legendFormat": "{{kind}} · {{decision}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Review decisions · rolling 7d",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aria-prometheus"},
+      "description": "Oldest waiting review age for textual changes and regulatory impacts.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 86400},
+              {"color": "red", "value": 259200}
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 5},
+      "id": 9,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showUnfilled": true,
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "aria_review_oldest_age_seconds",
+          "legendFormat": "{{kind}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Review wait by kind",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aria-prometheus"},
+      "description": "Eligible, explicitly reviewed items waiting for a publisher action.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 1},
+              {"color": "red", "value": 10}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 13},
+      "id": 10,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showUnfilled": true,
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "aria_publication_ready",
+          "legendFormat": "{{kind}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Publication readiness by kind",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aria-prometheus"},
+      "description": "Explicit change and impact publications created during the rolling seven-day window.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 13},
+      "id": 11,
+      "options": {
+        "legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "aria_publications_window{window=\"7d\"}",
+          "legendFormat": "{{kind}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Publications · rolling 7d",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aria-prometheus"},
+      "description": "Median and p95 delay between the enabling review and explicit publication.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "min": 0,
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 13},
+      "id": 12,
+      "options": {
+        "legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "aria_publication_duration_quantile_seconds{window=\"7d\"}",
+          "legendFormat": "{{kind}} · p{{quantile}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Review-to-publication latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aria-prometheus"},
+      "description": "Reviewed-impact webhook events grouped by their current delivery state.",
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "min": 0},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "failed"}, "properties": [{"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}]},
+          {"matcher": {"id": "byName", "options": "published"}, "properties": [{"id": "color", "value": {"fixedColor": "green", "mode": "fixed"}}]}
+        ]
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 21},
+      "id": 13,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showUnfilled": true,
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "aria_impact_delivery_events",
+          "legendFormat": "{{status}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Current delivery state",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aria-prometheus"},
+      "description": "Current outcomes for reviewed-impact webhook events created within the rolling seven-day window.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 21},
+      "id": 14,
+      "options": {
+        "legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "aria_impact_delivery_events_window{window=\"7d\"}",
+          "legendFormat": "{{status}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Delivery outcomes · rolling 7d",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aria-prometheus"},
+      "description": "Accumulated reviewed-impact webhook attempts grouped by each event's current state.",
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "continuous-GrYlRd"}, "min": 0},
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 21},
+      "id": 15,
+      "options": {
+        "displayMode": "lcd",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showUnfilled": true,
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "aria_impact_delivery_attempts",
+          "legendFormat": "{{status}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Delivery attempts by state",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aria-prometheus"},
+      "description": "Approved impacts that became ineligible because their underlying source confirmation was superseded.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "red", "value": 1}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 29},
+      "id": 16,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(aria_publication_blocked) or vector(0)",
+          "instant": true,
+          "legendFormat": "Blocked",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Blocked impact publications",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aria-prometheus"},
+      "description": "Elapsed time since ARIA last completed an outbox delivery successfully.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "continuous-GrYlRd"},
+          "min": 0,
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 29},
+      "id": 17,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "aria_impact_delivery_last_success_age_seconds",
+          "legendFormat": "Last delivery",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Last successful delivery age",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aria-prometheus"},
+      "description": "Elapsed time since the latest explicit textual-change and impact publication.",
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "continuous-GrYlRd"}, "min": 0, "unit": "s"},
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 29},
+      "id": 18,
+      "options": {
+        "displayMode": "lcd",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showUnfilled": true,
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "aria_last_publication_age_seconds",
+          "legendFormat": "{{kind}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Last publication age by kind",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aria-prometheus"},
+      "description": "Deterministic business-profile matching outcomes generated during the rolling seven-day window.",
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "min": 0},
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 29},
+      "id": 19,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showUnfilled": true,
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "aria_profile_impact_matches_window{window=\"7d\"}",
+          "legendFormat": "{{outcome}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Business-profile matches · rolling 7d",
+      "type": "bargauge"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 42,
+  "tags": ["aria", "operations", "reviews", "publication", "delivery"],
+  "templating": {"list": []},
+  "time": {"from": "now-7d", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "ARIA Review, Publication & Delivery",
+  "uid": "aria-review-publication-delivery",
+  "version": 1,
+  "weekStart": "monday"
+}

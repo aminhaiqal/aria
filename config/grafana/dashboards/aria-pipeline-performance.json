@@ -18,6 +18,17 @@
       "tooltip": "Open per-source health and freshness diagnostics",
       "type": "link",
       "url": "/d/aria-source-reliability"
+    },
+    {
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Review, publication & delivery",
+      "tooltip": "Open governed-output and delivery operations",
+      "type": "link",
+      "url": "/d/aria-review-publication-delivery"
     }
   ],
   "liveNow": false,

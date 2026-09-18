@@ -16,12 +16,39 @@ groups:
         annotations:
           summary: ARIA scheduler-worker heartbeat is stale
       - alert: AriaOutboxDeliveryFailed
-        expr: aria_outbox_events{status="failed"} > 0
+        expr: aria_impact_delivery_events{status="failed"} > 0
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: ARIA has failed reviewed-impact delivery events
+          summary: ARIA has failed reviewed-publication delivery events
+      - alert: AriaReviewQueueStale
+        expr: aria_review_oldest_age_seconds > 259200
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: ARIA has review work waiting longer than three days
+          description: >-
+            The oldest {{ $labels.kind }} review item has waited more than 72 hours.
+      - alert: AriaPublicationReadyStale
+        expr: aria_publication_ready_oldest_age_seconds > 86400
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: ARIA has reviewed work waiting for publication
+          description: >-
+            The oldest publishable {{ $labels.kind }} item has waited more than 24 hours.
+      - alert: AriaOutboxDeliveryPending
+        expr: >-
+          (aria_impact_delivery_oldest_pending_age_seconds > 900)
+          and on() (aria_impact_delivery_configured == 1)
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: ARIA delivery has remained pending for more than 15 minutes
       - alert: AriaSourceEndpointUnhealthy
         expr: aria_source_endpoints{health_state="unhealthy"} > 0
         for: 15m

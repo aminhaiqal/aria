@@ -8,6 +8,13 @@ DASHBOARD = ROOT / "config" / "grafana" / "dashboards" / "aria-pipeline-performa
 SOURCE_DASHBOARD = (
     ROOT / "config" / "grafana" / "dashboards" / "aria-source-reliability.json"
 )
+RELEASE_DASHBOARD = (
+    ROOT
+    / "config"
+    / "grafana"
+    / "dashboards"
+    / "aria-review-publication-delivery.json"
+)
 DATASOURCE = (
     ROOT / "config" / "grafana" / "provisioning" / "datasources" / "aria-prometheus.yml"
 )
@@ -92,6 +99,45 @@ class GrafanaProvisioningTests(SimpleTestCase):
         self.assertIn("alert: AriaSourceCoverageIncomplete", alerts)
         self.assertIn("aria_source_freshness_headroom_seconds < 0", alerts)
         self.assertIn("aria_source_poll_overdue_seconds > 900", alerts)
+
+    def test_review_publication_delivery_dashboard_covers_governed_outputs(self) -> None:
+        dashboard = json.loads(RELEASE_DASHBOARD.read_text(encoding="utf-8"))
+        expressions = {
+            target["expr"]
+            for panel in dashboard["panels"]
+            for target in panel.get("targets", [])
+        }
+        panel_titles = {panel["title"] for panel in dashboard["panels"]}
+
+        self.assertEqual(dashboard["uid"], "aria-review-publication-delivery")
+        self.assertEqual(dashboard["refresh"], "30s")
+        self.assertEqual(dashboard["time"]["from"], "now-7d")
+        self.assertFalse(dashboard["editable"])
+        self.assertIn("sum(aria_review_queue) or vector(0)", expressions)
+        self.assertIn("max(aria_review_oldest_age_seconds)", expressions)
+        self.assertIn("aria_publication_ready", expressions)
+        self.assertIn(
+            'aria_publication_duration_quantile_seconds{window="7d"}', expressions
+        )
+        self.assertIn('aria_impact_delivery_events_window{window="7d"}', expressions)
+        self.assertIn("aria_impact_delivery_last_success_age_seconds", expressions)
+        self.assertIn(
+            'aria_profile_impact_matches_window{window="7d"}', expressions
+        )
+        self.assertIn("Blocked impact publications", panel_titles)
+        self.assertIn("Review decisions · rolling 7d", panel_titles)
+        self.assertIn("Delivery outcomes · rolling 7d", panel_titles)
+
+    def test_review_publication_delivery_alerts_cover_stale_work(self) -> None:
+        alerts = ALERTS.read_text(encoding="utf-8")
+
+        self.assertIn("alert: AriaReviewQueueStale", alerts)
+        self.assertIn("alert: AriaPublicationReadyStale", alerts)
+        self.assertIn("alert: AriaOutboxDeliveryPending", alerts)
+        self.assertIn("aria_review_oldest_age_seconds > 259200", alerts)
+        self.assertIn("aria_publication_ready_oldest_age_seconds > 86400", alerts)
+        self.assertIn("aria_impact_delivery_oldest_pending_age_seconds > 900", alerts)
+        self.assertIn("aria_impact_delivery_configured == 1", alerts)
 
     def test_pipeline_dashboard_is_the_server_home_page(self) -> None:
         compose = COMPOSE.read_text(encoding="utf-8")

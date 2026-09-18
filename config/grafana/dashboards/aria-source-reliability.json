@@ -31,6 +31,17 @@
       "tooltip": "Open the aggregate pipeline scorecard",
       "type": "link",
       "url": "/d/aria-pipeline-performance"
+    },
+    {
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Review, publication & delivery",
+      "tooltip": "Open governed-output and delivery operations",
+      "type": "link",
+      "url": "/d/aria-review-publication-delivery"
     }
   ],
   "liveNow": false,

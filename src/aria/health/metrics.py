@@ -5,14 +5,24 @@ from datetime import datetime, timedelta
 
 from django.conf import settings
 from django.core.cache import cache
-from django.db.models import Count, OuterRef, Subquery
+from django.db.models import Count, Exists, F, OuterRef, Q, Subquery, Sum
 from django.utils import timezone
 
 from aria.artifacts.models import ArtifactObservation
-from aria.comparisons.models import ComparisonItem
+from aria.comparisons.models import (
+    ComparisonItem,
+    ComparisonReview,
+    ReviewedChangePublication,
+)
 from aria.discovery.models import ResourceStructureIncident, SourceRun
+from aria.events.delivery import impact_delivery_enabled
 from aria.events.models import OutboxEvent
-from aria.impacts.models import RegulatoryImpact
+from aria.impacts.models import (
+    ImpactReview,
+    ProfileImpactMatch,
+    RegulatoryImpact,
+    ReviewedImpactPublication,
+)
 from aria.orchestration.models import ChangeOrchestration
 from aria.reliability.models import SourceReliabilityAssessment
 from aria.sources.models import SourceEndpoint
@@ -22,6 +32,8 @@ PERFORMANCE_WINDOW = timedelta(hours=24)
 PERFORMANCE_WINDOW_LABEL = "24h"
 SOURCE_RELIABILITY_WINDOW = timedelta(days=7)
 SOURCE_RELIABILITY_WINDOW_LABEL = "7d"
+RELEASE_WINDOW = timedelta(days=7)
+RELEASE_WINDOW_LABEL = "7d"
 
 
 def record_pipeline_heartbeat() -> datetime:
@@ -361,6 +373,357 @@ def _oldest_active_age_seconds(now: datetime) -> float:
     return max(0.0, (now - oldest).total_seconds()) if oldest else 0.0
 
 
+def _age_seconds(now: datetime, observed_at: datetime | None, *, empty: float = 0.0) -> float:
+    return max(0.0, (now - observed_at).total_seconds()) if observed_at else empty
+
+
+def _review_queue(now: datetime) -> tuple[dict[str, int], dict[str, float]]:
+    latest_change_review = ComparisonReview.objects.filter(
+        comparison_item=OuterRef("pk")
+    ).order_by("-created_at", "-id")
+    change_queue = (
+        ComparisonItem.objects.exclude(change_type=ComparisonItem.ChangeType.UNCHANGED)
+        .annotate(
+            latest_review_decision=Subquery(latest_change_review.values("decision")[:1]),
+            latest_reviewed_at=Subquery(latest_change_review.values("created_at")[:1]),
+        )
+        .filter(
+            Q(latest_review_decision__isnull=True)
+            | Q(latest_review_decision=ComparisonReview.Decision.NEEDS_CONTEXT)
+        )
+    )
+    latest_impact_review = ImpactReview.objects.filter(impact=OuterRef("pk")).order_by(
+        "-created_at", "-id"
+    )
+    impact_queue = RegulatoryImpact.objects.annotate(
+        latest_review_decision=Subquery(latest_impact_review.values("decision")[:1]),
+        latest_reviewed_at=Subquery(latest_impact_review.values("created_at")[:1]),
+    ).filter(
+        Q(latest_review_decision__isnull=True)
+        | Q(latest_review_decision=ImpactReview.Decision.NEEDS_CONTEXT)
+    )
+
+    def queue_age(queryset) -> float:
+        waits = (
+            latest_reviewed_at or created_at
+            for created_at, latest_reviewed_at in queryset.values_list(
+                "created_at", "latest_reviewed_at"
+            )
+        )
+        oldest = min(waits, default=None)
+        return _age_seconds(now, oldest)
+
+    return (
+        {"change": change_queue.count(), "impact": impact_queue.count()},
+        {"change": queue_age(change_queue), "impact": queue_age(impact_queue)},
+    )
+
+
+def _publication_readiness(
+    now: datetime,
+) -> tuple[dict[str, int], dict[str, float], int]:
+    latest_change_review = ComparisonReview.objects.filter(
+        comparison_item=OuterRef("pk")
+    ).order_by("-created_at", "-id")
+    change_items = (
+        ComparisonItem.objects.exclude(change_type=ComparisonItem.ChangeType.UNCHANGED)
+        .annotate(
+            latest_review_id=Subquery(latest_change_review.values("id")[:1]),
+            latest_review_decision=Subquery(latest_change_review.values("decision")[:1]),
+            latest_reviewed_at=Subquery(latest_change_review.values("created_at")[:1]),
+        )
+        .annotate(
+            latest_review_published=Exists(
+                ReviewedChangePublication.objects.filter(
+                    confirmation_review_id=OuterRef("latest_review_id")
+                )
+            )
+        )
+    )
+    ready_changes = change_items.filter(
+        latest_review_decision=ComparisonReview.Decision.CONFIRMED,
+        latest_review_published=False,
+    )
+
+    latest_impact_review = ImpactReview.objects.filter(impact=OuterRef("pk")).order_by(
+        "-created_at", "-id"
+    )
+    latest_source_review = ComparisonReview.objects.filter(
+        comparison_item=OuterRef("comparison_item_id")
+    ).order_by("-created_at", "-id")
+    impact_candidates = (
+        RegulatoryImpact.objects.annotate(
+            latest_review_id=Subquery(latest_impact_review.values("id")[:1]),
+            latest_review_decision=Subquery(latest_impact_review.values("decision")[:1]),
+            latest_reviewed_at=Subquery(latest_impact_review.values("created_at")[:1]),
+            latest_source_review_id=Subquery(latest_source_review.values("id")[:1]),
+        )
+        .annotate(
+            latest_review_published=Exists(
+                ReviewedImpactPublication.objects.filter(
+                    impact_review_id=OuterRef("latest_review_id")
+                )
+            )
+        )
+        .filter(
+            latest_review_decision__in=(
+                ImpactReview.Decision.APPROVED,
+                ImpactReview.Decision.AMENDED,
+            ),
+            latest_review_published=False,
+        )
+    )
+    ready_impacts = impact_candidates.filter(
+        confirmation_review_id=F("latest_source_review_id")
+    )
+    blocked_impacts = impact_candidates.exclude(
+        confirmation_review_id=F("latest_source_review_id")
+    ).count()
+
+    def ready_age(queryset) -> float:
+        oldest = (
+            queryset.order_by("latest_reviewed_at")
+            .values_list("latest_reviewed_at", flat=True)
+            .first()
+        )
+        return _age_seconds(now, oldest)
+
+    return (
+        {"change": ready_changes.count(), "impact": ready_impacts.count()},
+        {"change": ready_age(ready_changes), "impact": ready_age(ready_impacts)},
+        blocked_impacts,
+    )
+
+
+def _review_release_metrics(now: datetime) -> list[str]:
+    window_start = now - RELEASE_WINDOW
+    queue_counts, queue_ages = _review_queue(now)
+    ready_counts, ready_ages, blocked_impacts = _publication_readiness(now)
+
+    review_decisions = {
+        "change": _grouped_counts(
+            ComparisonReview.objects.filter(created_at__gte=window_start),
+            "decision",
+            tuple(ComparisonReview.Decision.values),
+        ),
+        "impact": _grouped_counts(
+            ImpactReview.objects.filter(created_at__gte=window_start),
+            "decision",
+            tuple(ImpactReview.Decision.values),
+        ),
+    }
+    publication_querysets = {
+        "change": ReviewedChangePublication.objects.all(),
+        "impact": ReviewedImpactPublication.objects.all(),
+    }
+    publication_counts = {
+        kind: queryset.filter(created_at__gte=window_start).count()
+        for kind, queryset in publication_querysets.items()
+    }
+    publication_ages = {
+        kind: _age_seconds(
+            now,
+            queryset.order_by("-created_at").values_list("created_at", flat=True).first(),
+            empty=math.inf,
+        )
+        for kind, queryset in publication_querysets.items()
+    }
+    publication_durations = {
+        "change": [
+            max(0.0, (published_at - reviewed_at).total_seconds())
+            for reviewed_at, published_at in ReviewedChangePublication.objects.filter(
+                created_at__gte=window_start
+            ).values_list("confirmation_review__created_at", "created_at")
+        ],
+        "impact": [
+            max(0.0, (published_at - reviewed_at).total_seconds())
+            for reviewed_at, published_at in ReviewedImpactPublication.objects.filter(
+                created_at__gte=window_start
+            ).values_list("impact_review__created_at", "created_at")
+        ],
+    }
+
+    impact_delivery_events = OutboxEvent.objects.filter(
+        topic="regulatory.impact.confirmed",
+        pipeline_event__reviewed_impact_publication__isnull=False,
+    )
+    delivery_configured = impact_delivery_enabled()
+    delivery_window = impact_delivery_events.filter(available_at__gte=window_start)
+    delivery_counts = _grouped_counts(
+        impact_delivery_events,
+        "status",
+        tuple(OutboxEvent.Status.values),
+    )
+    delivery_window_counts = _grouped_counts(
+        delivery_window,
+        "status",
+        tuple(OutboxEvent.Status.values),
+    )
+    delivery_attempts = {
+        str(row["status"]): row["total"] or 0
+        for row in impact_delivery_events.values("status")
+        .annotate(total=Sum("attempts"))
+        .order_by("status")
+    }
+    for status in OutboxEvent.Status.values:
+        delivery_attempts.setdefault(status, 0)
+    oldest_pending = (
+        impact_delivery_events.filter(
+            status__in=(OutboxEvent.Status.PENDING, OutboxEvent.Status.PUBLISHING)
+        )
+        .order_by("available_at")
+        .values_list("available_at", flat=True)
+        .first()
+        if delivery_configured
+        else None
+    )
+    last_delivery = (
+        impact_delivery_events.filter(
+            status=OutboxEvent.Status.PUBLISHED,
+            published_at__isnull=False,
+        )
+        .order_by("-published_at")
+        .values_list("published_at", flat=True)
+        .first()
+    )
+    match_counts = _grouped_counts(
+        ProfileImpactMatch.objects.filter(created_at__gte=window_start),
+        "outcome",
+        tuple(ProfileImpactMatch.Outcome.values),
+    )
+
+    lines = [
+        "# HELP aria_review_queue Current items requiring a human review decision.",
+        "# TYPE aria_review_queue gauge",
+        *(
+            f'aria_review_queue{{kind="{kind}"}} {count}'
+            for kind, count in queue_counts.items()
+        ),
+        "# HELP aria_review_oldest_age_seconds Age of the oldest item requiring review.",
+        "# TYPE aria_review_oldest_age_seconds gauge",
+        *(
+            f'aria_review_oldest_age_seconds{{kind="{kind}"}} {_metric_value(age)}'
+            for kind, age in queue_ages.items()
+        ),
+        "# HELP aria_review_decisions_window Review decisions recorded in the rolling window.",
+        "# TYPE aria_review_decisions_window gauge",
+        *(
+            f'aria_review_decisions_window{{kind="{kind}",window="{RELEASE_WINDOW_LABEL}",'
+            f'decision="{decision}"}} {count}'
+            for kind, decisions in review_decisions.items()
+            for decision, count in decisions.items()
+        ),
+        "# HELP aria_publication_ready Current reviewed items ready for explicit publication.",
+        "# TYPE aria_publication_ready gauge",
+        *(
+            f'aria_publication_ready{{kind="{kind}"}} {count}'
+            for kind, count in ready_counts.items()
+        ),
+        (
+            "# HELP aria_publication_ready_oldest_age_seconds Age of the oldest reviewed item "
+            "ready for publication."
+        ),
+        "# TYPE aria_publication_ready_oldest_age_seconds gauge",
+        *(
+            f'aria_publication_ready_oldest_age_seconds{{kind="{kind}"}} '
+            f"{_metric_value(age)}"
+            for kind, age in ready_ages.items()
+        ),
+        "# HELP aria_publication_blocked Current reviewed items blocked from publication.",
+        "# TYPE aria_publication_blocked gauge",
+        (
+            'aria_publication_blocked{kind="impact",reason="stale_source_review"} '
+            f"{blocked_impacts}"
+        ),
+        "# HELP aria_publications_window Explicit reviewed publications in the rolling window.",
+        "# TYPE aria_publications_window gauge",
+        *(
+            f'aria_publications_window{{kind="{kind}",window="{RELEASE_WINDOW_LABEL}"}} '
+            f"{count}"
+            for kind, count in publication_counts.items()
+        ),
+        (
+            "# HELP aria_publication_duration_quantile_seconds Time from review decision to "
+            "explicit publication in the rolling window."
+        ),
+        "# TYPE aria_publication_duration_quantile_seconds gauge",
+        *(
+            f'aria_publication_duration_quantile_seconds{{kind="{kind}",'
+            f'window="{RELEASE_WINDOW_LABEL}",quantile="{quantile:.2f}"}} '
+            f"{_metric_value(_nearest_rank(durations, quantile))}"
+            for kind, durations in publication_durations.items()
+            for quantile in (0.50, 0.95)
+        ),
+        "# HELP aria_last_publication_age_seconds Age of the latest explicit publication.",
+        "# TYPE aria_last_publication_age_seconds gauge",
+        *(
+            f'aria_last_publication_age_seconds{{kind="{kind}"}} {_metric_value(age)}'
+            for kind, age in publication_ages.items()
+        ),
+        (
+            "# HELP aria_impact_delivery_configured Whether reviewed-impact webhook delivery "
+            "is configured."
+        ),
+        "# TYPE aria_impact_delivery_configured gauge",
+        f"aria_impact_delivery_configured {int(delivery_configured)}",
+        "# HELP aria_impact_delivery_events Reviewed-impact webhook events by current state.",
+        "# TYPE aria_impact_delivery_events gauge",
+        *(
+            f'aria_impact_delivery_events{{status="{status}"}} {count}'
+            for status, count in delivery_counts.items()
+        ),
+        (
+            "# HELP aria_impact_delivery_events_window Reviewed-impact webhook events created "
+            "in the rolling window by state."
+        ),
+        "# TYPE aria_impact_delivery_events_window gauge",
+        *(
+            f'aria_impact_delivery_events_window{{window="{RELEASE_WINDOW_LABEL}",'
+            f'status="{status}"}} '
+            f"{count}"
+            for status, count in delivery_window_counts.items()
+        ),
+        (
+            "# HELP aria_impact_delivery_attempts Total reviewed-impact webhook attempts by "
+            "current event state."
+        ),
+        "# TYPE aria_impact_delivery_attempts gauge",
+        *(
+            f'aria_impact_delivery_attempts{{status="{status}"}} {count}'
+            for status, count in sorted(delivery_attempts.items())
+        ),
+        (
+            "# HELP aria_impact_delivery_oldest_pending_age_seconds Age of the oldest pending "
+            "or publishing reviewed-impact webhook when delivery is configured."
+        ),
+        "# TYPE aria_impact_delivery_oldest_pending_age_seconds gauge",
+        (
+            "aria_impact_delivery_oldest_pending_age_seconds "
+            f"{_age_seconds(now, oldest_pending):.3f}"
+        ),
+        (
+            "# HELP aria_impact_delivery_last_success_age_seconds Age of the latest successful "
+            "reviewed-impact webhook delivery."
+        ),
+        "# TYPE aria_impact_delivery_last_success_age_seconds gauge",
+        (
+            "aria_impact_delivery_last_success_age_seconds "
+            f"{_metric_value(_age_seconds(now, last_delivery, empty=math.inf))}"
+        ),
+        (
+            "# HELP aria_profile_impact_matches_window Business-profile impact matches in the "
+            "rolling window."
+        ),
+        "# TYPE aria_profile_impact_matches_window gauge",
+        *(
+            f'aria_profile_impact_matches_window{{window="{RELEASE_WINDOW_LABEL}",'
+            f'outcome="{outcome}"}} {count}'
+            for outcome, count in match_counts.items()
+        ),
+    ]
+    return lines
+
+
 def _performance_metrics(now: datetime) -> list[str]:
     window_start = now - PERFORMANCE_WINDOW
     recent_runs = SourceRun.objects.filter(created_at__gte=window_start)
@@ -538,6 +901,7 @@ def render_operational_metrics() -> str:
             f"aria_impact_review_backlog {_impact_review_backlog()}",
         )
     )
+    lines.extend(_review_release_metrics(now))
     lines.extend(_performance_metrics(now))
     heartbeat = pipeline_heartbeat()
     heartbeat_timestamp = heartbeat.timestamp() if heartbeat else 0

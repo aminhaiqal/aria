@@ -135,8 +135,12 @@ changed-versus-unchanged artifact throughput, p50/p95 source-run and workflow la
 active-work age, and aggregate artifact, extraction, graph, and embedding coverage. The bounded
 per-source metrics add current reliability and HTTP health, freshness headroom, poll delay,
 last-success age, consecutive failures, seven-day scheduled-run outcomes, stage coverage, and
-stable finding codes. Official URLs, domains, source display names, document titles, artifact
-hashes, user IDs, profile names, finding details, and evidence text never become metric labels.
+stable finding codes. Bounded release metrics add change and impact review queues, queue age,
+decision outcomes, publication readiness and latency, reviewed-impact webhook state and age, and
+aggregate business-profile match outcomes. Buffered outbox events without a configured delivery
+adapter remain outside the delivery-age signal. Official URLs, domains, source display names,
+document titles, artifact hashes, user IDs, profile names, finding details, and evidence text never
+become metric labels.
 
 The minute-level heartbeat is published by Beat to the normal discovery queue and written to the
 shared cache when a core worker executes it. Its age therefore proves the scheduler, broker, and a
@@ -155,11 +159,12 @@ The opt-in Compose profile runs self-hosted Prometheus on `127.0.0.1:9090` and G
 `127.0.0.1:3002` by default. Prometheus keeps its token in a mode-077 temporary file and persists
 time series in a named volume. Grafana has anonymous access and sign-up disabled, persists only its
 local state, and provisions the read-only `ARIA Pipeline Performance` and `ARIA Source Reliability
-& Freshness` dashboards plus the private Prometheus data source directly from the repository. Both
-services are excluded from `make start`. The base profile keeps them outside the edge network; the
-VPS override permits only Grafana to join it through the stable `aria-grafana` alias. Grafana uses
-the provisioned ARIA Pipeline Performance dashboard as its server home page, so an authenticated
-operator lands on live ARIA metrics instead of Grafana's generic welcome screen.
+& Freshness` dashboards, the `ARIA Review, Publication & Delivery` dashboard, and the private
+Prometheus data source directly from the repository. Both services are excluded from `make start`.
+The base profile keeps them outside the edge network; the VPS override permits only Grafana to join
+it through the stable `aria-grafana` alias. Grafana uses the provisioned ARIA Pipeline Performance
+dashboard as its server home page, so an authenticated operator lands on live ARIA metrics instead
+of Grafana's generic welcome screen.
 
 Before enabling the production hostname, reach the dashboard through an SSH tunnel:
 
@@ -174,7 +179,10 @@ throughput, evidence-stage coverage, workflow states, source health, and operati
 Its dashboard link opens `ARIA Source Reliability & Freshness`, which filters by source and shows
 current reliability, freshness headroom, poll delay, last-success age, per-stage coverage,
 scheduled-run outcomes, consecutive failures, and current finding codes. The source dashboard
-links back to the aggregate scorecard and defaults to a seven-day window.
+links back to the aggregate scorecard and defaults to a seven-day window. Both dashboards link to
+`ARIA Review, Publication & Delivery`, which shows human-review demand and age, publication-ready
+work, explicit publication volume and latency, delivery state and retries, blocked stale impacts,
+and aggregate business-profile matching outcomes over seven days.
 
 For the production HTTPS route, provision the repository's Caddy configuration and a Cloudflare
 DNS-only `A` record for `metrics.aria.axelyn.com`. The nested hostname is not covered by the
