@@ -338,6 +338,7 @@ READER_EMBEDDING_PROVIDER = os.getenv("ARIA_READER_EMBEDDING_PROVIDER", EMBEDDIN
 READER_FRONTEND = os.getenv("ARIA_READER_FRONTEND", "react").strip().lower()
 if READER_FRONTEND not in {"react", "server"}:
     raise ImproperlyConfigured("ARIA_READER_FRONTEND must be react or server.")
+READER_USAGE_TRACKING = env_bool("ARIA_READER_USAGE_TRACKING", True)
 READER_FRONTEND_DIST = Path(
     os.getenv("ARIA_READER_FRONTEND_DIST", str(BASE_DIR / "frontend" / "reader" / "dist"))
 )

@@ -26,6 +26,11 @@ from aria.reader.services import (
     reader_document_payload,
     search_reader_documents,
 )
+from aria.reader.usage import (
+    record_reader_document_view,
+    record_reader_evidence_download,
+    record_reader_search,
+)
 
 reader_required = login_required(login_url="reader:login")
 
@@ -147,6 +152,11 @@ def search(request):
                 page=page,
                 page_size=settings.READER_PAGE_SIZE,
             )
+            record_reader_search(
+                user=request.user,
+                query=form.cleaned_data["q"],
+                result=result,
+            )
         except ReaderQueryError as error:
             form.add_error(None, str(error))
         except ReaderSearchUnavailable as error:
@@ -182,6 +192,7 @@ def document_detail(request, identity_id: UUID):
         document = reader_document_payload(identity_id)
     except DocumentIdentity.DoesNotExist as error:
         raise Http404 from error
+    record_reader_document_view(user=request.user, identity_id=identity_id)
     return render(
         request,
         "reader/document_detail.html",
@@ -216,6 +227,7 @@ def artifact_content(request, artifact_id: UUID):
             status=409,
             content_type="text/plain; charset=utf-8",
         )
+    record_reader_evidence_download(user=request.user, artifact=artifact)
     suffix = {
         "application/pdf": ".pdf",
         "text/html": ".html",

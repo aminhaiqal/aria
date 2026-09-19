@@ -178,6 +178,9 @@ def _create_version(
             },
         },
     )
+    if identity.superseded_by_id:
+        identity = DocumentIdentity.objects.get(pk=identity.superseded_by_id)
+        identity_url = identity.canonical_url
     _supersede_observed_url_identity(
         collection=collection,
         observed_url=observed_url,

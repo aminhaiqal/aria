@@ -45,15 +45,15 @@ publications before any AI interpretation is introduced.
 - Immutable OCR derivatives with source/output hashes, toolchain records, and page metrics
 - A dedicated self-hosted OCRmyPDF/Tesseract worker with Malay and English language data
 - Explicit pipeline states from discovery through publication and failure handling
-- Transactional pipeline events and an outbox ready for a future delivery transport
+- Transactional pipeline events and a durable outbox with signed reviewed-impact webhook delivery
 - Append-only audit records
 - Django Admin operations and read-only DRF registry, evidence, graph, and search APIs
 - Celery worker queues separated by workload type, including isolated browser and OCR workers
 - Liveness and database/Redis readiness probes
 - A self-hosted Docker Compose stack using pgvector-enabled PostgreSQL and Redis
 
-Legal-relationship extraction and external outbox delivery remain for later phases. Browser and OCR
-outputs are explicit derivatives and never replace or mutate the official source artifact.
+Legal-relationship extraction remains for a later phase. Browser and OCR outputs are explicit
+derivatives and never replace or mutate the official source artifact.
 
 ## Current milestone
 
@@ -94,10 +94,50 @@ outputs are explicit derivatives and never replace or mutate the official source
 - Phase 4D.6 fail-closed production readiness policy and unified release gate: implemented
 - Phase 2 source breadth: JPDP, AGC Updated Principal Acts, and Parliament Dewan Rakyat bills are
   operational with complete R2, extraction, graph, local-vector, and hosted-vector coverage
-- Operational acceptance still pending: observe the first autonomous AGC and Parliament daily
-  cycles through the durable soak gate; manual pilot success is not presented as autonomous proof
-- Next implementation step: satisfy the production readiness gate, expose a private Cloudflare
-  preview, and collect evidence-reader feedback
+- Operational acceptance: complete for AGC and Parliament after their first autonomous scheduled
+  cycles passed the durable soak gate
+- Production deployment: running behind the hardened edge with the release-readiness gate,
+  encrypted backups, private Prometheus metrics, and three provisioned Grafana dashboards
+- Current focus: Phase 5 first product proof
+
+## Phase 5: first product proof
+
+Phase 5 moves ARIA from a deployed technical foundation to a product validated through real use.
+Its goal is to prove that one official regulatory change can travel through the complete governed
+workflow and produce useful, evidence-backed intelligence for an actual business profile.
+
+### Workstreams
+
+1. **Stabilize the production baseline**
+   - Restore every operational source to healthy end-to-end projection coverage.
+   - Resolve workflows waiting for quality review and keep the production readiness gate green.
+   - Record the deployed baseline as the first versioned product release.
+2. **Prove the complete change journey**
+   - Observe a genuine change or use a controlled, production-safe rehearsal when an official
+     change is not available.
+   - Exercise version comparison, source-change review, impact generation, impact review,
+     business-profile matching, explicit publication, and signed delivery.
+   - Preserve the exact source artifact, before/after anchors, human decisions, and delivery result
+     as the acceptance evidence.
+3. **Run a focused user pilot**
+   - Onboard three to five compliance, legal-operations, or business-risk users.
+   - Give each user an owner-scoped business profile and evidence-reader tasks based on their work.
+   - Capture structured feedback on search usefulness, evidence clarity, relevance explanations,
+     and the actionability of reviewed impacts.
+4. **Measure product outcomes**
+   - Track time from source detection to reviewed publication, search success, evidence-link use,
+     profile-match usefulness, and delivery acceptance.
+   - Use pilot evidence to choose the next source, workflow, or delivery investment.
+
+### Exit criteria
+
+Phase 5 is complete when:
+
+- all operational sources report healthy end-to-end coverage;
+- at least one change completes the governed workflow through publication and delivery;
+- at least three pilot users have used business profiles and the evidence reader;
+- pilot findings and product metrics are recorded; and
+- the next product milestone is chosen from observed user and operational evidence.
 
 ## Local setup
 
@@ -169,6 +209,8 @@ make audit-static SOURCE=<slug> # record immutable static-source admission gates
 make promote-static ASSESSMENT_ID=<uuid> # enable only the exact current ready evidence
 make source-confidence # report admission and end-to-end coverage for every source
 make source-soak      # report first autonomous AGC/Parliament cycle acceptance
+make phase5-status    # report evidence against every Phase 5 exit criterion
+make rehearse-product # exercise review, matching, publication, and signed delivery in isolation
 make poll-jpdp       # queue one bounded manual JPDP monitoring cycle
 make seed-agc        # register/update the disabled AGC JavaScript pilot
 make pilot-agc       # queue one manual AGC run without enabling its schedule
@@ -242,5 +284,6 @@ See [Foundation architecture](docs/foundation.md), [Phase 2 retrieval](docs/retr
 [Phase F self-hosted OCR](docs/ocr.md), and
 [Phase G hybrid embeddings](docs/embeddings.md), and
 [Phase 4 reader interface](docs/reader-interface.md), and
-[Phase 4C regulatory impact intelligence](docs/business-impact.md) for design decisions and operating
+[Phase 4C regulatory impact intelligence](docs/business-impact.md), and
+[Phase 5 first product proof](docs/phase5-product-proof.md) for design decisions and operating
 instructions.

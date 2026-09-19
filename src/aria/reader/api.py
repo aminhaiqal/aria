@@ -18,6 +18,7 @@ from aria.reader.services import (
     reader_document_payload,
     search_reader_documents,
 )
+from aria.reader.usage import record_reader_document_view, record_reader_search
 
 
 class IsActiveAuthenticated(BasePermission):
@@ -177,6 +178,11 @@ class ReaderSearchAPIView(APIView):
             return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
         except ReaderSearchUnavailable as error:
             return Response({"detail": str(error)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        record_reader_search(
+            user=request.user,
+            query=request.query_params.get("q", ""),
+            result=result,
+        )
         return Response(result)
 
 
@@ -204,6 +210,11 @@ class ReaderDocumentAPIView(APIView):
             )
         except DocumentIdentity.DoesNotExist as error:
             raise Http404 from error
+        record_reader_document_view(
+            user=request.user,
+            identity_id=identity_id,
+            profile_id=str(business_profile.id) if business_profile else "",
+        )
         return Response(payload)
 
 

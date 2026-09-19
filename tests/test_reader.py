@@ -1,4 +1,5 @@
 import hashlib
+import json
 from datetime import timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -21,6 +22,7 @@ from aria.documents.models import (
     NormalizedSection,
     VersionEvidence,
 )
+from aria.events.models import AuditEvent
 from aria.extraction.models import ExtractedBlock, ExtractedDocument, ExtractionRun
 from aria.fetching.models import FetchAttempt
 from aria.knowledge.embeddings import EmbeddingError
@@ -273,6 +275,12 @@ class ReaderInterfaceTestCase(TestCase):
         )
         self.assertEqual(document_response.status_code, 200)
         self.assertEqual(document_response.json()["section_count"], 1)
+        search_event = AuditEvent.objects.get(action="reader.search.completed")
+        self.assertEqual(search_event.actor_identifier, str(self.reader.pk))
+        self.assertEqual(search_event.details["bounded_result_count"], 1)
+        self.assertNotIn("protect personal data", json.dumps(search_event.details))
+        document_event = AuditEvent.objects.get(action="reader.document.viewed")
+        self.assertEqual(document_event.target_id, self.identity.id)
         self.assertEqual(
             self.client.get(endpoint, {"q": "x", "page": 11}).status_code,
             400,
@@ -428,12 +436,20 @@ class ReaderInterfaceTestCase(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["X-Content-SHA256"], self.artifact.sha256)
         self.assertEqual(response["X-ARIA-Evidence"], "immutable-artifact")
+        self.assertEqual(
+            AuditEvent.objects.filter(action="reader.evidence.downloaded").count(),
+            1,
+        )
         (self.storage_root / self.artifact.storage_key).write_bytes(b"tampered")
         with override_settings(OBJECT_STORAGE_ROOT=self.storage_root):
             corrupt_response = self.client.get(
                 reverse("reader:artifact-content", kwargs={"artifact_id": self.artifact.id})
             )
         self.assertEqual(corrupt_response.status_code, 409)
+        self.assertEqual(
+            AuditEvent.objects.filter(action="reader.evidence.downloaded").count(),
+            1,
+        )
         orphan = RawArtifact.objects.create(
             sha256="1" * 64,
             byte_size=1,
