@@ -64,6 +64,32 @@ at 25 candidates, and installs with `is_enabled=false` and no next poll. Its col
 labels the records as parliamentary bills rather than enacted law. Applying the pack registers the
 contract; it does not retrieve documents or activate a schedule.
 
+## BNM fintech regulatory channel
+
+`bnm-payment-systems` is the governed source for the first **ARIA Fintech Regulatory Radar —
+Malaysia** channel. It monitors Bank Negara Malaysia's official
+[Payment Systems](https://www.bnm.gov.my/payment-systems) table, which includes payment policy
+documents, exposure drafts, regulations, discussion papers, and their supporting PDFs.
+
+The connector uses the server-rendered `#filta` table and admits only HTTPS PDF links below the
+official `/documents/` path. It rejects navigation, external hosts, and non-PDF feedback templates,
+and caps each run at 60 candidates. The endpoint installs disabled with no schedule and must pass
+the same two-run static admission gate as Parliament before promotion.
+
+```bash
+make plan-source-pack PACK=bnm-payment-systems
+make apply-source-pack PACK=bnm-payment-systems
+make pilot-source SOURCE=bnm-payment-systems
+# Wait for the complete downstream pipeline, then repeat the pilot.
+make audit-static SOURCE=bnm-payment-systems
+make promote-static ASSESSMENT_ID=<ready-assessment-uuid>
+```
+
+Once admitted, BNM publications appear in the existing evidence reader under the Bank Negara
+Malaysia authority and Payment systems policy documents collection. The source keeps the original
+document wording and archived PDF as evidence; ARIA's generated impact explanations remain subject
+to human review before publication.
+
 ## Guarded static-source admission
 
 Phase 3D.10 gives deterministic HTML listing sources the same durable admission boundary as a

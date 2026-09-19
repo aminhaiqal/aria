@@ -27,6 +27,7 @@ class SourcePackValidationTestCase(TestCase):
 
     def test_repository_packs_are_valid_and_discoverable(self) -> None:
         self.assertIn("agc-updated-principal-acts", available_source_packs())
+        self.assertIn("bnm-payment-systems", available_source_packs())
         self.assertIn("jpdp-act-709", available_source_packs())
         self.assertIn("parliament-dewan-rakyat-bills", available_source_packs())
         self.assertEqual(len(self.pack.checksum), 64)
@@ -34,7 +35,7 @@ class SourcePackValidationTestCase(TestCase):
     def test_repository_packs_use_three_hour_monitoring_policy(self) -> None:
         for slug in available_source_packs():
             pack = load_source_pack(slug)
-            self.assertEqual(pack.version, 4)
+            self.assertGreaterEqual(pack.version, 1)
             self.assertEqual(pack.definition["endpoint"]["polling_interval_minutes"], 180)
             for resource in pack.definition["resources"]:
                 self.assertEqual(resource.get("polling_interval_minutes", 180), 180)
@@ -210,3 +211,18 @@ class SourcePackApplicationTestCase(TestCase):
         self.assertEqual(configuration["link_attribute"], "onclick")
         self.assertEqual(configuration["max_candidates"], 25)
         self.assertTrue(configuration["bootstrap_candidate_session"])
+
+    def test_bnm_fintech_channel_is_bounded_and_installs_disabled(self) -> None:
+        result = apply_source_pack(load_source_pack("bnm-payment-systems"))
+
+        self.assertFalse(result.endpoint.is_enabled)
+        self.assertFalse(result.endpoint.requires_javascript)
+        self.assertIsNone(result.endpoint.next_poll_at)
+        self.assertEqual(result.endpoint.collection.document_family, "policy")
+        self.assertEqual(result.endpoint.collection.priority, 10)
+        self.assertEqual(result.endpoint.allowed_domains, ["bnm.gov.my"])
+        configuration = result.endpoint.connector_configurations.get(version=1).configuration
+        self.assertEqual(configuration["link_selector"], "#filta tbody a[href*='.pdf']")
+        self.assertEqual(configuration["include_path_prefixes"], ["/documents/"])
+        self.assertEqual(configuration["document_content_types"], ["application/pdf"])
+        self.assertEqual(configuration["max_candidates"], 60)

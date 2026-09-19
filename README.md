@@ -94,6 +94,9 @@ derivatives and never replace or mutate the official source artifact.
 - Phase 4D.6 fail-closed production readiness policy and unified release gate: implemented
 - Phase 2 source breadth: JPDP, AGC Updated Principal Acts, and Parliament Dewan Rakyat bills are
   operational with complete R2, extraction, graph, local-vector, and hosted-vector coverage
+- Fintech channel onboarding: the governed BNM Payment Systems source pack is implemented for
+  policy documents, exposure drafts, regulations, and supporting PDFs; activation remains subject
+  to the static-source admission gate
 - Operational acceptance: complete for AGC and Parliament after their first autonomous scheduled
   cycles passed the durable soak gate
 - Production deployment: running behind the hardened edge with the release-readiness gate,

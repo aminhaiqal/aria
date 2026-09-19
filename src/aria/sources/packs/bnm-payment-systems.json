@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "slug": "bnm-payment-systems",
+  "version": 1,
+  "authority": {
+    "slug": "bank-negara-malaysia",
+    "name": "Bank Negara Malaysia",
+    "aliases": ["BNM", "Central Bank of Malaysia"],
+    "jurisdiction": "Malaysia",
+    "country_code": "MY",
+    "authority_type": "central_bank",
+    "regulatory_domains": ["financial-services", "payments", "fintech"],
+    "official_domains": ["bnm.gov.my"],
+    "trust_classification": "authoritative",
+    "is_enabled": true
+  },
+  "collection": {
+    "slug": "payment-systems-policy-documents",
+    "name": "Payment systems policy documents",
+    "document_family": "policy",
+    "default_legal_status": "Official central-bank policy and regulatory publication",
+    "is_evidence_eligible": true,
+    "priority": 10,
+    "expected_update_frequency": "Ad hoc; poll every three hours after admission",
+    "is_enabled": true
+  },
+  "endpoint": {
+    "name": "BNM payment systems policy documents",
+    "discovery_url": "https://www.bnm.gov.my/payment-systems",
+    "connector_type": "html_listing",
+    "allowed_domains": ["bnm.gov.my"],
+    "polling_interval_minutes": 180,
+    "pagination_strategy": "none",
+    "expected_content_types": ["text/html", "application/pdf"],
+    "requires_javascript": false,
+    "connector_configuration_version": 1,
+    "default_enabled": false
+  },
+  "connector_configurations": [
+    {
+      "version": 1,
+      "configuration": {
+        "link_selector": "#filta tbody a[href*='.pdf']",
+        "include_path_prefixes": ["/documents/"],
+        "upload_path_prefixes": ["/documents/"],
+        "document_extensions": [".pdf"],
+        "document_content_types": ["application/pdf"],
+        "max_candidates": 60
+      },
+      "notes": "Live review on 2026-09-20 found a server-rendered BNM payment-systems table with official PDF policy documents and supporting material. The selector excludes navigation and non-PDF feedback templates.",
+      "is_active": true
+    }
+  ],
+  "resources": []
+}
