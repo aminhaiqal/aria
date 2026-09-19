@@ -102,6 +102,11 @@ derivatives and never replace or mutate the official source artifact.
 - Production deployment: running behind the hardened edge with the release-readiness gate,
   encrypted backups, private Prometheus metrics, and three provisioned Grafana dashboards
 - Current focus: Phase 5 first product proof
+- Proposed next milestone: Phase 6 obligation intelligence, activated only by the recorded Phase 5
+  milestone decision
+
+The outcome-gated product sequence and five-dimension benchmark are maintained in
+[ROADMAP.md](ROADMAP.md).
 
 ## Phase 5: first product proof
 
@@ -141,6 +146,228 @@ Phase 5 is complete when:
 - at least three pilot users have used business profiles and the evidence reader;
 - pilot findings and product metrics are recorded; and
 - the next product milestone is chosen from observed user and operational evidence.
+
+## Phase 6: obligation intelligence
+
+Phase 6 turns reviewed regulatory evidence into a first-class, versioned obligation system of
+record. It begins only after Phase 5 records a next-milestone decision selecting this investment.
+The target is a durable statement of what an affected party must, must not, or may do, with exact
+official citations, human review, lifecycle history, and a usable obligation library.
+
+Phase 6 is split into small, ordered releases. Every sub-phase must leave production deployable,
+use additive migrations, preserve the existing evidence and review boundaries, and ship its own
+tests, documentation, audit events, metrics, and rollback path. Later sub-phases cannot make an
+earlier release unsafe or unusable.
+
+| Sub-phase | Independently shippable outcome | Primary benchmark |
+|---|---|---|
+| 6.0 | Obligation contract and labelled evaluation set | Trust and product architecture |
+| 6.1 | Evidence-bound obligation records and one manual vertical slice | CUBE and Thomson Reuters |
+| 6.2 | Append-only human obligation review | RegASK and Thomson Reuters |
+| 6.3 | Deterministic obligation proposals | CUBE and Nakhoda |
+| 6.4 | Guarded AI obligation proposals | RegASK |
+| 6.5 | Obligation lifecycle and history | CUBE and Thomson Reuters |
+| 6.6 | Searchable obligation library | Nakhoda and Thomson Reuters |
+| 6.7 | Measured pilot acceptance and Phase 7 decision | CUBE, RegASK, Thomson Reuters, and Nakhoda |
+
+### Phase 6.0: obligation contract and evaluation foundation
+
+**Outcome:** the team agrees on what ARIA calls an obligation and how it will measure extraction
+quality before building the production model.
+
+Deliver:
+
+- define the canonical obligation fields: regulated actor, action, modality, condition, exception,
+  timing or frequency, jurisdiction, legal status, effective date, and citations;
+- distinguish `change_derived` obligations from `baseline_derived` obligations so the existing
+  corpus can be bootstrapped without pretending that every obligation came from a detected change;
+- define the lifecycle vocabulary and allowed transitions for proposed, reviewed, effective,
+  superseded, withdrawn, and needs-context records;
+- define exact evidence requirements for a document version, normalized section, source locator,
+  artifact hash, and confirmed comparison when one exists;
+- define how merge, split, amendment, replacement, and unchanged relationships preserve identity;
+- create a versioned labelled set containing obligations and non-obligations from the pilot's
+  highest-value document types, with Malay and English cases where the source corpus permits; and
+- record the legal-effect and uncertainty rules, including when ARIA must return needs-context.
+
+Acceptance:
+
+- the schema, state machine, evidence contract, and worked examples are documented and reviewed;
+- every labelled example has a retained official evidence reference and reviewer attribution;
+- evaluation metrics include field accuracy, citation accuracy, obligation recall, false-positive
+  rate, and reviewer disagreement; and
+- the labelled set is versioned so later extraction results remain comparable.
+
+### Phase 6.1: evidence-bound obligation core
+
+**Outcome:** ARIA can store and reconstruct a manually created obligation through the complete
+evidence spine before automation is introduced.
+
+Deliver:
+
+- add append-only obligation and obligation-evidence records with stable identifiers and content
+  fingerprints;
+- link change-derived records to the current confirmed comparison item and baseline-derived records
+  to the exact current document version and sections;
+- snapshot the cited text, locator, section and artifact hashes, source authority, and document
+  version used at creation time;
+- add a transactional service and guarded management command for the first manual vertical slice;
+- expose read-only administrator inspection and API serialization; and
+- emit an actor-attributed audit record without publishing the obligation to readers.
+
+Acceptance:
+
+- the same evidence input is idempotent and cannot create duplicate obligations;
+- missing, stale, cross-document, or mismatched evidence fails closed;
+- stored obligation and evidence records cannot be updated or deleted;
+- at least one baseline-derived and one change-derived test case can be reconstructed from official
+  artifact to obligation wording; and
+- migration, model, service, permission, API, and audit tests pass.
+
+### Phase 6.2: human obligation review
+
+**Outcome:** a reviewer can make an explicit decision on a proposed obligation without changing its
+original evidence or proposal history.
+
+Deliver:
+
+- add append-only review decisions for approve, amend, reject, request-context, merge, and split;
+- snapshot the reviewed wording, structured fields, citations, rationale, predecessor decision, and
+  actor;
+- provide a staff-only review screen showing the source passage, change evidence, proposal, and full
+  decision history together;
+- use transactional locks and stale-evidence checks to prevent conflicting or outdated decisions;
+- derive the current reviewed projection from history rather than mutating an old decision; and
+- keep approval separate from reader publication or external delivery.
+
+Acceptance:
+
+- every supported decision path has authorization, CSRF, concurrency, audit, and immutability tests;
+- amendments retain both the proposal and the exact reviewer changes;
+- merge and split decisions preserve links to every predecessor and citation;
+- a superseded source-change confirmation cannot receive a current approval; and
+- no proposal is treated as an operative obligation without a valid current review.
+
+### Phase 6.3: deterministic obligation proposals
+
+**Outcome:** ARIA can propose common obligation structures with reproducible rules and measure them
+against the labelled set.
+
+Deliver:
+
+- implement a versioned deterministic provider for explicit obligation, prohibition, permission,
+  deadline, reporting, record-keeping, registration, governance, and exception language;
+- accept only bounded, evidence-eligible sections or confirmed comparison anchors;
+- record every attempt with provider version, input snapshot and hash, output, status, duration, and
+  failure reason;
+- require proposed citations to match supplied evidence exactly;
+- make replay idempotent and prevent partial records after a failed validation; and
+- expose proposals through the Phase 6.2 review queue.
+
+Acceptance:
+
+- precision, recall, field accuracy, and citation accuracy are reported on the versioned labelled
+  set;
+- deterministic output is byte-for-byte reproducible for the same rules and input;
+- negative examples do not create obligations above the agreed false-positive threshold;
+- invalid or unsupported fields fail closed; and
+- reviewers can trace every proposal to the exact rule and evidence that produced it.
+
+### Phase 6.4: guarded AI obligation proposals
+
+**Outcome:** AI can improve obligation coverage or analyst speed under the same evidence and review
+contract as deterministic extraction.
+
+Deliver:
+
+- add a structured-output provider using the canonical obligation schema and bounded evidence;
+- require exact supplied citations and reject invented locators, actors, dates, exceptions, or
+  source relationships;
+- record model, prompt version, schema version, input hash, response identifier, token use, latency,
+  raw output, validation result, and failure reason;
+- show reviewers the AI proposal beside its evidence and any deterministic proposal;
+- add time, token, cost, retry, and circuit-breaker limits with a safe deterministic fallback; and
+- prevent model or prompt changes from reaching production without a regression evaluation.
+
+Acceptance:
+
+- the AI provider meets pre-recorded citation, field, and recall thresholds on the labelled set;
+- its reviewer acceptance or handling-time result materially improves on the deterministic baseline;
+- malformed, unsupported, or uncited output leaves no partial obligation records;
+- outages and exhausted budgets do not block manual or deterministic review work; and
+- AI-created content remains visibly proposed until a human review makes it current.
+
+### Phase 6.5: obligation lifecycle and history
+
+**Outcome:** ARIA can explain how an obligation changed over time and reproduce its status for a
+selected date.
+
+Deliver:
+
+- add evidence-backed new, amended, replaced, unchanged, superseded, and withdrawn relationships;
+- require effective, commencement, withdrawal, and deadline dates to be cited or explicitly unknown;
+- separate document publication dates, ARIA observation dates, review dates, and legal-effect dates;
+- project a current obligation view from append-only versions and reviews;
+- provide as-of queries and a chronological history containing every relationship and decision; and
+- re-evaluate downstream applicability when a reviewed obligation becomes current or ceases to be
+  current, without deleting earlier matches.
+
+Acceptance:
+
+- amendment, replacement, withdrawal, ambiguous-date, and out-of-order observation scenarios pass;
+- no date is inferred from an ARIA retrieval timestamp;
+- current and historical views are deterministic for the same as-of time;
+- supersession never destroys earlier wording, citations, reviews, or applicability snapshots; and
+- the complete lineage is available through read-only APIs and audit records.
+
+### Phase 6.6: searchable obligation library
+
+**Outcome:** compliance users can find, inspect, and verify current and historical obligations
+without using the operator console.
+
+Deliver:
+
+- add reader search and filters for authority, topic, regulated role, obligation type, status,
+  jurisdiction, document, and relevant dates;
+- provide an obligation detail view with reviewed wording, structured fields, exact citations,
+  official-source links, immutable evidence downloads, and lifecycle history;
+- label proposed, reviewed, effective, superseded, withdrawn, and needs-context states clearly;
+- hide unreviewed proposals from ordinary reader accounts while retaining staff review access;
+- provide bounded, paginated, owner-safe reader APIs and stable bookmarkable URLs; and
+- record privacy-preserving searches, obligation views, citation use, and evidence downloads.
+
+Acceptance:
+
+- users can complete a defined find → verify citation → inspect history task without staff access;
+- filters and current-status behavior match the stored obligation projection;
+- unauthorized, stale, or ineligible evidence remains inaccessible;
+- accessibility, security, pagination, XSS, permission, and browser tests pass; and
+- the library exposes no obligation wording that lacks a current qualifying review.
+
+### Phase 6.7: quality measurement and pilot acceptance
+
+**Outcome:** product evidence shows whether obligation intelligence should graduate and whether
+company relevance should become the next active milestone.
+
+Deliver:
+
+- run the frozen evaluation set against deterministic and AI providers and publish the results;
+- measure missed obligations, field and citation accuracy, reviewer amendment and rejection rates,
+  review time, search success, evidence use, and user task completion;
+- ask pilot reviewers to compare the obligation library with change summaries alone;
+- classify every material false negative, false positive, and needs-context result;
+- capture structured pilot feedback and the operating cost per reviewed obligation; and
+- record the next-milestone decision using the Phase 5 governance pattern.
+
+Phase 6 exits only when:
+
+- every approved obligation has exact official evidence and a current human review;
+- no unreviewed AI proposal appears as an operative obligation;
+- the labelled set covers the pilot's highest-value documents and obligation types;
+- extraction quality, missed-obligation rate, reviewer effort, latency, and cost are measured;
+- obligation supersession and historical reconstruction pass the release gate;
+- pilot reviewers find the obligation library more useful than change summaries alone; and
+- recorded evidence supports proceeding to Phase 7 company relevance or revising Phase 6.
 
 ## Local setup
 
