@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 from io import StringIO
+from unittest.mock import patch
 
 import httpx
 from django.contrib.auth import get_user_model
@@ -13,7 +14,10 @@ from aria.comparisons.models import ComparisonItem, ComparisonReview
 from aria.comparisons.reviews import record_comparison_review
 from aria.comparisons.services import compare_document_versions
 from aria.documents.models import DocumentIdentity, DocumentVersion, VersionEvidence
-from aria.documents.services import supersede_duplicate_identity
+from aria.documents.services import (
+    queue_change_orchestration_retries,
+    supersede_duplicate_identity,
+)
 from aria.events.delivery import ImpactWebhookClient, deliver_impact_outbox_event
 from aria.events.models import AuditEvent, OutboxEvent, PipelineEvent
 from aria.health.phase5 import collect_phase5_status
@@ -311,3 +315,18 @@ class Phase5ProductProofTestCase(Phase3CFixture):
         event = AuditEvent.objects.get(action="product.pilot_feedback.recorded")
         self.assertEqual(event.actor_identifier, str(pilot.pk))
         self.assertEqual(event.details["recorded_by"], "pilot-facilitator")
+
+    def test_duplicate_resolution_queues_the_supported_orchestration_task(self):
+        workflow_ids = (
+            "00000000-0000-0000-0000-000000000001",
+            "00000000-0000-0000-0000-000000000002",
+        )
+        with patch(
+            "aria.orchestration.tasks.process_change_orchestration.delay"
+        ) as delay:
+            queue_change_orchestration_retries(workflow_ids)
+
+        self.assertEqual(
+            [call.args[0] for call in delay.call_args_list],
+            list(workflow_ids),
+        )

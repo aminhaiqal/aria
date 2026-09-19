@@ -19,6 +19,13 @@ class DuplicateIdentityResolution:
     created: bool
 
 
+def queue_change_orchestration_retries(workflow_ids: tuple[str, ...]) -> None:
+    from aria.orchestration.tasks import process_change_orchestration
+
+    for workflow_id in workflow_ids:
+        process_change_orchestration.delay(workflow_id)
+
+
 def _current_version(identity: DocumentIdentity):
     return identity.versions.order_by("-created_at", "-id").first()
 
@@ -175,14 +182,7 @@ def supersede_duplicate_identity(
 
     if target_workflows:
         workflow_ids = tuple(str(row.id) for row in target_workflows)
-
-        def queue_retries() -> None:
-            from aria.orchestration.tasks import run_change_orchestration_task
-
-            for workflow_id in workflow_ids:
-                run_change_orchestration_task.delay(workflow_id)
-
-        transaction.on_commit(queue_retries)
+        transaction.on_commit(lambda: queue_change_orchestration_retries(workflow_ids))
 
     return DuplicateIdentityResolution(
         source_identity=source_identity,
