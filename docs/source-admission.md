@@ -76,7 +76,7 @@ official `/documents/` path. It rejects navigation, external hosts, and non-PDF 
 and caps each run at 60 candidates. Connector v2 also normalizes BNM's one bare `bnm.gov.my`
 document link to its working `www.bnm.gov.my` official host; source-pack validation requires both
 hostnames to remain inside the endpoint allowlist. The endpoint installs disabled with no schedule
-and must pass the same two-run static admission gate as Parliament before promotion.
+and passes the same two-run static admission gate as Parliament before promotion.
 
 ```bash
 make plan-source-pack PACK=bnm-payment-systems
@@ -87,10 +87,17 @@ make audit-static SOURCE=bnm-payment-systems
 make promote-static ASSESSMENT_ID=<ready-assessment-uuid>
 ```
 
-Once admitted, BNM publications appear in the existing evidence reader under the Bank Negara
-Malaysia authority and Payment systems policy documents collection. The source keeps the original
-document wording and archived PDF as evidence; ARIA's generated impact explanations remain subject
-to human review before publication.
+Production acceptance completed on 2026-09-20. Controlled connector-v2 runs
+`dc4338fd-fdbb-458b-84ce-eb15283bfaca` and `1d06c3c0-b56a-4aaa-89e5-2cad33ef41fc` produced the same
+52-document candidate set. All 52 documents passed artifact preservation, extraction, and knowledge
+graph projection, yielding 2,309 sections with 2,309 local and 2,309 OpenRouter embeddings. Static
+assessment `227a2c38-2d91-4c7d-8776-c91ba54421c4` passed all 15 gates and promotion
+`2158cf95-7172-4455-87eb-df8d9920868f` enabled the three-hour polling schedule.
+
+BNM publications now appear in the existing evidence reader under the Bank Negara Malaysia
+authority and Payment systems policy documents collection. The source keeps the original document
+wording and archived PDF as evidence; ARIA's generated impact explanations remain subject to human
+review before publication.
 
 ## Guarded static-source admission
 
