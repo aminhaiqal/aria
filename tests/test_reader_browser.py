@@ -65,6 +65,15 @@ class ReaderBrowserTestCase(StaticLiveServerTestCase):
             page.get_by_role("option", name="Exact text").click()
             self.assertEqual(page.get_by_role("combobox", name="Method").inner_text(), "Exact text")
 
+            page.get_by_role("button", name="Ask ARIA").click()
+            assistant = page.get_by_role("dialog", name="Ask ARIA")
+            assistant.wait_for()
+            self.assertEqual(assistant.get_by_text("Evidence only", exact=True).count(), 1)
+            self.assertEqual(assistant.get_by_label("Ask about the evidence").count(), 1)
+            self.assertIn("All current evidence", assistant.inner_text())
+            assistant.get_by_role("button", name="Close Ask ARIA").click()
+            self.assertEqual(assistant.count(), 0)
+
             page.get_by_role("button", name="Sign out").click()
             page.get_by_role("heading", name="Read the source, not just the answer.").wait_for()
             self.assertEqual(browser_errors, [])

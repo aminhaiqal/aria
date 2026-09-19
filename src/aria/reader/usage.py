@@ -9,6 +9,7 @@ SEARCH_COMPLETED = "reader.search.completed"
 DOCUMENT_VIEWED = "reader.document.viewed"
 EVIDENCE_DOWNLOADED = "reader.evidence.downloaded"
 PILOT_FEEDBACK_RECORDED = "product.pilot_feedback.recorded"
+CHAT_ANSWERED = "reader.chat.answered"
 
 
 def _user_target_id(user) -> uuid.UUID:
@@ -73,6 +74,30 @@ def record_reader_evidence_download(*, user, artifact) -> None:
             "artifact_sha256": artifact.sha256,
             "content_type": artifact.detected_content_type,
             "byte_size": artifact.byte_size,
+        },
+    )
+
+
+def record_reader_chat_answer(*, user, thread, question: str, assistant_message) -> None:
+    normalized_question = question.strip()
+    _record(
+        action=CHAT_ANSWERED,
+        user=user,
+        target_type="reader_chat_thread",
+        target_id=thread.id,
+        details={
+            "question_sha256": hashlib.sha256(
+                normalized_question.encode("utf-8")
+            ).hexdigest(),
+            "question_length": len(normalized_question),
+            "scope": "document" if thread.document_identity_id else "corpus",
+            "document_identity_id": str(thread.document_identity_id or ""),
+            "document_version_id": str(thread.document_version_id or ""),
+            "provider": assistant_message.provider,
+            "model": assistant_message.model,
+            "citation_count": assistant_message.citations.count(),
+            "input_tokens": assistant_message.input_tokens,
+            "output_tokens": assistant_message.output_tokens,
         },
     )
 

@@ -4,6 +4,7 @@ import type {
   ReaderOptions,
   SearchResponse,
   BusinessProfile,
+  ChatThread,
 } from "@/lib/types"
 
 export class ReaderApiError extends Error {
@@ -26,6 +27,7 @@ export function readBootstrap(): ReaderBootstrap {
   }
   const { dataset } = root
   const required = [
+    "chatApi",
     "loginUrl",
     "logoutUrl",
     "optionsApi",
@@ -40,6 +42,7 @@ export function readBootstrap(): ReaderBootstrap {
     }
   }
   return {
+    chatApi: dataset.chatApi!,
     csrfToken,
     documentId: dataset.documentId ?? "",
     loginUrl: dataset.loginUrl!,
@@ -51,6 +54,97 @@ export function readBootstrap(): ReaderBootstrap {
     userName: dataset.userName!,
     userStaff: dataset.userStaff === "true",
   }
+}
+
+async function mutateJson<T>(
+  url: string,
+  bootstrap: ReaderBootstrap,
+  method: "POST" | "PATCH",
+  payload: Record<string, unknown>
+): Promise<T> {
+  const response = await fetch(url, {
+    method,
+    credentials: "same-origin",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "X-CSRFToken": bootstrap.csrfToken,
+    },
+    body: JSON.stringify(payload),
+  })
+  if (response.status === 401 || response.status === 403) {
+    const next = `${window.location.pathname}${window.location.search}`
+    window.location.assign(`${bootstrap.loginUrl}?next=${encodeURIComponent(next)}`)
+    throw new ReaderApiError("Your reader session has expired.", response.status)
+  }
+  if (!response.ok) {
+    let detail = `Reader request failed with status ${response.status}.`
+    try {
+      const data = (await response.json()) as { detail?: string }
+      if (data.detail) detail = data.detail
+    } catch {
+      // Keep the bounded status message for non-JSON errors.
+    }
+    throw new ReaderApiError(detail, response.status)
+  }
+  return (await response.json()) as T
+}
+
+export function fetchChatThreads(
+  bootstrap: ReaderBootstrap,
+  signal?: AbortSignal
+) {
+  const parameters = new URLSearchParams()
+  if (bootstrap.documentId) parameters.set("document", bootstrap.documentId)
+  const suffix = parameters.size ? `?${parameters.toString()}` : ""
+  return requestJson<{ results: ChatThread[] }>(
+    `${bootstrap.chatApi}${suffix}`,
+    bootstrap.loginUrl,
+    signal
+  )
+}
+
+export function fetchChatThread(
+  bootstrap: ReaderBootstrap,
+  threadId: string,
+  signal?: AbortSignal
+) {
+  return requestJson<ChatThread>(
+    `${bootstrap.chatApi}${encodeURIComponent(threadId)}/`,
+    bootstrap.loginUrl,
+    signal
+  )
+}
+
+export function createChatThread(bootstrap: ReaderBootstrap) {
+  return mutateJson<ChatThread>(bootstrap.chatApi, bootstrap, "POST", {
+    document_id: bootstrap.documentId,
+  })
+}
+
+export function sendChatMessage(
+  bootstrap: ReaderBootstrap,
+  threadId: string,
+  question: string
+) {
+  return mutateJson<ChatThread>(
+    `${bootstrap.chatApi}${encodeURIComponent(threadId)}/messages/`,
+    bootstrap,
+    "POST",
+    { question }
+  )
+}
+
+export function archiveChatThread(
+  bootstrap: ReaderBootstrap,
+  threadId: string
+) {
+  return mutateJson<ChatThread>(
+    `${bootstrap.chatApi}${encodeURIComponent(threadId)}/`,
+    bootstrap,
+    "PATCH",
+    { status: "archived" }
+  )
 }
 
 async function requestJson<T>(

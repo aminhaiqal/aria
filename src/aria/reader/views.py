@@ -115,6 +115,7 @@ def _render_react_reader(request, *, page_title: str, document_id: UUID | None =
             "reader_api_search_url": reverse("reader-api:search"),
             "reader_api_options_url": reverse("reader-api:options"),
             "reader_api_profiles_url": reverse("reader-api:profile-list"),
+            "reader_api_chat_url": reverse("reader-api:chat-thread-list"),
             "reader_login_url": reverse("reader:login"),
             "reader_logout_url": reverse("reader:logout"),
             "reader_search_url": reverse("reader:search"),

@@ -11,16 +11,17 @@ publication, or repair actions.
 
 The private preview provides:
 
-- bounded hybrid, exact-text, and vector search across JPDP, AGC, and Parliament;
+- bounded hybrid, exact-text, and vector search across JPDP, AGC, Parliament, and BNM;
 - authority, collection, and ARIA-version-date filters;
 - document-grouped results with up to three exact, bounded passage excerpts;
 - a current-version document page with all configured normalized sections and stable anchors;
 - official-source links plus authenticated downloads of immutable reader-eligible artifacts;
-- SHA-256, retrieval, extractor, quality, version, and comparison context; and
+- SHA-256, retrieval, extractor, quality, version, and comparison context;
 - completed GPT change summaries only when their structured output explicitly preserves the
   `legal_effect_not_assessed` boundary; and
 - owner-scoped business profiles, exact reviewed-relevance filtering, and a "why this matters"
-  evidence spine for current human-approved impacts.
+  evidence spine for current human-approved impacts; and
+- owner-scoped conversation threads with document-version memory and passage-level citations.
 
 ARIA search ranks textual similarity. It does not determine legal authority, applicability,
 commencement, legal effect, or the correct answer to a legal question. ARIA-version timestamps are
@@ -40,6 +41,15 @@ remote scripts and `eval` are not allowed. The style policy permits inline decla
 Radix positions accessible popovers with runtime style values. Forms use Django sessions and CSRF,
 and reader API requests use active authenticated sessions or Basic authentication. Search and
 document API views have separate per-user throttle scopes.
+
+Chat threads are visible only to their owner. A document-scoped thread is pinned to the exact
+current version that existed when the thread began, so later source updates cannot silently change
+the evidence behind an earlier answer. ARIA retrieves bounded passages before generation, treats
+their contents as untrusted source material, validates every returned citation against the supplied
+section identifiers, and stores the section, artifact, and document-version hashes with the answer.
+Questions and retrieved passages use the configured OpenRouter Zero Data Retention route; source
+files, conversation records, and citation provenance remain in ARIA's PostgreSQL and object-storage
+boundary.
 
 Business profiles are visible only to their owner. Their POST/PUT/evaluate routes require the same
 authenticated session and CSRF protection as the reader shell. A profile identifier owned by
@@ -81,7 +91,7 @@ make frontend-test
 make reader-e2e
 ```
 
-`frontend-test` runs ESLint, six Vitest tests, axe-core accessibility scans, enforced coverage
+`frontend-test` runs ESLint, Vitest interaction tests, axe-core accessibility scans, enforced coverage
 floors, TypeScript compilation, and a production Vite build. `reader-e2e` runs the actual Django
 login, React mount, shadcn select, CSP console-error gate, and logout flow in isolated Chromium.
 
@@ -100,6 +110,10 @@ ARIA_READER_EMBEDDING_PROVIDER=local_hash
 ARIA_READER_PAGE_SIZE=10
 ARIA_READER_SEARCH_RATE=60/min
 ARIA_READER_DOCUMENT_RATE=120/min
+ARIA_READER_CHAT_RATE=20/min
+ARIA_OPENROUTER_CHAT_MODEL=openai/gpt-5.6-sol
+ARIA_READER_CHAT_MAX_SOURCES=8
+ARIA_READER_CHAT_HISTORY_MESSAGES=16
 ```
 
 The repository defaults to the self-hosted `local_hash` provider. A deployment with complete
@@ -118,8 +132,17 @@ GET /api/reader/v1/documents/<identity-uuid>/?profile=<profile-uuid>
 GET|POST /api/reader/v1/profiles/
 PUT /api/reader/v1/profiles/<profile-uuid>/
 POST /api/reader/v1/profiles/<profile-uuid>/evaluate/
+GET|POST /api/reader/v1/chat/threads/
+GET|PATCH /api/reader/v1/chat/threads/<thread-uuid>/
+POST /api/reader/v1/chat/threads/<thread-uuid>/messages/
 GET /reader/artifacts/<artifact-uuid>/content/
 ```
+
+The chat list is scoped to the current page context: document pages return threads for that
+document, while the search page returns corpus-wide threads. Archiving removes a thread from the
+active list without deleting its evidence record. Each generation receives at most the configured
+recent-message and character budgets, preserving useful thread memory without allowing an
+unbounded prompt.
 
 Profile creation and update synchronously run a bounded, deterministic evaluation over current
 eligible reviews. Search applies the selected profile only after textual retrieval and returns
@@ -151,8 +174,8 @@ hit@5 `1.0`. This is a small regression benchmark, not a universal statement abo
 quality. The test suite separately covers authentication, reader/operator permission separation,
 input bounds, filter validation, semantic fallback, XSS escaping, evidence-only downloads, security
 headers, owner-scoped profile mutations, exact relevance filtering, stale-review exclusion, exact
-document rendering, React bundle integrity, filter metadata, accessibility, browser interaction,
-and autonomous source acceptance.
+document rendering, user-isolated chat threads, citation validation, React bundle integrity, filter
+metadata, accessibility, browser interaction, and autonomous source acceptance.
 
 ## Autonomous-source acceptance
 

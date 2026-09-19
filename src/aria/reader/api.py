@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from django.core.exceptions import ValidationError
+from django.db.models import Count
 from django.http import Http404
 from rest_framework import status
 from rest_framework.permissions import BasePermission
@@ -12,6 +13,14 @@ from aria.collections.models import PublicationCollection
 from aria.documents.models import DocumentIdentity
 from aria.impacts.models import ApplicabilityTaxonomy, ApplicabilityTerm, BusinessProfile
 from aria.impacts.profiles import evaluate_current_impacts, save_business_profile
+from aria.knowledge.embedding_services import current_versions_queryset
+from aria.reader.chat import (
+    ReaderChatError,
+    ReaderChatUnavailable,
+    answer_chat_question,
+    thread_payload,
+)
+from aria.reader.models import ReaderChatThread
 from aria.reader.services import (
     ReaderQueryError,
     ReaderSearchUnavailable,
@@ -19,7 +28,11 @@ from aria.reader.services import (
     reader_document_payload,
     search_reader_documents,
 )
-from aria.reader.usage import record_reader_document_view, record_reader_search
+from aria.reader.usage import (
+    record_reader_chat_answer,
+    record_reader_document_view,
+    record_reader_search,
+)
 
 
 class IsActiveAuthenticated(BasePermission):
@@ -33,6 +46,10 @@ class ReaderSearchThrottle(UserRateThrottle):
 
 class ReaderDocumentThrottle(UserRateThrottle):
     scope = "reader_document"
+
+
+class ReaderChatThrottle(UserRateThrottle):
+    scope = "reader_chat"
 
 
 def _profile_payload(profile: BusinessProfile) -> dict:
@@ -226,6 +243,155 @@ class ReaderDocumentAPIView(APIView):
             profile_id=str(business_profile.id) if business_profile else "",
         )
         return Response(payload)
+
+
+def _reader_eligible_identity(identity_id: UUID) -> tuple[DocumentIdentity, object]:
+    try:
+        identity = DocumentIdentity.objects.select_related("collection__authority").get(
+            pk=identity_id,
+            superseded_by__isnull=True,
+            collection__is_enabled=True,
+            collection__is_evidence_eligible=True,
+            collection__authority__is_enabled=True,
+        )
+    except DocumentIdentity.DoesNotExist as error:
+        raise Http404 from error
+    version = current_versions_queryset().filter(identity_id=identity.id).first()
+    if version is None:
+        raise Http404
+    return identity, version
+
+
+def _owned_thread(request, thread_id: UUID) -> ReaderChatThread:
+    try:
+        return ReaderChatThread.objects.select_related(
+            "document_identity",
+            "document_version",
+        ).get(pk=thread_id, owner=request.user)
+    except ReaderChatThread.DoesNotExist as error:
+        raise Http404 from error
+
+
+class ReaderChatThreadListAPIView(APIView):
+    permission_classes = (IsActiveAuthenticated,)
+    throttle_classes = (ReaderDocumentThrottle,)
+
+    def get(self, request):
+        document_value = request.query_params.get("document", "").strip()
+        threads = ReaderChatThread.objects.filter(
+            owner=request.user,
+            status=ReaderChatThread.Status.ACTIVE,
+        ).select_related("document_identity", "document_version")
+        if document_value:
+            try:
+                document_id = UUID(document_value)
+            except ValueError:
+                return Response(
+                    {"detail": "document must be a UUID."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            threads = threads.filter(document_identity_id=document_id)
+        else:
+            threads = threads.filter(document_identity__isnull=True)
+        threads = threads.annotate(message_count=Count("messages"))[:50]
+        return Response({"results": [thread_payload(thread) for thread in threads]})
+
+    def post(self, request):
+        document_value = str(request.data.get("document_id", "")).strip()
+        identity = None
+        version = None
+        if document_value:
+            try:
+                identity_id = UUID(document_value)
+            except ValueError:
+                return Response(
+                    {"detail": "document_id must be a UUID."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            identity, version = _reader_eligible_identity(identity_id)
+        title = request.data.get("title", "")
+        if not isinstance(title, str) or len(title.strip()) > 160:
+            return Response(
+                {"detail": "title must be text no longer than 160 characters."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        thread = ReaderChatThread.objects.create(
+            owner=request.user,
+            document_identity=identity,
+            document_version=version,
+            title=title.strip(),
+        )
+        return Response(
+            thread_payload(thread, include_messages=True),
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class ReaderChatThreadDetailAPIView(APIView):
+    permission_classes = (IsActiveAuthenticated,)
+    throttle_classes = (ReaderDocumentThrottle,)
+
+    def get(self, request, thread_id: UUID):
+        thread = _owned_thread(request, thread_id)
+        return Response(thread_payload(thread, include_messages=True))
+
+    def patch(self, request, thread_id: UUID):
+        thread = _owned_thread(request, thread_id)
+        update_fields = ["updated_at"]
+        if "title" in request.data:
+            title = request.data["title"]
+            if not isinstance(title, str) or not title.strip() or len(title.strip()) > 160:
+                return Response(
+                    {"detail": "title must be between 1 and 160 characters."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            thread.title = title.strip()
+            update_fields.append("title")
+        if "status" in request.data:
+            selected_status = request.data["status"]
+            if selected_status not in ReaderChatThread.Status.values:
+                return Response(
+                    {"detail": "status must be active or archived."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            thread.status = selected_status
+            update_fields.append("status")
+        thread.save(update_fields=tuple(update_fields))
+        return Response(thread_payload(thread, include_messages=True))
+
+
+class ReaderChatMessageAPIView(APIView):
+    permission_classes = (IsActiveAuthenticated,)
+    throttle_classes = (ReaderChatThrottle,)
+
+    def post(self, request, thread_id: UUID):
+        thread = _owned_thread(request, thread_id)
+        question = request.data.get("question", "")
+        if not isinstance(question, str):
+            return Response(
+                {"detail": "question must be text."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            _, assistant_message = answer_chat_question(thread, question)
+        except ReaderChatError as error:
+            response_status = (
+                status.HTTP_503_SERVICE_UNAVAILABLE
+                if isinstance(error, ReaderChatUnavailable)
+                else status.HTTP_400_BAD_REQUEST
+            )
+            return Response({"detail": str(error)}, status=response_status)
+        thread.refresh_from_db()
+        record_reader_chat_answer(
+            user=request.user,
+            thread=thread,
+            question=question,
+            assistant_message=assistant_message,
+        )
+        return Response(
+            thread_payload(thread, include_messages=True),
+            status=status.HTTP_201_CREATED,
+        )
 
 
 def _save_profile_from_request(request, profile: BusinessProfile | None = None):

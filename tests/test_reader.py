@@ -3,7 +3,7 @@ import json
 from datetime import timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
@@ -26,11 +26,14 @@ from aria.events.models import AuditEvent
 from aria.extraction.models import ExtractedBlock, ExtractedDocument, ExtractionRun
 from aria.fetching.models import FetchAttempt
 from aria.knowledge.embeddings import EmbeddingError
+from aria.openrouter import OpenRouterStructuredResult
+from aria.reader.chat import ReaderChatAnswerDraft
 from aria.reader.evaluation import (
     ReaderRetrievalCase,
     _normalized_url_text,
     evaluate_reader_retrieval,
 )
+from aria.reader.models import ReaderChatThread
 from aria.reader.services import _title_overlap_score, search_reader_documents
 from aria.reliability.models import SourceReliabilityAssessment
 from aria.reliability.soak import collect_autonomous_cycle_acceptance
@@ -296,6 +299,131 @@ class ReaderInterfaceTestCase(TestCase):
             options_response.json()["collections"][0]["id"],
             str(self.collection.id),
         )
+
+    def test_document_chat_persists_memory_and_verified_evidence_citations(self) -> None:
+        self.client.force_login(self.reader)
+        generated = ReaderChatAnswerDraft(
+            answer="Organizations must protect personal data during processing. [1]",
+            citations=[
+                {
+                    "source_number": 1,
+                    "quote": "Organizations must protect personal data during processing.",
+                }
+            ],
+            suggested_questions=["Which passage states this requirement?"],
+        )
+        provider = MagicMock()
+        provider.generate_structured.return_value = OpenRouterStructuredResult(
+            response_id="chat-generation-1",
+            output=generated,
+            input_tokens=90,
+            output_tokens=18,
+        )
+
+        create_response = self.client.post(
+            reverse("reader-api:chat-thread-list"),
+            data={"document_id": str(self.identity.id)},
+            content_type="application/json",
+        )
+        self.assertEqual(create_response.status_code, 201)
+        thread_id = create_response.json()["id"]
+
+        with patch("aria.reader.chat.OpenRouterClient", return_value=provider):
+            answer_response = self.client.post(
+                reverse("reader-api:chat-message-list", kwargs={"thread_id": thread_id}),
+                data={"question": "What protection is required?"},
+                content_type="application/json",
+            )
+
+        self.assertEqual(answer_response.status_code, 201)
+        payload = answer_response.json()
+        self.assertEqual(payload["scope"], "document")
+        self.assertEqual(payload["document"]["version_id"], str(self.version.id))
+        self.assertEqual(len(payload["messages"]), 2)
+        answer = payload["messages"][1]
+        self.assertEqual(answer["provider"], "openrouter")
+        self.assertEqual(answer["citations"][0]["section_id"], str(self.section.id))
+        self.assertEqual(answer["citations"][0]["artifact_sha256"], self.artifact.sha256)
+        self.assertIn(f"#section-{self.section.id}", answer["citations"][0]["document"]["url"])
+        self.assertEqual(answer["suggested_questions"], ["Which passage states this requirement?"])
+
+        with patch("aria.reader.chat.OpenRouterClient", return_value=provider):
+            follow_up_response = self.client.post(
+                reverse("reader-api:chat-message-list", kwargs={"thread_id": thread_id}),
+                data={"question": "Does the thread remember the earlier answer?"},
+                content_type="application/json",
+            )
+        self.assertEqual(follow_up_response.status_code, 201)
+        second_call = provider.generate_structured.call_args_list[1]
+        self.assertEqual(
+            [item["role"] for item in second_call.kwargs["input_payload"]["conversation"]],
+            ["user", "assistant"],
+        )
+
+        thread = ReaderChatThread.objects.get(pk=thread_id)
+        self.assertEqual(thread.messages.count(), 4)
+        self.assertEqual(thread.document_version, self.version)
+        self.assertEqual(AuditEvent.objects.filter(action="reader.chat.answered").count(), 2)
+        audit = AuditEvent.objects.filter(action="reader.chat.answered").first()
+        self.assertEqual(audit.details["citation_count"], 1)
+        self.assertNotIn("What protection is required?", json.dumps(audit.details))
+
+        history_response = self.client.get(
+            reverse("reader-api:chat-thread-detail", kwargs={"thread_id": thread_id})
+        )
+        self.assertEqual(history_response.status_code, 200)
+        self.assertEqual(len(history_response.json()["messages"]), 4)
+
+    def test_reader_cannot_open_another_users_chat_thread(self) -> None:
+        thread = ReaderChatThread.objects.create(
+            owner=self.staff,
+            document_identity=self.identity,
+            document_version=self.version,
+            title="Private thread",
+        )
+        self.client.force_login(self.reader)
+
+        response = self.client.get(
+            reverse("reader-api:chat-thread-detail", kwargs={"thread_id": thread.id})
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_chat_rejects_a_generated_quote_that_is_not_in_the_source(self) -> None:
+        thread = ReaderChatThread.objects.create(
+            owner=self.reader,
+            document_identity=self.identity,
+            document_version=self.version,
+        )
+        provider = MagicMock()
+        provider.generate_structured.return_value = OpenRouterStructuredResult(
+            response_id="invalid-citation-generation",
+            output=ReaderChatAnswerDraft(
+                answer="The source imposes a fictional annual filing duty. [1]",
+                citations=[
+                    {
+                        "source_number": 1,
+                        "quote": "Every organization must file a report annually.",
+                    }
+                ],
+                suggested_questions=[],
+            ),
+            input_tokens=50,
+            output_tokens=12,
+        )
+        self.client.force_login(self.reader)
+
+        with patch("aria.reader.chat.OpenRouterClient", return_value=provider):
+            response = self.client.post(
+                reverse("reader-api:chat-message-list", kwargs={"thread_id": thread.id}),
+                data={"question": "Is there an annual filing duty?"},
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("valid evidence citations", response.json()["detail"])
+        self.assertEqual(thread.messages.filter(role="assistant").count(), 0)
+        self.assertEqual(AuditEvent.objects.filter(action="reader.chat.answered").count(), 0)
 
     def test_reader_can_browse_current_documents_by_authority_without_a_query(self) -> None:
         self.client.force_login(self.reader)

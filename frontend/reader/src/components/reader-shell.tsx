@@ -18,6 +18,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import type { ReaderBootstrap } from "@/lib/types"
+import { ChatAssistant } from "@/components/chat-assistant"
 
 type ReaderShellProps = {
   bootstrap: ReaderBootstrap
@@ -57,6 +58,7 @@ export function ReaderShell({ bootstrap, children }: ReaderShellProps) {
             className="ml-auto flex items-center gap-1"
             aria-label="Reader navigation"
           >
+            <ChatAssistant bootstrap={bootstrap} />
             <Button asChild variant="ghost" className="hidden sm:inline-flex">
               <a href={bootstrap.searchUrl}>
                 <Search data-icon="inline-start" /> Search

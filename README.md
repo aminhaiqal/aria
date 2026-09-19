@@ -40,7 +40,7 @@ publications before any AI interpretation is introduced.
   embedding coverage
 - An authenticated, self-hosted React/TypeScript/Vite reader built from repository-owned shadcn
   components, with responsive search, source filters, exact passage links, immutable evidence
-  downloads, quality/version context, and labelled GPT summaries
+  downloads, quality/version context, labelled GPT summaries, and evidence-grounded chat threads
 - A separate active-user reader API and versioned JPDP/AGC/Parliament retrieval benchmark
 - Immutable OCR derivatives with source/output hashes, toolchain records, and page metrics
 - A dedicated self-hosted OCRmyPDF/Tesseract worker with Malay and English language data

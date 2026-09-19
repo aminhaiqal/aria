@@ -1,6 +1,9 @@
 from django.urls import path
 
 from aria.reader.api import (
+    ReaderChatMessageAPIView,
+    ReaderChatThreadDetailAPIView,
+    ReaderChatThreadListAPIView,
     ReaderDocumentAPIView,
     ReaderOptionsAPIView,
     ReaderProfileDetailAPIView,
@@ -12,6 +15,17 @@ from aria.reader.api import (
 app_name = "reader-api"
 
 urlpatterns = [
+    path("chat/threads/", ReaderChatThreadListAPIView.as_view(), name="chat-thread-list"),
+    path(
+        "chat/threads/<uuid:thread_id>/",
+        ReaderChatThreadDetailAPIView.as_view(),
+        name="chat-thread-detail",
+    ),
+    path(
+        "chat/threads/<uuid:thread_id>/messages/",
+        ReaderChatMessageAPIView.as_view(),
+        name="chat-message-list",
+    ),
     path("options/", ReaderOptionsAPIView.as_view(), name="options"),
     path("search/", ReaderSearchAPIView.as_view(), name="search"),
     path("profiles/", ReaderProfileListAPIView.as_view(), name="profile-list"),

@@ -10,6 +10,7 @@ import {
   readerOptions,
   searchResponse,
 } from "@/test/fixtures"
+import type { ChatThread } from "@/lib/types"
 
 function bootstrap(documentId = "") {
   document.head.innerHTML = '<meta name="csrf-token" content="test-csrf">'
@@ -17,6 +18,7 @@ function bootstrap(documentId = "") {
     <div
       id="aria-reader-root"
       data-document-id="${documentId}"
+      data-chat-api="/api/reader/v1/chat/threads/"
       data-login-url="/reader/login/"
       data-logout-url="/reader/logout/"
       data-options-api="/api/reader/v1/options/"
@@ -169,6 +171,119 @@ test("renders the evidence-backed document and labelled GPT boundary", async () 
     "href",
     `/reader/artifacts/${documentResponse.evidence[0].artifact_id}/content/`
   )
+  expect((await axe.run(container)).violations).toHaveLength(0)
+})
+
+test("opens a document-scoped chat thread and renders traceable citations", async () => {
+  const identityId = documentResponse.identity.id
+  window.history.replaceState({}, "", `/reader/documents/${identityId}/`)
+  bootstrap(identityId)
+  const emptyThread: ChatThread = {
+    id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    title: "New conversation",
+    status: "active",
+    scope: "document",
+    document: {
+      id: identityId,
+      title: documentResponse.identity.title,
+      version_id: documentResponse.version.id,
+      version_sha256: documentResponse.version.normalized_content_sha256,
+    },
+    created_at: "2026-08-07T10:00:00Z",
+    updated_at: "2026-08-07T10:00:00Z",
+    last_message_at: "2026-08-07T10:00:00Z",
+    message_count: 0,
+    messages: [],
+  }
+  const answeredThread: ChatThread = {
+    ...emptyThread,
+    title: "What protection is required?",
+    message_count: 2,
+    messages: [
+      {
+        id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        role: "user",
+        content: "What protection is required?",
+        provider: "",
+        model: "",
+        created_at: "2026-08-07T10:01:00Z",
+        citations: [],
+        suggested_questions: [],
+      },
+      {
+        id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        role: "assistant",
+        content:
+          "Organizations must protect personal data during processing. [1]",
+        provider: "openrouter",
+        model: "openai/gpt-test",
+        created_at: "2026-08-07T10:01:01Z",
+        citations: [
+          {
+            id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+            number: 1,
+            excerpt:
+              "Organizations must protect personal data during processing.",
+            section_id: documentResponse.sections[0].id,
+            section_ordinal: 1,
+            heading: "Protection principle",
+            page_number: 2,
+            source_locator: { page: 2 },
+            section_text_sha256: documentResponse.sections[0].text_sha256,
+            artifact_sha256: documentResponse.evidence[0].sha256,
+            document_version_sha256:
+              documentResponse.version.normalized_content_sha256,
+            document: {
+              id: identityId,
+              title: documentResponse.identity.title,
+              url: `/reader/documents/${identityId}/#section-${documentResponse.sections[0].id}`,
+            },
+          },
+        ],
+        suggested_questions: ["Which passage states this requirement?"],
+      },
+    ],
+  }
+  vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+    const url = String(input)
+    if (url.includes("/documents/")) return jsonResponse(documentResponse)
+    if (url.endsWith("/chat/threads/") && init?.method === "POST") {
+      return jsonResponse(emptyThread)
+    }
+    if (url.includes("/messages/") && init?.method === "POST") {
+      return jsonResponse(answeredThread)
+    }
+    if (url.includes("/chat/threads/") && !init?.method) {
+      return jsonResponse({ results: [] })
+    }
+    throw new Error(`Unexpected request: ${url}`)
+  })
+  const user = userEvent.setup()
+  const { container } = renderApp()
+  await screen.findByRole("heading", { name: documentResponse.identity.title })
+
+  await user.click(screen.getByRole("button", { name: "Ask ARIA" }))
+  expect(
+    await screen.findByRole("dialog", { name: "Ask ARIA" })
+  ).toBeInTheDocument()
+  await user.type(
+    screen.getByRole("textbox", { name: "Ask about the evidence" }),
+    "What protection is required?"
+  )
+  await user.click(screen.getByRole("button", { name: "Send question" }))
+
+  expect(
+    await screen.findByText(
+      "Organizations must protect personal data during processing. [1]"
+    )
+  ).toBeInTheDocument()
+  expect(
+    screen.getByRole("link", { name: /Protection principle/ })
+  ).toHaveAttribute(
+    "href",
+    expect.stringContaining(`#section-${documentResponse.sections[0].id}`)
+  )
+  expect(screen.getByText(/Pinned to version/)).toBeInTheDocument()
   expect((await axe.run(container)).violations).toHaveLength(0)
 })
 

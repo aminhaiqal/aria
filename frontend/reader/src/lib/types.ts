@@ -1,6 +1,7 @@
 export type TrustClassification = "authoritative" | "official" | string
 
 export type ReaderBootstrap = {
+  chatApi: string
   csrfToken: string
   documentId: string
   loginUrl: string
@@ -11,6 +12,54 @@ export type ReaderBootstrap = {
   searchUrl: string
   userName: string
   userStaff: boolean
+}
+
+export type ChatCitation = {
+  id: string
+  number: number
+  excerpt: string
+  section_id: string
+  section_ordinal: number
+  heading: string
+  page_number: number | null
+  source_locator: Record<string, unknown>
+  section_text_sha256: string
+  artifact_sha256: string
+  document_version_sha256: string
+  document: {
+    id: string
+    title: string
+    url: string
+  }
+}
+
+export type ChatMessage = {
+  id: string
+  role: "user" | "assistant"
+  content: string
+  provider: string
+  model: string
+  created_at: string
+  citations: ChatCitation[]
+  suggested_questions: string[]
+}
+
+export type ChatThread = {
+  id: string
+  title: string
+  status: "active" | "archived"
+  scope: "document" | "corpus"
+  document: {
+    id: string
+    title: string
+    version_id: string
+    version_sha256: string
+  } | null
+  created_at: string
+  updated_at: string
+  last_message_at: string
+  message_count: number
+  messages?: ChatMessage[]
 }
 
 export type ReaderOptions = {
