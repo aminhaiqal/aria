@@ -78,6 +78,13 @@ class SourcePackValidationTestCase(TestCase):
         with self.assertRaisesMessage(SourcePackError, "must be a boolean"):
             validate_source_pack(invalid_bootstrap)
 
+        external_alias = self.definition()
+        external_alias["connector_configurations"][-1]["configuration"][
+            "canonical_host_aliases"
+        ] = {"agc.gov.my": "example.com"}
+        with self.assertRaisesMessage(SourcePackError, "inside the endpoint allowlist"):
+            validate_source_pack(external_alias)
+
     def test_active_connector_must_match_endpoint_version(self) -> None:
         definition = self.definition()
         definition["connector_configurations"][-1]["is_active"] = False
@@ -221,8 +228,13 @@ class SourcePackApplicationTestCase(TestCase):
         self.assertEqual(result.endpoint.collection.document_family, "policy")
         self.assertEqual(result.endpoint.collection.priority, 10)
         self.assertEqual(result.endpoint.allowed_domains, ["bnm.gov.my"])
-        configuration = result.endpoint.connector_configurations.get(version=1).configuration
+        self.assertEqual(result.endpoint.connector_configuration_version, 2)
+        configuration = result.endpoint.connector_configurations.get(version=2).configuration
         self.assertEqual(configuration["link_selector"], "#filta tbody a[href*='.pdf']")
         self.assertEqual(configuration["include_path_prefixes"], ["/documents/"])
         self.assertEqual(configuration["document_content_types"], ["application/pdf"])
         self.assertEqual(configuration["max_candidates"], 60)
+        self.assertEqual(
+            configuration["canonical_host_aliases"],
+            {"bnm.gov.my": "www.bnm.gov.my"},
+        )

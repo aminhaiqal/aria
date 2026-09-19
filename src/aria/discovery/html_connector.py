@@ -31,6 +31,14 @@ def normalize_publication_url(base_url: str, href: str) -> str:
     return urlunsplit((parsed.scheme.lower(), hostname, path, query, ""))
 
 
+def apply_canonical_host_alias(url: str, configuration: dict) -> str:
+    parsed = urlsplit(url)
+    hostname = parsed.hostname or ""
+    aliases = configuration.get("canonical_host_aliases", {})
+    canonical_host = aliases.get(hostname, hostname) if isinstance(aliases, dict) else hostname
+    return urlunsplit((parsed.scheme, canonical_host, parsed.path, parsed.query, ""))
+
+
 def configured_link_target(link, configuration: dict) -> str | None:
     """Extract a URL-shaped value without evaluating source-provided script."""
     attribute = configuration.get("link_attribute", "href")
@@ -165,7 +173,10 @@ class ConfiguredHTMLListingConnector:
                 target = configured_link_target(link, configuration)
                 if not target:
                     continue
-                canonical_url = normalize_publication_url(endpoint.discovery_url, target)
+                canonical_url = apply_canonical_host_alias(
+                    normalize_publication_url(endpoint.discovery_url, target),
+                    configuration,
+                )
                 parsed = urlsplit(canonical_url)
                 if parsed.scheme != "https" or not parsed.hostname:
                     continue

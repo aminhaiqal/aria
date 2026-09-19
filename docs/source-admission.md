@@ -73,8 +73,10 @@ documents, exposure drafts, regulations, discussion papers, and their supporting
 
 The connector uses the server-rendered `#filta` table and admits only HTTPS PDF links below the
 official `/documents/` path. It rejects navigation, external hosts, and non-PDF feedback templates,
-and caps each run at 60 candidates. The endpoint installs disabled with no schedule and must pass
-the same two-run static admission gate as Parliament before promotion.
+and caps each run at 60 candidates. Connector v2 also normalizes BNM's one bare `bnm.gov.my`
+document link to its working `www.bnm.gov.my` official host; source-pack validation requires both
+hostnames to remain inside the endpoint allowlist. The endpoint installs disabled with no schedule
+and must pass the same two-run static admission gate as Parliament before promotion.
 
 ```bash
 make plan-source-pack PACK=bnm-payment-systems

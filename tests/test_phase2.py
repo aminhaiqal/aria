@@ -273,6 +273,46 @@ class PhaseTwoTestCase(TestCase):
         self.assertEqual(candidates[0].metadata_hints["title"], "Rule Two PDF")
         self.assertEqual(len(candidates[0].fingerprint), 64)
 
+    def test_html_listing_connector_normalizes_an_allowlisted_official_host_alias(self) -> None:
+        ConnectorConfiguration.objects.create(
+            endpoint=self.endpoint,
+            version=1,
+            configuration={
+                "link_selector": "#official a[href]",
+                "include_path_prefixes": ["/files/"],
+                "upload_path_prefixes": ["/files/"],
+                "document_extensions": [".pdf"],
+                "canonical_host_aliases": {"example.com": "www.example.com"},
+                "max_candidates": 1,
+            },
+        )
+        html = b"""
+            <div id="official">
+              <a href="https://example.com/files/rule.pdf">Official rule</a>
+            </div>
+        """
+        client = SafeHttpClient(
+            resolver=lambda _hostname, _port: [PUBLIC_IP],
+            rate_limiter=RateLimiter(),
+            transport=httpx.MockTransport(
+                lambda _request: httpx.Response(
+                    200,
+                    headers={"Content-Type": "text/html; charset=UTF-8"},
+                    content=html,
+                )
+            ),
+        )
+
+        result = ConfiguredHTMLListingConnector(client_factory=lambda: client).discover(
+            self.endpoint,
+            cursor=None,
+        )
+
+        self.assertEqual(
+            result.candidates[0].canonical_url,
+            "https://www.example.com/files/rule.pdf",
+        )
+
     def test_html_listing_connector_extracts_bounded_non_href_value(self) -> None:
         ConnectorConfiguration.objects.create(
             endpoint=self.endpoint,

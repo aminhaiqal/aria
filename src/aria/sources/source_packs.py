@@ -348,6 +348,20 @@ def validate_source_pack(definition: dict) -> None:
                 raise SourcePackError("Connector wrapped link encoding is unsupported.")
         for domain in configuration.get("browser_dependency_domains", []):
             _validate_domain(domain, "browser_dependency_domains")
+        host_aliases = configuration.get("canonical_host_aliases", {})
+        if not isinstance(host_aliases, dict) or len(host_aliases) > 10:
+            raise SourcePackError("Canonical host aliases must be an object of at most 10 values.")
+        for source, target in host_aliases.items():
+            normalized_source = _validate_domain(source, "canonical_host_aliases source")
+            normalized_target = _validate_domain(target, "canonical_host_aliases target")
+            if normalized_source == normalized_target:
+                raise SourcePackError("Canonical host aliases must change the hostname.")
+            if not hostname_is_allowed(
+                normalized_source, allowed_domains
+            ) or not hostname_is_allowed(normalized_target, allowed_domains):
+                raise SourcePackError(
+                    "Canonical host aliases must remain inside the endpoint allowlist."
+                )
         if not isinstance(configuration.get("bootstrap_candidate_session", False), bool):
             raise SourcePackError("Connector session bootstrap must be a boolean.")
 

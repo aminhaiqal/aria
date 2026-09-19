@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "slug": "bnm-payment-systems",
-  "version": 1,
+  "version": 2,
   "authority": {
     "slug": "bank-negara-malaysia",
     "name": "Bank Negara Malaysia",
@@ -33,7 +33,7 @@
     "pagination_strategy": "none",
     "expected_content_types": ["text/html", "application/pdf"],
     "requires_javascript": false,
-    "connector_configuration_version": 1,
+    "connector_configuration_version": 2,
     "default_enabled": false
   },
   "connector_configurations": [
@@ -47,7 +47,23 @@
         "document_content_types": ["application/pdf"],
         "max_candidates": 60
       },
-      "notes": "Live review on 2026-09-20 found a server-rendered BNM payment-systems table with official PDF policy documents and supporting material. The selector excludes navigation and non-PDF feedback templates.",
+      "notes": "Initial live-reviewed BNM payment-systems connector. Its first controlled run preserved 51 of 52 candidates and retained one official bare-host HTTP 403 as failed evidence.",
+      "is_active": false
+    },
+    {
+      "version": 2,
+      "configuration": {
+        "link_selector": "#filta tbody a[href*='.pdf']",
+        "include_path_prefixes": ["/documents/"],
+        "upload_path_prefixes": ["/documents/"],
+        "document_extensions": [".pdf"],
+        "document_content_types": ["application/pdf"],
+        "max_candidates": 60,
+        "canonical_host_aliases": {
+          "bnm.gov.my": "www.bnm.gov.my"
+        }
+      },
+      "notes": "Normalizes BNM's one bare official document host to its working official www host after the v1 pilot recorded an HTTP 403. Both hosts remain inside the authority allowlist.",
       "is_active": true
     }
   ],
