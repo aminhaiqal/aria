@@ -17,16 +17,17 @@ Run the read-only report at any time:
 make phase5-status
 ```
 
-The JSON report evaluates four criteria:
+The JSON report evaluates five criteria:
 
 - every enabled source is operational, healthy, and at 100 percent evidence coverage, with no
   workflow waiting at the quality-review gate;
 - at least one reviewed impact has an exact business-profile match and a published delivery event;
 - at least three active non-staff users have a business profile, use it in the reader, download
-  immutable evidence, and provide structured feedback; and
-- search, evidence-download, and pilot-feedback measurements exist.
+  immutable evidence, and provide structured feedback;
+- search, evidence-download, and pilot-feedback measurements exist; and
+- the next product milestone has been selected from the recorded evidence.
 
-The command reports `complete` only when all four criteria pass.
+The command reports `complete` only when all five criteria pass.
 
 ## Controlled product rehearsal
 
@@ -66,6 +67,22 @@ docker compose exec api python manage.py record_pilot_feedback PILOT_USERNAME \
 Available categories are `search_usefulness`, `evidence_clarity`, `relevance_explanation`, and
 `impact_actionability`. Ratings use a 1–5 scale. Feedback is append-only and attributed to both the
 pilot account and the person recording it.
+
+## Next milestone decision
+
+After the production baseline, complete change journey, and pilot evidence criteria pass, record
+the next product milestone selected from that evidence:
+
+```bash
+docker compose exec api python manage.py select_next_product_milestone \
+  --title "Broaden change coverage for the pilot's highest-priority regulator" \
+  --evidence "Pilot feedback and reader events showed repeated demand for this source." \
+  --selected-by PRODUCT_OWNER_USERNAME \
+  --confirm SELECT
+```
+
+The command refuses to record a decision until the other four Phase 5 criteria pass. Decisions are
+append-only, and the latest selection appears in `make phase5-status`.
 
 ## Duplicate official pages
 

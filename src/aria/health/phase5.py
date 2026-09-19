@@ -1,8 +1,10 @@
+import uuid
 from collections import defaultdict
 
 from django.contrib.auth import get_user_model
 
 from aria.events.models import AuditEvent, OutboxEvent
+from aria.events.services import record_audit_event
 from aria.impacts.models import BusinessProfile, ProfileImpactMatch, ReviewedImpactPublication
 from aria.orchestration.models import ChangeOrchestration
 from aria.reader.usage import (
@@ -15,6 +17,34 @@ from aria.reliability.confidence import (
     collect_source_confidence_report,
     serialize_source_confidence,
 )
+
+NEXT_MILESTONE_SELECTED = "product.next_milestone.selected"
+NEXT_MILESTONE_TARGET_ID = uuid.uuid5(uuid.NAMESPACE_URL, "aria:product:phase-5")
+
+
+def record_next_product_milestone(
+    *,
+    title: str,
+    evidence: str,
+    selected_by: str,
+) -> AuditEvent:
+    title = title.strip()
+    evidence = evidence.strip()
+    selected_by = selected_by.strip()
+    if len(title) < 5 or len(title) > 200:
+        raise ValueError("Milestone title must contain 5 to 200 characters.")
+    if len(evidence) < 20 or len(evidence) > 2000:
+        raise ValueError("Milestone evidence must contain 20 to 2000 characters.")
+    if not selected_by:
+        raise ValueError("The milestone selector is required.")
+    return record_audit_event(
+        action=NEXT_MILESTONE_SELECTED,
+        target_type="product_phase",
+        target_id=NEXT_MILESTONE_TARGET_ID,
+        actor_type="operator",
+        actor_identifier=selected_by[:255],
+        details={"title": title, "evidence": evidence},
+    )
 
 
 def _source_status(source_rows: list[dict]) -> dict:
@@ -134,6 +164,30 @@ def _pilot_status() -> dict:
     }
 
 
+def _next_milestone_status() -> dict:
+    event = (
+        AuditEvent.objects.filter(
+            action=NEXT_MILESTONE_SELECTED,
+            target_type="product_phase",
+            target_id=NEXT_MILESTONE_TARGET_ID,
+        )
+        .order_by("-occurred_at", "-id")
+        .first()
+    )
+    if event is None:
+        return {"passed": False, "selection": None}
+    return {
+        "passed": True,
+        "selection": {
+            "title": event.details.get("title", ""),
+            "evidence": event.details.get("evidence", ""),
+            "selected_by": event.actor_identifier,
+            "selected_at": event.occurred_at.isoformat(),
+            "audit_event_id": str(event.id),
+        },
+    }
+
+
 def collect_phase5_status(*, source_rows: list[dict] | None = None) -> dict:
     serialized_sources = (
         source_rows
@@ -151,6 +205,7 @@ def collect_phase5_status(*, source_rows: list[dict] | None = None) -> dict:
     }
     journey = _journey_status()
     pilot = _pilot_status()
+    next_milestone = _next_milestone_status()
     criteria = {
         "production_baseline": baseline["passed"],
         "complete_change_journey": journey["passed"],
@@ -160,6 +215,7 @@ def collect_phase5_status(*, source_rows: list[dict] | None = None) -> dict:
             and pilot["search_count"] > 0
             and pilot["evidence_download_count"] > 0
         ),
+        "next_product_milestone_selected": next_milestone["passed"],
     }
     return {
         "phase": "Phase 5: first product proof",
@@ -168,4 +224,5 @@ def collect_phase5_status(*, source_rows: list[dict] | None = None) -> dict:
         "production_baseline": baseline,
         "change_journey": journey,
         "pilot": pilot,
+        "next_product_milestone": next_milestone,
     }

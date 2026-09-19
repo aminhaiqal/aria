@@ -20,7 +20,7 @@ from aria.documents.services import (
 )
 from aria.events.delivery import ImpactWebhookClient, deliver_impact_outbox_event
 from aria.events.models import AuditEvent, OutboxEvent, PipelineEvent
-from aria.health.phase5 import collect_phase5_status
+from aria.health.phase5 import collect_phase5_status, record_next_product_milestone
 from aria.impacts.generation import generate_impact_candidates
 from aria.impacts.models import ApplicabilityTerm, ImpactReview, ProfileImpactMatch
 from aria.impacts.profiles import match_business_profile, save_business_profile
@@ -216,6 +216,14 @@ class Phase5ProductProofTestCase(Phase3CFixture):
         OutboxEvent.objects.filter(pk=publication.pipeline_event.outbox_event.pk).update(
             status=OutboxEvent.Status.PUBLISHED
         )
+        record_next_product_milestone(
+            title="Expand evidence-backed change coverage",
+            evidence=(
+                "Pilot searches and evidence downloads showed that users need broader "
+                "change coverage next."
+            ),
+            selected_by="phase5-product-owner",
+        )
 
         status = collect_phase5_status(source_rows=[HEALTHY_SOURCE])
 
@@ -223,6 +231,10 @@ class Phase5ProductProofTestCase(Phase3CFixture):
         self.assertEqual(status["pilot"]["engaged_user_count"], 3)
         self.assertEqual(status["pilot"]["successful_search_count"], 3)
         self.assertEqual(status["pilot"]["average_ratings"], {"evidence_clarity": 5.0})
+        self.assertEqual(
+            status["next_product_milestone"]["selection"]["title"],
+            "Expand evidence-backed change coverage",
+        )
         self.assertTrue(all(status["criteria"].values()))
 
     def test_duplicate_identity_resolution_is_audited_and_idempotent(self):
@@ -315,6 +327,57 @@ class Phase5ProductProofTestCase(Phase3CFixture):
         event = AuditEvent.objects.get(action="product.pilot_feedback.recorded")
         self.assertEqual(event.actor_identifier, str(pilot.pk))
         self.assertEqual(event.details["recorded_by"], "pilot-facilitator")
+
+    def test_next_milestone_command_requires_complete_product_evidence(self):
+        incomplete_status = {
+            "criteria": {
+                "production_baseline": True,
+                "complete_change_journey": False,
+                "three_engaged_pilot_users": False,
+                "pilot_findings_and_metrics": False,
+                "next_product_milestone_selected": False,
+            }
+        }
+        with patch(
+            "aria.health.management.commands.select_next_product_milestone.collect_phase5_status",
+            return_value=incomplete_status,
+        ):
+            with self.assertRaisesMessage(CommandError, "complete_change_journey"):
+                call_command(
+                    "select_next_product_milestone",
+                    title="Expand evidence-backed change coverage",
+                    evidence=(
+                        "Pilot activity showed demand for additional regulatory coverage."
+                    ),
+                    selected_by="phase5-product-owner",
+                    confirm="SELECT",
+                )
+
+        complete_status = {
+            "criteria": {
+                **incomplete_status["criteria"],
+                "complete_change_journey": True,
+                "three_engaged_pilot_users": True,
+                "pilot_findings_and_metrics": True,
+            }
+        }
+        output = StringIO()
+        with patch(
+            "aria.health.management.commands.select_next_product_milestone.collect_phase5_status",
+            return_value=complete_status,
+        ):
+            call_command(
+                "select_next_product_milestone",
+                title="Expand evidence-backed change coverage",
+                evidence="Pilot activity showed demand for additional regulatory coverage.",
+                selected_by="phase5-product-owner",
+                confirm="SELECT",
+                stdout=output,
+            )
+
+        self.assertTrue(json.loads(output.getvalue())["selected"])
+        event = AuditEvent.objects.get(action="product.next_milestone.selected")
+        self.assertEqual(event.actor_identifier, "phase5-product-owner")
 
     def test_duplicate_resolution_queues_the_supported_orchestration_task(self):
         workflow_ids = (
