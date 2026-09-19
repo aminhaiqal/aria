@@ -3,7 +3,7 @@
 <section class="search-hero {% if result %}is-compact{% endif %}">
   <span class="kicker">Malaysian official material</span>
   <h1>Find the passage. Verify the evidence.</h1>
-  <p>Search the latest archived versions from JPDP, the Attorney General's Chambers, and Parliament of Malaysia.</p>
+  <p>Search the latest archived versions from JPDP, the Attorney General's Chambers, Parliament of Malaysia, and Bank Negara Malaysia.</p>
   <form method="get" class="search-form" role="search">
     {% if form.non_field_errors %}<div class="form-errors form-wide">{{ form.non_field_errors }}</div>{% endif %}
     <div class="query-control">
@@ -32,9 +32,9 @@
 <section class="results-shell" aria-live="polite">
   <header class="results-header">
     <div>
-      <span class="kicker">Bounded retrieval</span>
-      <h2>{{ result.bounded_result_count }} document{{ result.bounded_result_count|pluralize }} matched</h2>
-      <p>Showing page {{ result.page }} using {{ result.mode|cut:"_" }} ranking.</p>
+      <span class="kicker">{% if result.mode == "browse" %}Official source{% else %}Bounded retrieval{% endif %}</span>
+      <h2>{{ result.bounded_result_count }} document{{ result.bounded_result_count|pluralize }} {% if result.mode == "browse" %}available{% else %}matched{% endif %}</h2>
+      <p>Showing page {{ result.page }}{% if result.mode == "browse" %}, most recently archived first.{% else %} using {{ result.mode|cut:"_" }} ranking.{% endif %}</p>
     </div>
     {% if result.embedding %}
     <div class="provider-note {% if result.embedding.query_sent_to_provider %}is-hosted{% endif %}">
@@ -81,13 +81,14 @@
   </nav>
   {% endif %}
 </section>
-{% elif has_query and not form.errors %}
+{% elif has_request and not form.errors %}
 <section class="empty-results"><strong>No matching evidence found</strong><p>Try fewer words or a different search method.</p></section>
 {% else %}
 <section class="source-ribbon" aria-label="Available official sources">
-  <div><strong>JPDP</strong><span>Personal data protection</span></div>
-  <div><strong>AGC</strong><span>Updated principal Acts</span></div>
-  <div><strong>Parliament</strong><span>Dewan Rakyat bills</span></div>
+  <a href="?authority=personal-data-protection-commissioner-malaysia"><strong>JPDP</strong><span>Personal data protection</span></a>
+  <a href="?authority=attorney-generals-chambers-malaysia"><strong>AGC</strong><span>Updated principal Acts</span></a>
+  <a href="?authority=parliament-of-malaysia"><strong>Parliament</strong><span>Dewan Rakyat bills</span></a>
+  <a href="?authority=bank-negara-malaysia"><strong>BNM</strong><span>Payment systems policy documents</span></a>
 </section>
 {% endif %}
 {% endblock %}

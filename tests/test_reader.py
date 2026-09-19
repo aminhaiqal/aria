@@ -297,6 +297,38 @@ class ReaderInterfaceTestCase(TestCase):
             str(self.collection.id),
         )
 
+    def test_reader_can_browse_current_documents_by_authority_without_a_query(self) -> None:
+        self.client.force_login(self.reader)
+        endpoint = reverse("reader-api:search")
+
+        response = self.client.get(
+            endpoint,
+            {"authority": self.authority.slug, "page_size": 10},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["mode"], "browse")
+        self.assertEqual(payload["query"], "")
+        self.assertEqual(payload["bounded_result_count"], 1)
+        self.assertEqual(payload["results"][0]["identity_id"], str(self.identity.id))
+        self.assertEqual(
+            payload["results"][0]["passages"][0]["artifact"]["sha256"],
+            self.artifact.sha256,
+        )
+
+        page_response = self.client.get(
+            reverse("reader:search"),
+            {"authority": self.authority.slug},
+        )
+        self.assertEqual(page_response.status_code, 200)
+        self.assertContains(page_response, "1 document available")
+        self.assertContains(page_response, "Official Data Processing Guidance")
+
+        unfiltered_response = self.client.get(endpoint)
+        self.assertEqual(unfiltered_response.status_code, 400)
+        self.assertIn("Choose an authority or collection", unfiltered_response.json()["detail"])
+
     def test_hybrid_search_falls_back_to_full_text_without_hiding_it(self) -> None:
         with patch("aria.reader.services.embed_text", side_effect=EmbeddingError("offline")):
             result = search_reader_documents(

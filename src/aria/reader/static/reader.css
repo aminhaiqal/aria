@@ -73,9 +73,11 @@ button, summary { cursor: pointer; }
 .form-errors ul, .field-errors ul { margin: 0; padding-left: 17px; }
 .form-wide { margin-bottom: 10px; }
 
-.source-ribbon { max-width: 850px; display: grid; grid-template-columns: repeat(3, 1fr); margin: 60px auto 0; border: 1px solid var(--line); border-radius: 14px; background: rgba(255, 255, 255, .62); overflow: hidden; }
-.source-ribbon div { display: grid; gap: 4px; padding: 20px 24px; text-align: left; }
-.source-ribbon div + div { border-left: 1px solid var(--line); }
+.source-ribbon { max-width: 1080px; display: grid; grid-template-columns: repeat(4, 1fr); margin: 60px auto 0; border: 1px solid var(--line); border-radius: 14px; background: rgba(255, 255, 255, .62); overflow: hidden; }
+.source-ribbon a { display: grid; gap: 4px; padding: 20px 24px; text-align: left; transition: background .15s ease; }
+.source-ribbon a:hover { background: var(--teal-soft); }
+.source-ribbon a:focus-visible { outline: 3px solid rgba(8, 127, 120, .22); outline-offset: -3px; }
+.source-ribbon a + a { border-left: 1px solid var(--line); }
 .source-ribbon strong { font-family: var(--serif); font-size: 17px; font-weight: 500; }
 .source-ribbon span { color: var(--faint); font-size: 9px; }
 
@@ -197,6 +199,9 @@ button, summary { cursor: pointer; }
 @media (max-width: 980px) {
   .reader-nav { display: none; }
   .filter-grid { grid-template-columns: repeat(2, 1fr); }
+  .source-ribbon { grid-template-columns: repeat(2, 1fr); }
+  .source-ribbon a:nth-child(3) { border-top: 1px solid var(--line); border-left: 0; }
+  .source-ribbon a:nth-child(4) { border-top: 1px solid var(--line); }
   .document-layout { grid-template-columns: 1fr; }
   .evidence-sidebar { position: static; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .document-hero { grid-template-columns: 1fr; gap: 25px; }
@@ -212,7 +217,7 @@ button, summary { cursor: pointer; }
   .query-control { display: grid; }
   .query-control .primary-button { width: 100%; }
   .filter-grid, .source-ribbon, .evidence-sidebar { grid-template-columns: 1fr; }
-  .source-ribbon div + div { border-top: 1px solid var(--line); border-left: 0; }
+  .source-ribbon a + a { border-top: 1px solid var(--line); border-left: 0; }
   .results-header, .result-card > header, .result-card > footer, .site-footer { align-items: start; flex-direction: column; }
   .result-card > footer { display: grid; }
   .document-hero h1 { font-size: 38px; }

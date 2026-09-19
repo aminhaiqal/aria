@@ -8,6 +8,7 @@ class ReaderSearchForm(forms.Form):
     q = forms.CharField(
         label="Search official material",
         max_length=500,
+        required=False,
         widget=forms.TextInput(
             attrs={
                 "autocomplete": "off",

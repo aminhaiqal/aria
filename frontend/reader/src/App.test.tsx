@@ -1,5 +1,5 @@
 import axe from "axe-core"
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { expect, test, vi } from "vitest"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -76,6 +76,65 @@ test("renders traceable search results without critical accessibility violations
     screen.getByText(/This query vector was created locally/)
   ).toBeInTheDocument()
   expect((await axe.run(container)).violations).toHaveLength(0)
+})
+
+test("opens each source card as a browsable document collection", async () => {
+  window.history.replaceState({}, "", "/reader/")
+  bootstrap()
+  vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+    jsonResponse(readerOptions)
+  )
+
+  renderApp()
+
+  const bnmCard = (await screen.findByText("Payment systems")).closest(
+    "div[data-slot='card']"
+  )
+  expect(bnmCard).not.toBeNull()
+  expect(
+    within(bnmCard as HTMLElement).getByRole("link", {
+      name: /View documents/,
+    })
+  ).toHaveAttribute(
+    "href",
+    "/reader/?authority=bank-negara-malaysia&page=1&page_size=10"
+  )
+})
+
+test("browses documents for a selected authority without a search query", async () => {
+  window.history.replaceState(
+    {},
+    "",
+    "/reader/?authority=test-official-authority&page=1&page_size=10"
+  )
+  bootstrap()
+  const browseResponse = {
+    ...searchResponse,
+    query: "",
+    mode: "browse" as const,
+    embedding: null,
+    filters: {
+      ...searchResponse.filters,
+      authority: "test-official-authority",
+    },
+  }
+  vi.spyOn(globalThis, "fetch").mockImplementation((input) =>
+    String(input).includes("options")
+      ? jsonResponse(readerOptions)
+      : jsonResponse(browseResponse)
+  )
+
+  renderApp()
+
+  expect(
+    await screen.findByRole("heading", {
+      name: "1 document from Test Official Authority",
+    })
+  ).toBeInTheDocument()
+  expect(
+    screen.getByPlaceholderText("Search within Test Official Authority…")
+  ).toBeInTheDocument()
+  expect(screen.queryByText(/score 0\.032/)).not.toBeInTheDocument()
 })
 
 test("renders the evidence-backed document and labelled GPT boundary", async () => {

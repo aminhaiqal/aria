@@ -144,7 +144,7 @@ export type SearchDocument = {
 
 export type SearchResponse = {
   query: string
-  mode: "hybrid" | "full_text" | "vector"
+  mode: "browse" | "hybrid" | "full_text" | "vector"
   embedding: {
     provider: string
     model: string

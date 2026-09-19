@@ -23,6 +23,7 @@ from aria.reader.forms import ReaderSearchForm
 from aria.reader.services import (
     ReaderQueryError,
     ReaderSearchUnavailable,
+    browse_reader_documents,
     reader_document_payload,
     search_reader_documents,
 )
@@ -133,25 +134,36 @@ def search(request):
     if settings.READER_FRONTEND == "react":
         return _render_react_reader(request, page_title="Search official material")
     has_query = bool(request.GET.get("q", "").strip())
-    form = ReaderSearchForm(request.GET if has_query else None)
+    has_request = bool(
+        has_query
+        or request.GET.get("authority", "").strip()
+        or request.GET.get("collection", "").strip()
+    )
+    form = ReaderSearchForm(request.GET if has_request else None)
     result = None
-    if has_query and form.is_valid():
+    if has_request and form.is_valid():
         try:
             page = int(request.GET.get("page", "1"))
         except ValueError:
             page = 0
         try:
-            result = search_reader_documents(
-                form.cleaned_data["q"],
-                mode=form.cleaned_data.get("mode") or "hybrid",
-                provider_name=form.cleaned_data.get("embedding_provider") or "",
-                authority_slug=form.cleaned_data.get("authority") or "",
-                collection_id=form.cleaned_data.get("collection") or "",
-                date_from=form.cleaned_data.get("date_from"),
-                date_to=form.cleaned_data.get("date_to"),
-                page=page,
-                page_size=settings.READER_PAGE_SIZE,
-            )
+            common_arguments = {
+                "authority_slug": form.cleaned_data.get("authority") or "",
+                "collection_id": form.cleaned_data.get("collection") or "",
+                "date_from": form.cleaned_data.get("date_from"),
+                "date_to": form.cleaned_data.get("date_to"),
+                "page": page,
+                "page_size": settings.READER_PAGE_SIZE,
+            }
+            if has_query:
+                result = search_reader_documents(
+                    form.cleaned_data["q"],
+                    mode=form.cleaned_data.get("mode") or "hybrid",
+                    provider_name=form.cleaned_data.get("embedding_provider") or "",
+                    **common_arguments,
+                )
+            else:
+                result = browse_reader_documents(**common_arguments)
             record_reader_search(
                 user=request.user,
                 query=form.cleaned_data["q"],
@@ -166,6 +178,7 @@ def search(request):
         "page_title": "Search official material",
         "form": form,
         "has_query": has_query,
+        "has_request": has_request,
         "result": result,
         "previous_query": (
             _page_query(request, result["page"] - 1)

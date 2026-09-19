@@ -15,6 +15,7 @@ from aria.impacts.profiles import evaluate_current_impacts, save_business_profil
 from aria.reader.services import (
     ReaderQueryError,
     ReaderSearchUnavailable,
+    browse_reader_documents,
     reader_document_payload,
     search_reader_documents,
 )
@@ -154,26 +155,35 @@ class ReaderSearchAPIView(APIView):
     def get(self, request):
         try:
             business_profile = _owned_profile(request, request.query_params.get("profile", ""))
-            result = search_reader_documents(
-                request.query_params.get("q", ""),
-                mode=request.query_params.get("mode", "hybrid"),
-                provider_name=request.query_params.get("embedding_provider", ""),
-                authority_slug=request.query_params.get("authority", ""),
-                collection_id=request.query_params.get("collection", ""),
-                date_from=_date_parameter(request.query_params.get("date_from", ""), "date_from"),
-                date_to=_date_parameter(request.query_params.get("date_to", ""), "date_to"),
-                page=_positive_integer(
+            common_arguments = {
+                "authority_slug": request.query_params.get("authority", ""),
+                "collection_id": request.query_params.get("collection", ""),
+                "date_from": _date_parameter(
+                    request.query_params.get("date_from", ""), "date_from"
+                ),
+                "date_to": _date_parameter(request.query_params.get("date_to", ""), "date_to"),
+                "page": _positive_integer(
                     request.query_params.get("page", ""),
                     name="page",
                     default=1,
                 ),
-                page_size=_positive_integer(
+                "page_size": _positive_integer(
                     request.query_params.get("page_size", ""),
                     name="page_size",
                     default=10,
                 ),
-                business_profile=business_profile,
-            )
+                "business_profile": business_profile,
+            }
+            query = request.query_params.get("q", "").strip()
+            if query:
+                result = search_reader_documents(
+                    query,
+                    mode=request.query_params.get("mode", "hybrid"),
+                    provider_name=request.query_params.get("embedding_provider", ""),
+                    **common_arguments,
+                )
+            else:
+                result = browse_reader_documents(**common_arguments)
         except ReaderQueryError as error:
             return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
         except ReaderSearchUnavailable as error:

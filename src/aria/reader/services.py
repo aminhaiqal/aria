@@ -10,12 +10,17 @@ from uuid import UUID
 from django.conf import settings
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
 from django.core.exceptions import ImproperlyConfigured
-from django.db.models import F
+from django.db.models import F, Subquery
 from pgvector.django import CosineDistance
 
 from aria.artifacts.models import ArtifactObservation
 from aria.comparisons.models import ComparisonSummary, DocumentComparison
-from aria.documents.models import DocumentIdentity, DocumentVersion, VersionEvidence
+from aria.documents.models import (
+    DocumentIdentity,
+    DocumentVersion,
+    NormalizedSection,
+    VersionEvidence,
+)
 from aria.impacts.models import (
     BusinessProfile,
     ImpactReview,
@@ -532,6 +537,167 @@ def search_reader_documents(
         "has_next": end < len(documents),
         "warnings": warnings,
         "results": selected_documents,
+    }
+
+
+def browse_reader_documents(
+    *,
+    authority_slug: str = "",
+    collection_id: str = "",
+    date_from: date | None = None,
+    date_to: date | None = None,
+    page: int = 1,
+    page_size: int = 10,
+    business_profile: BusinessProfile | None = None,
+) -> dict:
+    if not authority_slug and not collection_id:
+        raise ReaderQueryError("Choose an authority or collection to browse.")
+    if page < 1 or page > settings.READER_MAX_SEARCH_PAGES:
+        raise ReaderQueryError(f"Page must be between 1 and {settings.READER_MAX_SEARCH_PAGES}.")
+    if page_size < 1 or page_size > settings.READER_MAX_PAGE_SIZE:
+        raise ReaderQueryError(f"Page size must be between 1 and {settings.READER_MAX_PAGE_SIZE}.")
+
+    current_version_ids = current_versions_queryset().values("id")
+    versions = DocumentVersion.objects.filter(
+        id__in=Subquery(current_version_ids),
+        identity__collection__is_enabled=True,
+        identity__collection__is_evidence_eligible=True,
+        identity__collection__authority__is_enabled=True,
+    ).select_related("identity", "identity__collection", "identity__collection__authority")
+    if authority_slug:
+        versions = versions.filter(identity__collection__authority__slug=authority_slug)
+    if collection_id:
+        try:
+            selected_collection_id = UUID(str(collection_id))
+        except ValueError as error:
+            raise ReaderQueryError("Collection must be a valid identifier.") from error
+        versions = versions.filter(identity__collection_id=selected_collection_id)
+    if date_from:
+        versions = versions.filter(created_at__date__gte=date_from)
+    if date_to:
+        versions = versions.filter(created_at__date__lte=date_to)
+
+    bounded_versions = list(
+        versions.order_by("-created_at", "identity__canonical_title", "id")[
+            : settings.READER_MAX_SEARCH_RESULTS
+        ]
+    )
+    version_ids = {version.id for version in bounded_versions}
+    first_sections = {
+        section.document_version_id: section
+        for section in NormalizedSection.objects.filter(document_version_id__in=version_ids)
+        .select_related("source_artifact")
+        .order_by("document_version_id", "ordinal", "id")
+        .distinct("document_version_id")
+    }
+    evidence_records = _latest_version_evidence(
+        version_ids,
+        {section.source_artifact_id for section in first_sections.values()},
+    )
+
+    documents = []
+    for version in bounded_versions:
+        identity = version.identity
+        collection = identity.collection
+        section = first_sections.get(version.id)
+        passages = []
+        if section is not None:
+            excerpt, truncated = _bounded_excerpt(section.text, "")
+            artifact = {
+                "id": str(section.source_artifact_id),
+                "sha256": section.source_artifact.sha256,
+                "content_type": section.source_artifact.detected_content_type,
+            }
+            evidence_record = evidence_records.get((version.id, section.source_artifact_id))
+            observation = evidence_record.artifact_observation if evidence_record else None
+            if observation:
+                artifact.update(
+                    {
+                        "official_url": observation.final_url,
+                        "retrieved_at": observation.retrieved_at,
+                        "source_endpoint": observation.candidate.endpoint.name,
+                    }
+                )
+            passages.append(
+                {
+                    "section_id": str(section.id),
+                    "ordinal": section.ordinal,
+                    "heading": section.heading,
+                    "excerpt": excerpt,
+                    "excerpt_truncated": truncated,
+                    "page_number": section.page_number,
+                    "source_locator": section.source_locator,
+                    "score": 0.0,
+                    "text_rank": None,
+                    "vector_distance": None,
+                    "artifact": artifact,
+                }
+            )
+        documents.append(
+            {
+                "identity_id": str(identity.id),
+                "version_id": str(version.id),
+                "title": _document_title(version, identity),
+                "canonical_url": version.canonical_url or identity.canonical_url,
+                "normalized_content_sha256": version.normalized_content_sha256,
+                "language_hint": version.language_hint,
+                "version_created_at": version.created_at,
+                "authority": {
+                    "id": str(collection.authority_id),
+                    "name": collection.authority.name,
+                    "slug": collection.authority.slug,
+                    "trust_classification": collection.authority.trust_classification,
+                },
+                "collection": {
+                    "id": str(collection.id),
+                    "name": collection.name,
+                    "document_family": collection.document_family,
+                },
+                "score": 0.0,
+                "passages": passages,
+            }
+        )
+
+    if business_profile is not None:
+        impact_payloads = _reader_impact_payloads(
+            version_ids,
+            business_profile=business_profile,
+            include_evidence=False,
+        )
+        relevant_documents = []
+        for document in documents:
+            impacts = impact_payloads.get(UUID(document["identity_id"]), [])
+            if not impacts:
+                continue
+            document["relevance"] = {
+                "profile_id": str(business_profile.id),
+                "profile_name": business_profile.name,
+                "impact_count": len(impacts),
+                "impacts": impacts,
+            }
+            relevant_documents.append(document)
+        documents = relevant_documents
+
+    start = (page - 1) * page_size
+    end = start + page_size
+    return {
+        "query": "",
+        "mode": "browse",
+        "embedding": None,
+        "filters": {
+            "authority": authority_slug,
+            "collection": collection_id,
+            "date_from": date_from,
+            "date_to": date_to,
+            "profile": str(business_profile.id) if business_profile else "",
+        },
+        "page": page,
+        "page_size": page_size,
+        "bounded_result_count": len(documents),
+        "has_previous": page > 1,
+        "has_next": end < len(documents),
+        "warnings": [],
+        "results": documents[start:end],
     }
 
 

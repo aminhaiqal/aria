@@ -63,6 +63,33 @@ import type {
 
 const ALL = "__all__"
 
+const SOURCE_CARDS = [
+  {
+    label: "JPDP",
+    title: "Personal data protection",
+    description: "Official circulars and regulator publications.",
+    authority: "personal-data-protection-commissioner-malaysia",
+  },
+  {
+    label: "AGC",
+    title: "Federal legislation",
+    description: "Current principal Acts from the Attorney General's Chambers.",
+    authority: "attorney-generals-chambers-malaysia",
+  },
+  {
+    label: "Parliament",
+    title: "Legislative material",
+    description: "Dewan Rakyat bills and their archived evidence.",
+    authority: "parliament-of-malaysia",
+  },
+  {
+    label: "BNM",
+    title: "Payment systems",
+    description: "Official policy documents and regulatory publications.",
+    authority: "bank-negara-malaysia",
+  },
+] as const
+
 type SearchFields = {
   authority: string
   collection: string
@@ -90,10 +117,8 @@ function fieldsFromParameters(parameters: URLSearchParams): SearchFields {
 }
 
 function buildParameters(fields: SearchFields) {
-  const parameters = new URLSearchParams({
-    q: fields.query.trim(),
-    mode: fields.mode,
-  })
+  const parameters = new URLSearchParams({ mode: fields.mode })
+  if (fields.query.trim()) parameters.set("q", fields.query.trim())
   if (fields.mode !== "full_text")
     parameters.set("embedding_provider", fields.provider)
   if (fields.authority !== ALL) parameters.set("authority", fields.authority)
@@ -132,9 +157,11 @@ function SearchSkeleton() {
 function SearchResultCard({
   bootstrap,
   document,
+  showScore,
 }: {
   bootstrap: ReaderBootstrap
   document: SearchDocument
+  showScore: boolean
 }) {
   const officialUrl = safeExternalUrl(document.canonical_url)
   const profileQuery = document.relevance
@@ -167,9 +194,11 @@ function SearchResultCard({
               {formatDate(document.version_created_at)}
             </p>
           </div>
-          <span className="shrink-0 rounded-lg bg-primary/7 px-2.5 py-1 font-mono text-xs text-primary">
-            score {document.score.toFixed(4)}
-          </span>
+          {showScore ? (
+            <span className="shrink-0 rounded-lg bg-primary/7 px-2.5 py-1 font-mono text-xs text-primary">
+              score {document.score.toFixed(4)}
+            </span>
+          ) : null}
         </div>
       </CardHeader>
       <CardContent className="grid gap-3">
@@ -249,6 +278,10 @@ export function SearchPage({ bootstrap }: { bootstrap: ReaderBootstrap }) {
   const [profileTerms, setProfileTerms] = useState<string[]>([])
   const [profileSaving, setProfileSaving] = useState(false)
   const hasQuery = Boolean(parameters.get("q")?.trim())
+  const hasSourceFilter = Boolean(
+    parameters.get("authority")?.trim() || parameters.get("collection")?.trim()
+  )
+  const hasRequest = hasQuery || hasSourceFilter
 
   useEffect(() => {
     const controller = new AbortController()
@@ -277,7 +310,7 @@ export function SearchPage({ bootstrap }: { bootstrap: ReaderBootstrap }) {
   }, [])
 
   useEffect(() => {
-    if (!hasQuery) {
+    if (!hasRequest) {
       return undefined
     }
     const controller = new AbortController()
@@ -301,7 +334,7 @@ export function SearchPage({ bootstrap }: { bootstrap: ReaderBootstrap }) {
     }
     void loadSearch()
     return () => controller.abort()
-  }, [bootstrap, hasQuery, parameters])
+  }, [bootstrap, hasRequest, parameters])
 
   const filteredCollections = useMemo(
     () =>
@@ -312,6 +345,14 @@ export function SearchPage({ bootstrap }: { bootstrap: ReaderBootstrap }) {
       ),
     [fields.authority, options.collections]
   )
+  const selectedAuthority = options.authorities.find(
+    (authority) => authority.slug === fields.authority
+  )
+  const selectedCollection = options.collections.find(
+    (collection) => collection.id === fields.collection
+  )
+  const browseSourceName =
+    selectedCollection?.name || selectedAuthority?.name || "this source"
   const groupedProfileTerms = useMemo(() => {
     const grouped: Record<
       string,
@@ -361,8 +402,12 @@ export function SearchPage({ bootstrap }: { bootstrap: ReaderBootstrap }) {
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!fields.query.trim()) {
-      setError("Enter a search query.")
+    if (
+      !fields.query.trim() &&
+      fields.authority === ALL &&
+      fields.collection === ALL
+    ) {
+      setError("Enter a search query or choose a source to browse.")
       return
     }
     const next = buildParameters(fields)
@@ -390,7 +435,8 @@ export function SearchPage({ bootstrap }: { bootstrap: ReaderBootstrap }) {
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-pretty text-muted-foreground sm:text-lg">
             Search current archived material from JPDP, the Attorney
-            General&apos;s Chambers, and Parliament of Malaysia.
+            General&apos;s Chambers, Parliament of Malaysia, and Bank Negara
+            Malaysia.
           </p>
 
           <form
@@ -413,7 +459,11 @@ export function SearchPage({ bootstrap }: { bootstrap: ReaderBootstrap }) {
                     query: event.target.value,
                   }))
                 }
-                placeholder="Search an Act, circular, bill, or exact passage…"
+                placeholder={
+                  hasSourceFilter
+                    ? `Search within ${browseSourceName}…`
+                    : "Search an Act, circular, bill, or exact passage…"
+                }
                 value={fields.query}
               />
               <Button
@@ -712,20 +762,26 @@ export function SearchPage({ bootstrap }: { bootstrap: ReaderBootstrap }) {
 
         {loading ? <SearchSkeleton /> : null}
 
-        {!loading && hasQuery && result ? (
+        {!loading && hasRequest && result ? (
           <div className="grid gap-6">
             <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="text-xs font-semibold tracking-[0.18em] text-primary uppercase">
-                  Bounded retrieval
+                  {result.mode === "browse"
+                    ? "Official source"
+                    : "Bounded retrieval"}
                 </p>
                 <h2 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">
                   {result.bounded_result_count}{" "}
                   {result.bounded_result_count === 1 ? "document" : "documents"}{" "}
-                  matched
+                  {result.mode === "browse"
+                    ? `from ${browseSourceName}`
+                    : "matched"}
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Page {result.page} · {titleCase(result.mode)} ranking
+                  {result.mode === "browse"
+                    ? `Page ${result.page} · most recently archived first`
+                    : `Page ${result.page} · ${titleCase(result.mode)} ranking`}
                 </p>
               </div>
               {result.embedding ? (
@@ -760,6 +816,7 @@ export function SearchPage({ bootstrap }: { bootstrap: ReaderBootstrap }) {
                   bootstrap={bootstrap}
                   document={document}
                   key={document.identity_id}
+                  showScore={result.mode !== "browse"}
                 />
               ))}
             </div>
@@ -809,35 +866,30 @@ export function SearchPage({ bootstrap }: { bootstrap: ReaderBootstrap }) {
           </div>
         ) : null}
 
-        {!loading && !hasQuery ? (
-          <div className="grid gap-4 md:grid-cols-3">
-            {[
-              [
-                "JPDP",
-                "Personal data protection",
-                "Official circulars and regulator publications.",
-              ],
-              [
-                "AGC",
-                "Federal legislation",
-                "Current principal Acts from the Attorney General's Chambers.",
-              ],
-              [
-                "Parliament",
-                "Legislative material",
-                "Dewan Rakyat bills and their archived evidence.",
-              ],
-            ].map(([source, title, description]) => (
-              <Card key={source}>
+        {!loading && !hasRequest ? (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {SOURCE_CARDS.map((source) => (
+              <Card
+                className="group relative transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-lg hover:shadow-primary/5"
+                key={source.authority}
+              >
                 <CardHeader>
                   <Badge className="mb-3 w-fit" variant="outline">
-                    {source}
+                    {source.label}
                   </Badge>
-                  <CardTitle>{title}</CardTitle>
+                  <CardTitle>{source.title}</CardTitle>
                 </CardHeader>
                 <CardContent className="text-muted-foreground">
-                  {description}
+                  {source.description}
                 </CardContent>
+                <CardFooter>
+                  <a
+                    className="inline-flex items-center gap-1 font-medium text-primary after:absolute after:inset-0 focus-visible:outline-none"
+                    href={`${bootstrap.searchUrl}?authority=${encodeURIComponent(source.authority)}&page=1&page_size=10`}
+                  >
+                    View documents <ArrowRight className="size-4" />
+                  </a>
+                </CardFooter>
               </Card>
             ))}
           </div>
