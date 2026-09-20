@@ -27,7 +27,7 @@ from aria.extraction.models import ExtractedBlock, ExtractedDocument, Extraction
 from aria.fetching.models import FetchAttempt
 from aria.knowledge.embeddings import EmbeddingError
 from aria.openrouter import OpenRouterStructuredResult
-from aria.reader.chat import ReaderChatAnswerDraft
+from aria.reader.chat import ReaderChatAnswerDraft, _answer_marker_numbers
 from aria.reader.evaluation import (
     ReaderRetrievalCase,
     _normalized_url_text,
@@ -374,6 +374,110 @@ class ReaderInterfaceTestCase(TestCase):
         self.assertEqual(history_response.status_code, 200)
         self.assertEqual(len(history_response.json()["messages"]), 4)
 
+    def test_chat_repairs_a_draft_with_an_unverified_citation_quote(self) -> None:
+        thread = ReaderChatThread.objects.create(
+            owner=self.reader,
+            document_identity=self.identity,
+            document_version=self.version,
+        )
+        invalid_draft = ReaderChatAnswerDraft(
+            answer="Organizations must protect personal data during processing. [1]",
+            citations=[
+                {
+                    "source_number": 1,
+                    "quote": "Organizations must protect data... during processing.",
+                }
+            ],
+            suggested_questions=[],
+        )
+        repaired_draft = ReaderChatAnswerDraft(
+            answer="Organizations must protect personal data during processing. [1]",
+            citations=[
+                {
+                    "source_number": 1,
+                    "quote": "Organizations must protect personal data during processing.",
+                }
+            ],
+            suggested_questions=["What is the exact passage?"],
+        )
+        provider = MagicMock()
+        provider.generate_structured.side_effect = [
+            OpenRouterStructuredResult(
+                response_id="invalid-citation-generation",
+                output=invalid_draft,
+                input_tokens=50,
+                output_tokens=12,
+            ),
+            OpenRouterStructuredResult(
+                response_id="repaired-citation-generation",
+                output=repaired_draft,
+                input_tokens=40,
+                output_tokens=10,
+            ),
+        ]
+        self.client.force_login(self.reader)
+
+        with patch("aria.reader.chat.OpenRouterClient", return_value=provider):
+            response = self.client.post(
+                reverse("reader-api:chat-message-list", kwargs={"thread_id": thread.id}),
+                data={"question": "What protection is required?"},
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 201)
+        assistant = response.json()["messages"][1]
+        self.assertEqual(assistant["citations"][0]["excerpt"], self.section.text)
+        self.assertEqual(assistant["suggested_questions"], ["What is the exact passage?"])
+        stored = thread.messages.get(role="assistant")
+        self.assertEqual(stored.provider_response_id, "repaired-citation-generation")
+        self.assertEqual(stored.input_tokens, 90)
+        self.assertEqual(stored.output_tokens, 22)
+        self.assertEqual(provider.generate_structured.call_count, 2)
+
+    def test_chat_accepts_combined_markers_and_omits_unused_citations(self) -> None:
+        self.assertEqual(
+            _answer_marker_numbers("One claim. [1, 2] Another. [2; 3]"),
+            {1, 2, 3},
+        )
+
+        thread = ReaderChatThread.objects.create(
+            owner=self.reader,
+            document_identity=self.identity,
+            document_version=self.version,
+        )
+        provider = MagicMock()
+        provider.generate_structured.return_value = OpenRouterStructuredResult(
+            response_id="unused-citation-generation",
+            output=ReaderChatAnswerDraft(
+                answer="Organizations must protect personal data during processing. [1]",
+                citations=[
+                    {
+                        "source_number": 1,
+                        "quote": "Organizations must protect personal data during processing.",
+                    },
+                    {
+                        "source_number": 99,
+                        "quote": "This unused source was not supplied.",
+                    },
+                ],
+                suggested_questions=[],
+            ),
+            input_tokens=50,
+            output_tokens=12,
+        )
+        self.client.force_login(self.reader)
+
+        with patch("aria.reader.chat.OpenRouterClient", return_value=provider):
+            response = self.client.post(
+                reverse("reader-api:chat-message-list", kwargs={"thread_id": thread.id}),
+                data={"question": "What protection is required?"},
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(response.json()["messages"][1]["citations"]), 1)
+        provider.generate_structured.assert_called_once()
+
     def test_reader_cannot_open_another_users_chat_thread(self) -> None:
         thread = ReaderChatThread.objects.create(
             owner=self.staff,
@@ -424,6 +528,7 @@ class ReaderInterfaceTestCase(TestCase):
         self.assertIn("valid evidence citations", response.json()["detail"])
         self.assertEqual(thread.messages.filter(role="assistant").count(), 0)
         self.assertEqual(AuditEvent.objects.filter(action="reader.chat.answered").count(), 0)
+        self.assertEqual(provider.generate_structured.call_count, 2)
 
     def test_reader_can_browse_current_documents_by_authority_without_a_query(self) -> None:
         self.client.force_login(self.reader)

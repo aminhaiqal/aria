@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from textwrap import shorten
@@ -18,6 +19,8 @@ from aria.knowledge.embeddings import EmbeddingError, embed_text, embedding_conf
 from aria.openrouter import OpenRouterClient, OpenRouterError
 from aria.reader.models import ReaderChatCitation, ReaderChatMessage, ReaderChatThread
 
+logger = logging.getLogger(__name__)
+
 
 class ReaderChatError(RuntimeError):
     pass
@@ -30,15 +33,36 @@ class ReaderChatUnavailable(ReaderChatError):
 class ReaderChatCitationDraft(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    source_number: int = Field(ge=1)
-    quote: str = Field(min_length=1, max_length=500)
+    source_number: int = Field(
+        ge=1,
+        description="The number of a supplied source used in the answer.",
+    )
+    quote: str = Field(
+        min_length=1,
+        max_length=500,
+        description=(
+            "One short, continuous, character-for-character excerpt from that source's text. "
+            "Never summarize, join separate excerpts, or insert ellipses."
+        ),
+    )
 
 
 class ReaderChatAnswerDraft(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    answer: str = Field(min_length=1, max_length=12000)
-    citations: list[ReaderChatCitationDraft] = Field(min_length=1, max_length=8)
+    answer: str = Field(
+        min_length=1,
+        max_length=12000,
+        description=(
+            "Evidence-grounded answer with a bracketed source marker such as [1] immediately "
+            "after every material claim."
+        ),
+    )
+    citations: list[ReaderChatCitationDraft] = Field(
+        min_length=1,
+        max_length=8,
+        description="Exactly one citation for each source number used in the answer.",
+    )
     suggested_questions: list[str] = Field(max_length=3)
 
 
@@ -56,9 +80,29 @@ passages do not support an answer, say that clearly. Do not infer legal effect, 
 legal advice. Distinguish the text's explicit statements from a limited synthesis.
 
 Use concise prose. Add source markers such as [1] immediately after every material claim. Return
-only citations that directly support the answer, with a short exact quote from each cited passage.
-Never cite a source number that was not supplied. Suggested follow-up questions must be answerable
-from the same evidence scope."""
+exactly one citation object for every source number used in the answer, and do not return unused
+citation objects. Each citation quote must be one short, continuous substring copied
+character-for-character from that source's text. Never add ellipses to a quote, combine separate
+parts of a source, change its punctuation, or summarize inside the quote. Never cite a source
+number that was not supplied. Suggested follow-up questions must be answerable from the same
+evidence scope."""
+
+
+CHAT_CITATION_REPAIR_PROMPT = """You repair citation formatting for ARIA's evidence-grounded
+regulatory document assistant. The supplied draft failed deterministic citation validation.
+
+Return a corrected answer using only the supplied official-source passages. Preserve the useful
+meaning of the draft, but remove any claim the passages do not support. Put a marker such as [1]
+immediately after every material claim. Return exactly one citation object for every source number
+used in the answer and no unused citation objects.
+
+Every citation quote must be one short, continuous substring copied character-for-character from
+the cited source's text. Never add ellipses, combine separate excerpts, change punctuation, or
+summarize inside a quote. Never cite a source number that was not supplied. If the evidence is
+insufficient, say so and cite the passage that establishes the limit when one is available."""
+
+
+_CITATION_MARKER_GROUP = re.compile(r"\[((?:\s*\d+\s*)(?:(?:,|;)\s*\d+\s*)*)]")
 
 
 def _chat_base_queryset(thread: ReaderChatThread):
@@ -176,6 +220,53 @@ def _verified_excerpt(section: NormalizedSection, proposed_quote: str) -> str | 
     return None
 
 
+def _answer_marker_numbers(answer: str) -> set[int]:
+    """Return canonical source numbers from [1], [1, 2], and [1; 2] markers."""
+
+    numbers: set[int] = set()
+    for marker in _CITATION_MARKER_GROUP.finditer(answer):
+        numbers.update(int(value) for value in re.findall(r"\d+", marker.group(1)))
+    return numbers
+
+
+def _validated_answer_citations(
+    output: ReaderChatAnswerDraft,
+    sources: list[RetrievedChatSource],
+) -> tuple[list[tuple[int, NormalizedSection, str]], str | None]:
+    source_by_number = {source.number: source for source in sources}
+    citations_by_number: dict[int, tuple[int, NormalizedSection, str]] = {}
+    seen_sections = set()
+    for draft in output.citations:
+        source = source_by_number.get(draft.source_number)
+        if source is None or source.section.id in seen_sections:
+            continue
+        excerpt = _verified_excerpt(source.section, draft.quote)
+        if excerpt is None:
+            continue
+        seen_sections.add(source.section.id)
+        citations_by_number[draft.source_number] = (
+            draft.source_number,
+            source.section,
+            excerpt,
+        )
+
+    answer_markers = _answer_marker_numbers(output.answer)
+    if not answer_markers:
+        return [], "missing_answer_markers"
+    if not answer_markers.issubset(citations_by_number):
+        return [], "unverified_answer_markers"
+
+    # Structured models sometimes return an additional, valid citation that the prose does not
+    # use. It is safer and clearer to omit that citation than to reject an otherwise grounded
+    # answer or expose evidence that is not linked to a claim.
+    citations = [
+        citation
+        for source_number, citation in citations_by_number.items()
+        if source_number in answer_markers
+    ]
+    return citations, None
+
+
 def _thread_title(question: str) -> str:
     return shorten(" ".join(question.split()), width=76, placeholder="…")
 
@@ -247,27 +338,55 @@ def answer_chat_question(
             "ARIA could not reach the configured language model."
         ) from error
 
-    source_by_number = {source.number: source for source in sources}
-    citations = []
-    seen_sections = set()
-    for draft in result.output.citations:
-        source = source_by_number.get(draft.source_number)
-        if source is None or source.section.id in seen_sections:
-            continue
-        excerpt = _verified_excerpt(source.section, draft.quote)
-        if excerpt is None:
-            continue
-        seen_sections.add(source.section.id)
-        citations.append((draft.source_number, source.section, excerpt))
-    if not citations:
-        raise ReaderChatUnavailable(
-            "The generated answer did not include valid evidence citations."
+    total_input_tokens = result.input_tokens
+    total_output_tokens = result.output_tokens
+    citations, validation_error = _validated_answer_citations(result.output, sources)
+    if validation_error:
+        logger.warning(
+            "Reader chat draft failed citation validation; requesting one repair",
+            extra={
+                "thread_id": str(thread.id),
+                "provider_response_id": result.response_id,
+                "citation_validation_error": validation_error,
+                "citation_count": len(result.output.citations),
+                "marker_count": len(_answer_marker_numbers(result.output.answer)),
+            },
         )
-    answer_markers = {
-        int(match.group(1)) for match in re.finditer(r"\[(\d+)]", result.output.answer)
-    }
-    citation_numbers = {source_number for source_number, _, _ in citations}
-    if not answer_markers or answer_markers != citation_numbers:
+        repair_payload = {
+            "question": question,
+            "draft": result.output.model_dump(mode="json"),
+            "sources": [_source_payload(source) for source in sources],
+        }
+        try:
+            repaired_result = selected_client.generate_structured(
+                model=settings.OPENROUTER_CHAT_MODEL,
+                system_prompt=CHAT_CITATION_REPAIR_PROMPT,
+                input_payload=repair_payload,
+                output_model=ReaderChatAnswerDraft,
+                schema_name="aria_reader_chat_answer_repair",
+                reasoning_effort=settings.OPENROUTER_CHAT_REASONING_EFFORT,
+                max_output_tokens=settings.OPENROUTER_CHAT_MAX_OUTPUT_TOKENS,
+            )
+        except OpenRouterError as error:
+            raise ReaderChatUnavailable(
+                "ARIA could not reach the configured language model."
+            ) from error
+        total_input_tokens += repaired_result.input_tokens
+        total_output_tokens += repaired_result.output_tokens
+        result = repaired_result
+        citations, validation_error = _validated_answer_citations(result.output, sources)
+
+    if validation_error:
+        logger.warning(
+            "Reader chat citation repair failed validation",
+            extra={
+                "thread_id": str(thread.id),
+                "provider_response_id": result.response_id,
+                "citation_validation_error": validation_error,
+                "citation_count": len(result.output.citations),
+                "marker_count": len(_answer_marker_numbers(result.output.answer)),
+            },
+        )
         raise ReaderChatUnavailable(
             "The generated answer did not link its claims to valid evidence citations."
         )
@@ -279,8 +398,8 @@ def answer_chat_question(
         provider="openrouter",
         model=settings.OPENROUTER_CHAT_MODEL,
         provider_response_id=result.response_id,
-        input_tokens=result.input_tokens,
-        output_tokens=result.output_tokens,
+        input_tokens=total_input_tokens,
+        output_tokens=total_output_tokens,
         suggested_questions=result.output.suggested_questions,
     )
     ReaderChatCitation.objects.bulk_create(
