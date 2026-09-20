@@ -41,12 +41,7 @@ const corpusPrompts = [
 ]
 
 function BodyPortal({ children }: { children: ReactNode }) {
-  return createPortal(
-    <div className="fixed inset-0 z-[70]" role="presentation">
-      {children}
-    </div>,
-    document.body
-  )
+  return createPortal(children, document.body)
 }
 
 function MessageCard({ message }: { message: ChatMessage }) {
@@ -205,6 +200,12 @@ export function ChatAssistant({ bootstrap }: { bootstrap: ReaderBootstrap }) {
     }
   }
 
+  function startNewConversation() {
+    setActiveThread(null)
+    setError("")
+    window.setTimeout(() => composerRef.current?.focus(), 0)
+  }
+
   async function archiveActiveThread() {
     if (!activeThread || sending) return
     setLoading(true)
@@ -289,40 +290,137 @@ export function ChatAssistant({ bootstrap }: { bootstrap: ReaderBootstrap }) {
 
       {open ? (
         <BodyPortal>
-          <button
-            aria-label="Close Ask ARIA"
-            className="absolute inset-0 bg-foreground/15 backdrop-blur-[1px]"
-            onClick={() => setOpen(false)}
-            type="button"
-          />
           <section
             aria-labelledby="aria-chat-title"
             aria-modal="true"
-            className="absolute inset-y-0 right-0 flex w-full flex-col border-l bg-background shadow-2xl sm:max-w-[31rem]"
+            className="fixed inset-0 z-[70] flex overflow-hidden bg-background"
             role="dialog"
           >
-            <div className="border-b px-4 py-4 sm:px-5">
-              <div className="flex items-start gap-3">
-                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground">
+            <div className="hidden w-72 shrink-0 flex-col border-r bg-muted/30 md:flex">
+              <div className="flex h-16 items-center gap-3 px-4">
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-xs font-semibold text-primary-foreground">
                   A
                 </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">ARIA</p>
+                  <p className="text-xs text-muted-foreground">
+                    Official evidence chat
+                  </p>
+                </div>
+              </div>
+
+              <div className="px-3 pb-3">
+                <Button
+                  className="h-10 w-full justify-start gap-2 border bg-background px-3 shadow-xs"
+                  onClick={startNewConversation}
+                  type="button"
+                  variant="outline"
+                >
+                  <Plus className="size-4" /> New conversation
+                </Button>
+              </div>
+
+              <nav
+                aria-label="Conversations"
+                className="min-h-0 flex-1 overflow-y-auto px-2 pb-4"
+              >
+                <div className="flex items-center gap-2 px-2 py-3 text-xs font-medium text-muted-foreground">
+                  <History className="size-3.5" /> Conversations
+                </div>
+                {loading && threads.length === 0 ? (
+                  <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
+                    <LoaderCircle className="size-3.5 animate-spin" /> Loading
+                  </div>
+                ) : threads.length === 0 ? (
+                  <p className="px-3 py-2 text-xs leading-5 text-muted-foreground">
+                    Your evidence conversations will appear here.
+                  </p>
+                ) : (
+                  <div className="grid gap-1">
+                    {threads.map((thread) => {
+                      const isActive = activeThread?.id === thread.id
+                      return (
+                        <div className="group relative" key={thread.id}>
+                          <button
+                            aria-current={isActive ? "page" : undefined}
+                            className={`flex h-10 w-full items-center gap-2 rounded-lg px-3 pr-10 text-left text-sm transition-colors ${
+                              isActive
+                                ? "bg-background font-medium shadow-xs"
+                                : "text-foreground/80 hover:bg-background/65"
+                            }`}
+                            onClick={() => void selectThread(thread.id)}
+                            type="button"
+                          >
+                            <MessageSquareText className="size-3.5 shrink-0 text-muted-foreground" />
+                            <span className="truncate">{thread.title}</span>
+                          </button>
+                          {isActive ? (
+                            <Button
+                              aria-label="Archive this conversation"
+                              className="absolute top-1.5 right-1.5"
+                              disabled={loading || sending}
+                              onClick={() => void archiveActiveThread()}
+                              size="icon-sm"
+                              type="button"
+                              variant="ghost"
+                            >
+                              <Archive />
+                            </Button>
+                          ) : null}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </nav>
+
+              <div className="border-t p-3">
+                <div className="rounded-xl border bg-background/75 p-3">
+                  <div className="flex items-start gap-2.5">
+                    {bootstrap.documentId ? (
+                      <BookOpen className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <FileSearch className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium">
+                        {contextTitle}
+                      </p>
+                      <p className="mt-1 text-[0.68rem] leading-4 text-muted-foreground">
+                        {activeThread?.document
+                          ? `Pinned to version ${shortHash(activeThread.document.version_sha256, 12)}`
+                          : bootstrap.documentId
+                            ? "New chats use this document version."
+                            : "Searches current reader-eligible documents."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex min-w-0 flex-1 flex-col bg-background">
+              <div className="flex h-16 shrink-0 items-center gap-3 border-b px-4 sm:px-6">
+                <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-xs font-semibold text-primary-foreground md:hidden">
+                  A
+                </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <h2 className="font-semibold" id="aria-chat-title">
                       Ask ARIA
                     </h2>
-                    <Badge variant="outline" className="text-[0.65rem]">
+                    <Badge className="text-[0.65rem]" variant="outline">
                       Evidence only
                     </Badge>
                   </div>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Answers remain linked to the official text.
+                  <p className="truncate text-xs text-muted-foreground">
+                    {contextTitle}
                   </p>
                 </div>
                 <Button
                   aria-label="Close Ask ARIA"
                   onClick={() => setOpen(false)}
-                  size="icon"
+                  size="icon-lg"
                   type="button"
                   variant="ghost"
                 >
@@ -330,12 +428,12 @@ export function ChatAssistant({ bootstrap }: { bootstrap: ReaderBootstrap }) {
                 </Button>
               </div>
 
-              <div className="mt-4 flex items-center gap-2">
+              <div className="flex items-center gap-2 border-b px-3 py-2 md:hidden">
                 <div className="relative min-w-0 flex-1">
                   <History className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
                   <select
                     aria-label="Conversation"
-                    className="h-9 w-full appearance-none rounded-md border bg-background pr-8 pl-9 text-sm outline-none focus:ring-2 focus:ring-ring/50"
+                    className="h-9 w-full appearance-none rounded-lg border bg-background pr-8 pl-9 text-sm outline-none focus:ring-2 focus:ring-ring/50"
                     disabled={threads.length === 0 || loading}
                     onChange={(event) => void selectThread(event.target.value)}
                     value={activeThread?.id ?? ""}
@@ -352,11 +450,7 @@ export function ChatAssistant({ bootstrap }: { bootstrap: ReaderBootstrap }) {
                 </div>
                 <Button
                   aria-label="Start a new conversation"
-                  onClick={() => {
-                    setActiveThread(null)
-                    setError("")
-                    window.setTimeout(() => composerRef.current?.focus(), 0)
-                  }}
+                  onClick={startNewConversation}
                   size="icon"
                   type="button"
                   variant="outline"
@@ -374,147 +468,130 @@ export function ChatAssistant({ bootstrap }: { bootstrap: ReaderBootstrap }) {
                   <Archive />
                 </Button>
               </div>
-            </div>
 
-            <div className="border-b bg-muted/25 px-4 py-3 sm:px-5">
-              <div className="flex items-start gap-2">
-                {bootstrap.documentId ? (
-                  <BookOpen className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                ) : (
-                  <FileSearch className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                )}
-                <div className="min-w-0">
-                  <p className="truncate text-xs font-medium">{contextTitle}</p>
-                  <p className="mt-0.5 text-[0.68rem] text-muted-foreground">
-                    {activeThread?.document
-                      ? `Pinned to version ${shortHash(activeThread.document.version_sha256, 12)}`
-                      : bootstrap.documentId
-                        ? "A new thread will be pinned to this document version."
-                        : "Searches current reader-eligible documents."}
+              <div
+                aria-live="polite"
+                className="min-h-0 flex-1 overflow-y-auto"
+              >
+                <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-4 py-8 sm:px-6 sm:py-10">
+                  {loading && messages.length === 0 ? (
+                    <div className="grid flex-1 place-items-center text-sm text-muted-foreground">
+                      <span className="flex items-center gap-2">
+                        <LoaderCircle className="size-4 animate-spin" /> Loading
+                        conversation
+                      </span>
+                    </div>
+                  ) : messages.length === 0 && !pendingQuestion ? (
+                    <div className="flex flex-1 flex-col justify-center py-8">
+                      <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
+                        <Quote className="size-5" />
+                      </div>
+                      <h3 className="mt-5 text-center text-2xl font-semibold tracking-tight">
+                        Start with the evidence
+                      </h3>
+                      <p className="mx-auto mt-2 max-w-md text-center text-sm leading-6 text-muted-foreground">
+                        Ask a direct question. ARIA will retrieve the relevant
+                        passages and link its answer to the official text.
+                      </p>
+                      <div className="mx-auto mt-7 grid w-full max-w-2xl gap-2 sm:grid-cols-2">
+                        {prompts.map((prompt) => (
+                          <button
+                            className="rounded-xl border bg-card px-4 py-3 text-left text-sm leading-5 transition-colors hover:bg-muted/60"
+                            key={prompt}
+                            onClick={() => void submitQuestion(prompt)}
+                            type="button"
+                          >
+                            {prompt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid gap-8 py-2">
+                      {messages.map((message) => (
+                        <MessageCard key={message.id} message={message} />
+                      ))}
+                      {pendingQuestion ? (
+                        <div className="flex justify-end">
+                          <div className="max-w-[86%] rounded-3xl rounded-br-lg bg-muted px-4 py-3 text-sm leading-6">
+                            {pendingQuestion}
+                          </div>
+                        </div>
+                      ) : null}
+                      {sending ? (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <span className="grid size-7 place-items-center rounded-lg bg-primary text-primary-foreground">
+                            <Bot className="size-3.5" />
+                          </span>
+                          <span className="flex items-center gap-2">
+                            <LoaderCircle className="size-3.5 animate-spin" />
+                            Checking the evidence
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+                  <div ref={transcriptEndRef} />
+                </div>
+              </div>
+
+              <div className="shrink-0 px-4 pb-4 sm:px-6 sm:pb-6">
+                <div className="mx-auto w-full max-w-3xl">
+                  {error ? (
+                    <Alert className="mb-3" variant="destructive">
+                      <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                  ) : null}
+                  <form
+                    className="flex items-end gap-2 rounded-[1.6rem] border bg-card p-2 pl-4 shadow-lg shadow-foreground/5 focus-within:ring-2 focus-within:ring-ring/40"
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      void submitQuestion()
+                    }}
+                  >
+                    <textarea
+                      aria-label="Ask about the evidence"
+                      className="max-h-36 min-h-10 min-w-0 flex-1 resize-none bg-transparent py-2 text-sm leading-6 outline-none placeholder:text-muted-foreground sm:text-base"
+                      disabled={sending}
+                      maxLength={2000}
+                      onChange={(event) => setQuestion(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault()
+                          void submitQuestion()
+                        }
+                      }}
+                      placeholder={
+                        bootstrap.documentId
+                          ? "Ask about this document"
+                          : "Ask across current evidence"
+                      }
+                      ref={composerRef}
+                      rows={1}
+                      value={question}
+                    />
+                    <span className="hidden items-center gap-1.5 pb-2 text-[0.68rem] whitespace-nowrap text-muted-foreground sm:flex">
+                      <ShieldCheck className="size-3.5" /> Evidence memory on
+                    </span>
+                    <Button
+                      aria-label="Send question"
+                      className="rounded-full"
+                      disabled={!question.trim() || sending}
+                      size="icon-lg"
+                      type="submit"
+                    >
+                      {sending ? (
+                        <LoaderCircle className="animate-spin" />
+                      ) : (
+                        <Send />
+                      )}
+                    </Button>
+                  </form>
+                  <p className="mt-2 text-center text-[0.65rem] leading-4 text-muted-foreground">
+                    Verify cited evidence. Responses are not legal advice.
                   </p>
                 </div>
               </div>
-            </div>
-
-            <div
-              aria-live="polite"
-              className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-5"
-            >
-              {loading && messages.length === 0 ? (
-                <div className="grid h-full place-items-center text-sm text-muted-foreground">
-                  <span className="flex items-center gap-2">
-                    <LoaderCircle className="size-4 animate-spin" /> Loading
-                    conversation
-                  </span>
-                </div>
-              ) : messages.length === 0 && !pendingQuestion ? (
-                <div className="flex min-h-full flex-col justify-center py-8">
-                  <div className="mx-auto grid size-12 place-items-center rounded-2xl border bg-muted/40">
-                    <Quote className="size-5" />
-                  </div>
-                  <h3 className="mt-4 text-center text-lg font-semibold">
-                    Start with the evidence
-                  </h3>
-                  <p className="mx-auto mt-2 max-w-sm text-center text-sm leading-6 text-muted-foreground">
-                    ARIA retrieves relevant passages first, then answers with
-                    links back to the exact source.
-                  </p>
-                  <div className="mt-6 grid gap-2">
-                    {prompts.map((prompt) => (
-                      <button
-                        className="rounded-xl border bg-card px-4 py-3 text-left text-sm leading-5 transition-colors hover:bg-muted/60"
-                        key={prompt}
-                        onClick={() => void submitQuestion(prompt)}
-                        type="button"
-                      >
-                        {prompt}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="grid gap-6">
-                  {messages.map((message) => (
-                    <MessageCard key={message.id} message={message} />
-                  ))}
-                  {pendingQuestion ? (
-                    <div className="flex justify-end">
-                      <div className="max-w-[86%] rounded-2xl rounded-br-md bg-primary px-4 py-3 text-sm leading-6 text-primary-foreground">
-                        {pendingQuestion}
-                      </div>
-                    </div>
-                  ) : null}
-                  {sending ? (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <span className="grid size-6 place-items-center rounded-md bg-primary text-primary-foreground">
-                        <Bot className="size-3.5" />
-                      </span>
-                      <span className="flex items-center gap-2">
-                        <LoaderCircle className="size-3.5 animate-spin" />{" "}
-                        Checking the evidence
-                      </span>
-                    </div>
-                  ) : null}
-                </div>
-              )}
-              <div ref={transcriptEndRef} />
-            </div>
-
-            <div className="border-t bg-background px-4 py-4 sm:px-5">
-              {error ? (
-                <Alert className="mb-3" variant="destructive">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              ) : null}
-              <form
-                className="rounded-2xl border bg-card p-2 shadow-sm focus-within:ring-2 focus-within:ring-ring/40"
-                onSubmit={(event) => {
-                  event.preventDefault()
-                  void submitQuestion()
-                }}
-              >
-                <textarea
-                  aria-label="Ask about the evidence"
-                  className="max-h-36 min-h-16 w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 outline-none placeholder:text-muted-foreground"
-                  disabled={sending}
-                  maxLength={2000}
-                  onChange={(event) => setQuestion(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault()
-                      void submitQuestion()
-                    }
-                  }}
-                  placeholder={
-                    bootstrap.documentId
-                      ? "Ask about this document…"
-                      : "Ask across current evidence…"
-                  }
-                  ref={composerRef}
-                  value={question}
-                />
-                <div className="flex items-center justify-between gap-3 px-1 pb-1">
-                  <span className="flex items-center gap-1.5 text-[0.65rem] text-muted-foreground">
-                    <ShieldCheck className="size-3.5" /> Thread memory on
-                  </span>
-                  <Button
-                    aria-label="Send question"
-                    disabled={!question.trim() || sending}
-                    size="icon"
-                    type="submit"
-                  >
-                    {sending ? (
-                      <LoaderCircle className="animate-spin" />
-                    ) : (
-                      <Send />
-                    )}
-                  </Button>
-                </div>
-              </form>
-              <p className="mt-2 text-center text-[0.65rem] leading-4 text-muted-foreground">
-                Questions and retrieved passages use the configured ZDR model
-                route. Verify cited evidence; responses are not legal advice.
-              </p>
             </div>
           </section>
         </BodyPortal>

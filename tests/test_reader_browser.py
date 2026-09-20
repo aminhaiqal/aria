@@ -79,10 +79,30 @@ class ReaderBrowserTestCase(StaticLiveServerTestCase):
             assistant.wait_for()
             bounds = assistant.bounding_box()
             self.assertIsNotNone(bounds)
+            self.assertAlmostEqual(bounds["x"], 0, delta=1)
+            self.assertAlmostEqual(bounds["width"], 1280, delta=1)
             self.assertAlmostEqual(bounds["x"] + bounds["width"], 1280, delta=1)
             self.assertEqual(assistant.get_by_text("Evidence only", exact=True).count(), 1)
+            self.assertEqual(
+                assistant.get_by_role("navigation", name="Conversations").count(), 1
+            )
+            self.assertEqual(
+                assistant.get_by_role("button", name="New conversation").count(), 1
+            )
             self.assertEqual(assistant.get_by_label("Ask about the evidence").count(), 1)
             self.assertIn("All current evidence", assistant.inner_text())
+
+            page.set_viewport_size({"width": 390, "height": 844})
+            mobile_bounds = assistant.bounding_box()
+            self.assertIsNotNone(mobile_bounds)
+            self.assertAlmostEqual(mobile_bounds["width"], 390, delta=1)
+            self.assertTrue(
+                assistant.get_by_label("Conversation", exact=True).is_visible()
+            )
+            self.assertFalse(
+                assistant.get_by_role("navigation", name="Conversations").is_visible()
+            )
+            page.set_viewport_size({"width": 1280, "height": 900})
             assistant.get_by_role("button", name="Close Ask ARIA").click()
             self.assertEqual(assistant.count(), 0)
 
