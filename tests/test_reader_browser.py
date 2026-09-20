@@ -65,9 +65,21 @@ class ReaderBrowserTestCase(StaticLiveServerTestCase):
             page.get_by_role("option", name="Exact text").click()
             self.assertEqual(page.get_by_role("combobox", name="Method").inner_text(), "Exact text")
 
+            page.evaluate(
+                """
+                const overflowProbe = document.createElement('div');
+                overflowProbe.style.width = '1700px';
+                overflowProbe.style.height = '1px';
+                document.body.append(overflowProbe);
+                window.scrollTo(300, 0);
+                """
+            )
             page.get_by_role("button", name="Ask ARIA").click()
             assistant = page.get_by_role("dialog", name="Ask ARIA")
             assistant.wait_for()
+            bounds = assistant.bounding_box()
+            self.assertIsNotNone(bounds)
+            self.assertAlmostEqual(bounds["x"] + bounds["width"], 1280, delta=1)
             self.assertEqual(assistant.get_by_text("Evidence only", exact=True).count(), 1)
             self.assertEqual(assistant.get_by_label("Ask about the evidence").count(), 1)
             self.assertIn("All current evidence", assistant.inner_text())

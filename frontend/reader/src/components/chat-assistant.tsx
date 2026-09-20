@@ -12,7 +12,8 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -25,11 +26,7 @@ import {
   sendChatMessage,
 } from "@/lib/api"
 import { shortHash } from "@/lib/format"
-import type {
-  ChatMessage,
-  ChatThread,
-  ReaderBootstrap,
-} from "@/lib/types"
+import type { ChatMessage, ChatThread, ReaderBootstrap } from "@/lib/types"
 
 const documentPrompts = [
   "Summarise the main requirements in this document.",
@@ -42,6 +39,15 @@ const corpusPrompts = [
   "Which official documents discuss reporting obligations?",
   "What does the current evidence say about record keeping?",
 ]
+
+function BodyPortal({ children }: { children: ReactNode }) {
+  return createPortal(
+    <div className="fixed inset-0 z-[70]" role="presentation">
+      {children}
+    </div>,
+    document.body
+  )
+}
 
 function MessageCard({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
@@ -162,9 +168,15 @@ export function ChatAssistant({ bootstrap }: { bootstrap: ReaderBootstrap }) {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false)
     }
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
     window.addEventListener("keydown", handleKeyDown)
-    const focusTimer = window.setTimeout(() => composerRef.current?.focus(), 120)
+    const focusTimer = window.setTimeout(
+      () => composerRef.current?.focus(),
+      120
+    )
     return () => {
+      document.body.style.overflow = previousOverflow
       window.removeEventListener("keydown", handleKeyDown)
       window.clearTimeout(focusTimer)
     }
@@ -183,7 +195,11 @@ export function ChatAssistant({ bootstrap }: { bootstrap: ReaderBootstrap }) {
     try {
       await loadThread(threadId)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "The conversation could not be loaded.")
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "The conversation could not be loaded."
+      )
     } finally {
       setLoading(false)
     }
@@ -195,12 +211,18 @@ export function ChatAssistant({ bootstrap }: { bootstrap: ReaderBootstrap }) {
     setError("")
     try {
       await archiveChatThread(bootstrap, activeThread.id)
-      const remaining = threads.filter((thread) => thread.id !== activeThread.id)
+      const remaining = threads.filter(
+        (thread) => thread.id !== activeThread.id
+      )
       setThreads(remaining)
       if (remaining[0]) await loadThread(remaining[0].id)
       else setActiveThread(null)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "The conversation could not be archived.")
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "The conversation could not be archived."
+      )
     } finally {
       setLoading(false)
     }
@@ -224,7 +246,11 @@ export function ChatAssistant({ bootstrap }: { bootstrap: ReaderBootstrap }) {
       setActiveThread(answered)
       replaceThreadSummary(answered)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "ARIA could not answer this question.")
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "ARIA could not answer this question."
+      )
       if (thread) {
         try {
           await loadThread(thread.id)
@@ -262,7 +288,7 @@ export function ChatAssistant({ bootstrap }: { bootstrap: ReaderBootstrap }) {
       </Button>
 
       {open ? (
-        <div className="fixed inset-0 z-[70]" role="presentation">
+        <BodyPortal>
           <button
             aria-label="Close Ask ARIA"
             className="absolute inset-0 bg-foreground/15 backdrop-blur-[1px]"
@@ -275,7 +301,7 @@ export function ChatAssistant({ bootstrap }: { bootstrap: ReaderBootstrap }) {
             className="absolute inset-y-0 right-0 flex w-full flex-col border-l bg-background shadow-2xl sm:max-w-[31rem]"
             role="dialog"
           >
-            <header className="border-b px-4 py-4 sm:px-5">
+            <div className="border-b px-4 py-4 sm:px-5">
               <div className="flex items-start gap-3">
                 <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground">
                   A
@@ -348,7 +374,7 @@ export function ChatAssistant({ bootstrap }: { bootstrap: ReaderBootstrap }) {
                   <Archive />
                 </Button>
               </div>
-            </header>
+            </div>
 
             <div className="border-b bg-muted/25 px-4 py-3 sm:px-5">
               <div className="flex items-start gap-2">
@@ -377,7 +403,8 @@ export function ChatAssistant({ bootstrap }: { bootstrap: ReaderBootstrap }) {
               {loading && messages.length === 0 ? (
                 <div className="grid h-full place-items-center text-sm text-muted-foreground">
                   <span className="flex items-center gap-2">
-                    <LoaderCircle className="size-4 animate-spin" /> Loading conversation
+                    <LoaderCircle className="size-4 animate-spin" /> Loading
+                    conversation
                   </span>
                 </div>
               ) : messages.length === 0 && !pendingQuestion ? (
@@ -389,7 +416,8 @@ export function ChatAssistant({ bootstrap }: { bootstrap: ReaderBootstrap }) {
                     Start with the evidence
                   </h3>
                   <p className="mx-auto mt-2 max-w-sm text-center text-sm leading-6 text-muted-foreground">
-                    ARIA retrieves relevant passages first, then answers with links back to the exact source.
+                    ARIA retrieves relevant passages first, then answers with
+                    links back to the exact source.
                   </p>
                   <div className="mt-6 grid gap-2">
                     {prompts.map((prompt) => (
@@ -422,7 +450,8 @@ export function ChatAssistant({ bootstrap }: { bootstrap: ReaderBootstrap }) {
                         <Bot className="size-3.5" />
                       </span>
                       <span className="flex items-center gap-2">
-                        <LoaderCircle className="size-3.5 animate-spin" /> Checking the evidence
+                        <LoaderCircle className="size-3.5 animate-spin" />{" "}
+                        Checking the evidence
                       </span>
                     </div>
                   ) : null}
@@ -431,7 +460,7 @@ export function ChatAssistant({ bootstrap }: { bootstrap: ReaderBootstrap }) {
               <div ref={transcriptEndRef} />
             </div>
 
-            <footer className="border-t bg-background px-4 py-4 sm:px-5">
+            <div className="border-t bg-background px-4 py-4 sm:px-5">
               {error ? (
                 <Alert className="mb-3" variant="destructive">
                   <AlertDescription>{error}</AlertDescription>
@@ -474,16 +503,21 @@ export function ChatAssistant({ bootstrap }: { bootstrap: ReaderBootstrap }) {
                     size="icon"
                     type="submit"
                   >
-                    {sending ? <LoaderCircle className="animate-spin" /> : <Send />}
+                    {sending ? (
+                      <LoaderCircle className="animate-spin" />
+                    ) : (
+                      <Send />
+                    )}
                   </Button>
                 </div>
               </form>
               <p className="mt-2 text-center text-[0.65rem] leading-4 text-muted-foreground">
-                Questions and retrieved passages use the configured ZDR model route. Verify cited evidence; responses are not legal advice.
+                Questions and retrieved passages use the configured ZDR model
+                route. Verify cited evidence; responses are not legal advice.
               </p>
-            </footer>
+            </div>
           </section>
-        </div>
+        </BodyPortal>
       ) : null}
     </>
   )

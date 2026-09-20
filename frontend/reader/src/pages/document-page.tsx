@@ -416,7 +416,7 @@ function VersionTab({ document }: { document: DocumentPayload }) {
               />
               <div>
                 <strong>{formatDate(version.created_at)}</strong>
-                <code className="mt-1 block text-xs text-muted-foreground">
+                <code className="mt-1 block text-xs break-all text-muted-foreground">
                   {version.normalized_content_sha256}
                 </code>
               </div>
@@ -489,8 +489,8 @@ export function DocumentPage({ bootstrap }: { bootstrap: ReaderBootstrap }) {
             <span aria-hidden="true">/</span>
             <span>{document.authority.name}</span>
           </nav>
-          <div className="grid gap-8 lg:grid-cols-[1fr_18rem] lg:items-start">
-            <div>
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start">
+            <div className="min-w-0">
               <div className="mb-4 flex flex-wrap gap-2">
                 <Badge>{document.authority.name}</Badge>
                 <Badge variant="outline">{document.collection.name}</Badge>
@@ -498,7 +498,7 @@ export function DocumentPage({ bootstrap }: { bootstrap: ReaderBootstrap }) {
                   {titleCase(document.authority.trust_classification)}
                 </Badge>
               </div>
-              <h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-5xl">
+              <h1 className="text-3xl font-semibold tracking-tight text-balance break-words sm:text-5xl">
                 {document.identity.title}
               </h1>
               <p className="mt-5 max-w-3xl text-sm leading-6 text-muted-foreground">

@@ -259,7 +259,7 @@ test("opens a document-scoped chat thread and renders traceable citations", asyn
     throw new Error(`Unexpected request: ${url}`)
   })
   const user = userEvent.setup()
-  const { container } = renderApp()
+  renderApp()
   await screen.findByRole("heading", { name: documentResponse.identity.title })
 
   await user.click(screen.getByRole("button", { name: "Ask ARIA" }))
@@ -284,7 +284,13 @@ test("opens a document-scoped chat thread and renders traceable citations", asyn
     expect.stringContaining(`#section-${documentResponse.sections[0].id}`)
   )
   expect(screen.getByText(/Pinned to version/)).toBeInTheDocument()
-  expect((await axe.run(container)).violations).toHaveLength(0)
+  const accessibility = await axe.run(document.body)
+  expect(
+    accessibility.violations.map(({ id, nodes }) => ({
+      id,
+      targets: nodes.map((node) => node.target),
+    }))
+  ).toEqual([])
 })
 
 test("creates a controlled business profile through the same-origin API", async () => {
